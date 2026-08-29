@@ -1,7 +1,79 @@
 ﻿@page "/"
+@rendermode InteractiveWebAssembly
+@using ASCII_Hero.Client.Game
+@using ASCII_Hero.Client.Game.Browser
+@implements IAsyncDisposable
+@inject IJSRuntime JsRuntime
 
-<PageTitle>Home</PageTitle>
+<PageTitle>ASCII Hero</PageTitle>
 
-<h1>Hello, world!</h1>
+<!--
+    Small font-switch buttons letting the player pick between the "Authentic"
+    bundled CP437 bitmap font and a "Modern" anti-aliased coding font. Purely a
+    rendering choice - it doesn't affect game logic, only which font
+    game-interop.js loads and measures (see CanvasBridge.SetFontAsync /
+    GameLoop.SetFontModeAsync).
 
-Welcome to your new app.
+    Deliberately left as plain, unstyled button elements (default OS/browser
+    button chrome) so they read as ordinary page UI, visually distinct from the
+    black ASCII game canvas below. Each button just shows an at-sign glyph
+    rendered in its own font, with the mode name available as a hover tooltip
+    via title.
+-->
+<div style="display:flex; justify-content:center; gap:4px; padding:8px;">
+    <button type="button" title="Authentic" @onclick="() => SetFontModeAsync(FontMode.Authentic)"
+            disabled="@(_fontMode == FontMode.Authentic)"
+            style="font-family:'Web437IbmVga8x14', monospace; font-size:20px; width:2em; line-height:1;">
+        @@
+    </button>
+    <button type="button" title="Modern" @onclick="() => SetFontModeAsync(FontMode.Modern)"
+            disabled="@(_fontMode == FontMode.Modern)"
+            style="font-family:'JetBrains Mono', monospace; font-size:20px; width:2em; line-height:1;">
+        @@
+    </button>
+</div>
+
+<!--
+    image-rendering: pixelated tells the browser NOT to smooth/blur the canvas
+    contents. This matters because our font is a true bitmap font (crisp,
+    square pixels by design) - without this, the browser's default smoothing
+    would blur those sharp edges when the canvas is scaled by the browser
+    (e.g. on high-DPI displays), undermining the retro look we bundled the
+    font for in the first place.
+-->
+<canvas id="game-canvas" width="1280" height="728" style="background:black; display:block; margin:0 auto; image-rendering:pixelated;"></canvas>
+
+@code {
+    private CanvasBridge? _canvasBridge;
+    private GameLoop? _gameLoop;
+    private FontMode _fontMode = FontMode.Authentic;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _canvasBridge = new CanvasBridge(JsRuntime);
+            _gameLoop = new GameLoop(_canvasBridge);
+            await _gameLoop.StartAsync("game-canvas", _fontMode);
+        }
+    }
+
+    private async Task SetFontModeAsync(FontMode fontMode)
+    {
+        if (_gameLoop is null || _fontMode == fontMode)
+        {
+            return;
+        }
+
+        _fontMode = fontMode;
+        await _gameLoop.SetFontModeAsync(fontMode);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_canvasBridge is not null)
+        {
+            await _canvasBridge.DisposeAsync();
+        }
+    }
+}
