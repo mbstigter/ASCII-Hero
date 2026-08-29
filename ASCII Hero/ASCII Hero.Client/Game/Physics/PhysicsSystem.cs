@@ -40,5 +40,26 @@ public class PhysicsSystem
         player.Position = new Vector2D(
             player.Position.X + velocity.X * deltaSeconds,
             player.Position.Y + velocity.Y * deltaSeconds);
+
+        foreach (var dynamicObject in world.DynamicObjects)
+        {
+            StepDynamicObject(world, dynamicObject, deltaSeconds);
+        }
+    }
+
+    private static void StepDynamicObject(World2D world, DynamicObject2D dynamicObject, double deltaSeconds)
+    {
+        var velocity = dynamicObject.Velocity;
+
+        if (dynamicObject.UseGravity)
+        {
+            velocity.Y += world.Gravity * deltaSeconds;
+        }
+
+        dynamicObject.Velocity = velocity;
+
+        dynamicObject.Position = new Vector2D(
+            dynamicObject.Position.X + velocity.X * deltaSeconds,
+            dynamicObject.Position.Y + velocity.Y * deltaSeconds);
     }
 }

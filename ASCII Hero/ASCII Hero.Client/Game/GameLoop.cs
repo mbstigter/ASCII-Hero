@@ -1,3 +1,4 @@
+using ASCII_Hero.Client.Game.Assets;
 using ASCII_Hero.Client.Game.Browser;
 using ASCII_Hero.Client.Game.Camera;
 using ASCII_Hero.Client.Game.Input;
@@ -13,7 +14,7 @@ namespace ASCII_Hero.Client.Game;
 /// per animation frame. This is the game loop; it is invoked from JS via requestAnimationFrame,
 /// never via Blazor's StateHasChanged.
 /// </summary>
-public class GameLoop(CanvasBridge canvasBridge)
+public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFileProvider)
 {
     private const int ViewportWidthPixels = 1280;
     // 728 = 26 x 28, an exact multiple of the fixed 28px cell height both fonts are
@@ -22,21 +23,35 @@ public class GameLoop(CanvasBridge canvasBridge)
     // the canvas.
     private const int ViewportHeightPixels = 728;
 
-    private readonly World2D _world = new();
     private readonly InputState _input = new();
     private readonly PhysicsSystem _physics = new();
     private readonly CollisionSystem _collision = new();
     private readonly Camera2D _camera = new();
     private readonly AsciiRenderer _renderer = new();
 
+    private World2D _world = null!;
+
     private double _viewportWidthCells;
     private double _viewportHeightCells;
 
     public async Task StartAsync(string canvasElementId, FontMode fontMode = FontMode.Authentic)
     {
+        // Assets are loaded once, up front, over HTTP (see IAssetFileProvider) so gameplay never
+        // stalls mid-frame waiting on a fetch; the loop itself only starts once this completes.
+        _world = await World2D.LoadAsync(assetFileProvider, "Level1");
+
         var cellMetrics = await canvasBridge.InitializeAsync(canvasElementId, this, fontMode);
         ApplyCellMetrics(cellMetrics);
+
+        _camera.SnapTo(
+            _world.CameraTarget.Position,
+            _world.CameraTarget.Size,
+            _world.WidthCells,
+            _world.HeightCells,
+            _viewportWidthCells,
+            _viewportHeightCells);
     }
+
 
     /// <summary>
     /// Switches the rendering font at runtime (used by the Authentic/Modern toggle) and
@@ -88,10 +103,14 @@ public class GameLoop(CanvasBridge canvasBridge)
         _physics.Step(_world, _input, deltaSeconds);
         _collision.Resolve(_world);
 
-        var playerCenter = new Vector2D(
-            _world.Player.Position.X + _world.Player.Size.X / 2,
-            _world.Player.Position.Y + _world.Player.Size.Y / 2);
-        _camera.Follow(playerCenter, _viewportWidthCells, _viewportHeightCells, deltaSeconds);
+        _camera.Follow(
+            _world.CameraTarget.Position,
+            _world.CameraTarget.Size,
+            _world.WidthCells,
+            _world.HeightCells,
+            _viewportWidthCells,
+            _viewportHeightCells,
+            deltaSeconds);
 
         var glyphs = _renderer.BuildFrame(_world, _camera);
         await canvasBridge.DrawFrameAsync(ViewportWidthPixels, ViewportHeightPixels, glyphs);

@@ -1,9 +1,11 @@
 ﻿@page "/"
 @rendermode InteractiveWebAssembly
 @using ASCII_Hero.Client.Game
+@using ASCII_Hero.Client.Game.Assets
 @using ASCII_Hero.Client.Game.Browser
 @implements IAsyncDisposable
 @inject IJSRuntime JsRuntime
+@inject HttpClient Http
 
 <PageTitle>ASCII Hero</PageTitle>
 
@@ -53,7 +55,7 @@
         if (firstRender)
         {
             _canvasBridge = new CanvasBridge(JsRuntime);
-            _gameLoop = new GameLoop(_canvasBridge);
+            _gameLoop = new GameLoop(_canvasBridge, new HttpAssetFileProvider(Http));
             await _gameLoop.StartAsync("game-canvas", _fontMode);
         }
     }

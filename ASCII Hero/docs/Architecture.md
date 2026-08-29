@@ -1,0 +1,101 @@
+# Game Architecture
+
+## Platform
+
+- .NET 10, C#
+- Blazor Web App with WebAssembly interactivity
+- HTML5 Canvas as the rendering surface
+- The game runs entirely client-side in WebAssembly.
+
+## Architecture Boundary
+
+Blazor provides the application host and surrounding UI (navigation, layout,
+pages). The game itself is an independent C# game system that does not
+depend on Blazor's component rendering model.
+
+## Coordinate System
+
+- Game entities use floating-point world coordinates ("cells"), not integer
+  grid cells.
+- The ASCII character grid is a rendering concept only — physics and
+  movement must never be quantized to it.
+- World coordinates are converted to screen/pixel coordinates during
+  rendering via the camera transform, enabling smooth sub-cell movement.
+
+## Game Loop
+
+The game loop is independent of Blazor component rendering and is
+responsible for: reading input, updating game state/physics, updating the
+camera, and rendering the current frame.
+
+`StateHasChanged` is never used as the real-time game loop. Instead, the
+loop is driven by JavaScript's `requestAnimationFrame`, which calls back
+into C# once per frame.
+
+## Rendering
+
+- HTML5 Canvas is the only rendering surface — no DOM elements or Razor
+  components are used to render the game world.
+- The renderer converts game state into ASCII glyphs and draws them on
+  Canvas at pixel positions derived from the camera transform, so glyphs can
+  move smoothly even though the visual language is grid-based.
+- Two selectable monospaced fonts are supported at runtime (an authentic
+  bitmap CP437 font and a modern anti-aliased font). Both are scaled to an
+  identical fixed pixel cell size, which the browser measures and reports
+  back to C# (`CellMetrics`), so the world grid stays consistent regardless
+  of the active font.
+
+## JavaScript Interop
+
+- Interop is limited to browser capabilities that are impractical in C#
+  (Canvas 2D context, keyboard events, `requestAnimationFrame`).
+- Interop is isolated behind a small C# abstraction (`CanvasBridge`); game
+  logic must never depend directly on JavaScript APIs.
+
+## Input
+
+Keyboard input is captured at the browser boundary and exposed to the C#
+game as game-oriented input state. Gameplay code never depends directly on
+DOM keyboard events.
+
+## Physics
+
+- Physics operates on continuous world coordinates.
+- Collision detection operates on game-world geometry, not rendered ASCII
+  characters.
+- The world's own edges (bounds) act as a generic physical surface, handled
+  uniformly for any moving body (player or dynamic object) rather than
+  special-cased per type: dynamic objects bounce off them according to their
+  `Restitution`, and any body resting against the floor is considered
+  grounded (`IMovingBody.IsGrounded`), exactly as if it were resting on a
+  platform.
+- Platform collision and moving-body-vs-moving-body collision (e.g. the
+  player and a dynamic object) are both resolved against `IMovingBody`
+  generically — there is no per-concrete-type collision method. The player
+  differs from other moving bodies only by the restitution value passed in
+  (0, so it stops dead instead of bouncing), not by a separate code path.
+- Numeric values parsed from level/asset `.ini` files always use
+  `CultureInfo.InvariantCulture`, never the current culture — otherwise a
+  decimal point in a value like `1.0` can be silently misread as a thousands
+  separator under some locales, corrupting the value.
+
+## Camera
+
+- The camera follows an explicit target (`World2D.CameraTarget`), not a
+  hardcoded reference to the player. A level's object placement data can
+  designate a different body (e.g. a dynamic object) as the camera target;
+  see [AssetFormat.md](AssetFormat.md).
+- Camera scrolling uses a "dead zone": the camera only moves once its target
+  approaches within a margin of the current viewport's edge, rather than
+  re-centering on every frame of target movement.
+- The camera's position is always clamped to the world's own bounds, so it
+  never reveals space beyond the level and a target near a world edge can
+  reach the true edge of the screen instead of the camera trying (and
+  failing) to keep it centered.
+
+## Dependencies
+
+Prefer built-in .NET and Blazor platform APIs. Do not add game engines,
+frameworks, or NuGet packages unless there is a concrete, explicitly
+justified architectural reason.
+

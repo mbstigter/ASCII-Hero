@@ -1,4 +1,32 @@
 # Copilot Instructions
 
 ## Project Guidelines
-- ASCII Hero project asset file format conventions: per-asset sprite files use pattern {AssetName}_{clipName}_{chars|fore|back|material}.txt plus {AssetName}_settings.ini, all under Assets/Sprites/{AssetName}/. Single-clip assets use clipName "default". Empty/no-cell marker defaults to space, overridable via EmptyChar in settings. Global shared files (Colors.ini, Materials.ini, Settings.ini) live under Assets/Global/ (folder PascalCase-ish: only first word capitalized style for global files, per-asset settings files stay lowercase-prefixed). World/level files live under Assets/Worlds/{WorldName}/ following the same {WorldName}_{layer}_{chars|fore|back|material}.txt pattern, plus a separate same-dimension {WorldName}_objects.txt grid (object placement codes, single digit 0-9 or letter+digit A0-Z9, occupying one logical grid cell even though 2-char codes visually span 2 characters in the txt file) resolved via {WorldName}_objects.ini's [ObjectCodes] section, with letter prefixes as an author convention (not engine-enforced) e.g. P=player, E=enemy, M=moving, S=static.
+
+AsciiHero is a browser-based retro ASCII platform game built with C# and .NET 10.
+
+### Working Principles
+
+- Prefer simple, explicit C# over unnecessary abstractions.
+- Keep game logic independent from Blazor UI rendering.
+- Keep JavaScript interop minimal and isolated.
+- Do not introduce game engines, frameworks, or NuGet packages unless explicitly justified.
+- Do not use Blazor component rendering as the real-time game loop.
+- Preserve smooth movement and scrolling.
+- Treat the ASCII character grid as a visual representation, not as the physics coordinate system.
+- Do not resurrect rejected design approaches unless explicitly asked.
+
+### Before Changing Architecture
+
+Check [docs/Architecture.md](../ASCII%20Hero/docs/Architecture.md) and [docs/Decisions.md](../ASCII%20Hero/docs/Decisions.md).
+
+### Before Changing Game Design
+
+Check [docs/Design.md](../ASCII%20Hero/docs/Design.md) and [docs/Decisions.md](../ASCII%20Hero/docs/Decisions.md).
+
+### Before Changing Asset File Formats
+
+Check [docs/AssetFormat.md](../ASCII%20Hero/docs/AssetFormat.md).
+
+### Validation
+
+After code changes, build the solution and address build errors before considering the task complete.

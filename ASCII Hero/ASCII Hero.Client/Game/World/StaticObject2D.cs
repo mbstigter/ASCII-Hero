@@ -1,14 +1,19 @@
+using ASCII_Hero.Client.Game.Assets;
+
 namespace ASCII_Hero.Client.Game.World;
 
-/// <summary>A solid, static platform made of ASCII characters that the player can stand on.</summary>
-public class StaticObject2D : Body2D
+/// <summary>A solid, static object (platform, wall, decoration) backed by a loaded sprite asset.</summary>
+public class StaticObject2D : GameObject2D
 {
-    public const char Glyph = '#';
-
-    public StaticObject2D(double x, double y, double width, double height)
+    public StaticObject2D()
     {
         IsStatic = true;
-        Position = new Vector2D(x, y);
-        Size = new Vector2D(width, height);
+    }
+
+    /// <summary>Assigns the loaded sprite asset/clip/frame and world position for this instance.</summary>
+    public void Spawn(SpriteAsset sprite, string clipName, int frameIndex, Vector2D position, int repeatCount = 1)
+    {
+        SetFrame(sprite, clipName, frameIndex, repeatCount);
+        Position = position;
     }
 }

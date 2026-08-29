@@ -1,3 +1,4 @@
+using ASCII_Hero.Client.Game.Assets;
 using ASCII_Hero.Client.Game.Camera;
 using ASCII_Hero.Client.Game.World;
 
@@ -10,6 +11,9 @@ namespace ASCII_Hero.Client.Game.Rendering;
 /// </summary>
 public class AsciiRenderer
 {
+    /// <summary>Default foreground color used when a cell has no color code resolvable in the palette.</summary>
+    private const string DefaultForeColor = "#00ff00";
+
     /// <summary>Size of one world cell in pixels.</summary>
     public double CellWidthPixels { get; set; } = 16;
     public double CellHeightPixels { get; set; } = 24;
@@ -18,37 +22,89 @@ public class AsciiRenderer
     {
         var glyphs = new List<Glyph>();
 
+        AddBackgroundGlyphs(glyphs, world, camera);
+
         foreach (var platform in world.Platforms)
         {
-            AddRectangleOfGlyphs(glyphs, platform.Position, platform.Size, StaticObject2D.Glyph, camera);
+            AddGameObjectGlyphs(glyphs, platform, world, camera);
         }
 
-        var player = world.Player;
-        glyphs.Add(ToGlyph(player.Position, Player2D.Glyph, camera));
+        foreach (var dynamicObject in world.DynamicObjects)
+        {
+            AddGameObjectGlyphs(glyphs, dynamicObject, world, camera);
+        }
+
+        AddGameObjectGlyphs(glyphs, world.Player, world, camera);
 
         return glyphs;
     }
 
-    private void AddRectangleOfGlyphs(List<Glyph> glyphs, Vector2D position, Vector2D size, char character, Camera2D camera)
+    private void AddBackgroundGlyphs(List<Glyph> glyphs, World2D world, Camera2D camera)
     {
-        var columns = (int)Math.Round(size.X);
-        var rows = (int)Math.Round(size.Y);
+        var chars = world.BackgroundChars;
+        var height = chars.GetLength(0);
+        var width = chars.GetLength(1);
 
-        for (var row = 0; row < rows; row++)
+        for (var row = 0; row < height; row++)
         {
-            for (var col = 0; col < columns; col++)
+            for (var col = 0; col < width; col++)
             {
-                var cellPosition = new Vector2D(position.X + col, position.Y + row);
-                glyphs.Add(ToGlyph(cellPosition, character, camera));
+                var character = chars[row, col];
+                if (character == world.EmptyChar)
+                {
+                    continue;
+                }
+
+                var foreColor = ResolveColor(world.Palette, world.BackgroundFore[row, col], world.EmptyChar, DefaultForeColor);
+                var backColor = ResolveColor(world.Palette, world.BackgroundBack[row, col], world.EmptyChar, null);
+                var cellPosition = new Vector2D(col, row);
+                glyphs.Add(ToGlyph(cellPosition, character, foreColor, backColor, camera));
             }
         }
     }
 
-    private Glyph ToGlyph(Vector2D worldPosition, char character, Camera2D camera)
+    private void AddGameObjectGlyphs(List<Glyph> glyphs, GameObject2D gameObject, World2D world, Camera2D camera)
+    {
+        var frame = gameObject.Frame;
+        var emptyChar = gameObject.Sprite.EmptyChar;
+        var palette = world.Palette;
+
+        for (var row = 0; row < frame.Height; row++)
+        {
+            for (var col = 0; col < frame.Width; col++)
+            {
+                var character = frame.Chars[row, col];
+                if (character == emptyChar)
+                {
+                    continue;
+                }
+
+                var cellPosition = new Vector2D(gameObject.Position.X + col, gameObject.Position.Y + row);
+
+                // A sprite's anchor (its Position) doesn't have to be its top-left-most solid
+                // cell, so a sprite placed near an edge can otherwise have cells that fall
+                // outside the world's cell grid entirely; skip those rather than draw them.
+                if (cellPosition.X < 0 || cellPosition.X >= world.WidthCells ||
+                    cellPosition.Y < 0 || cellPosition.Y >= world.HeightCells)
+                {
+                    continue;
+                }
+
+                var foreColor = ResolveColor(palette, frame.Fore[row, col], emptyChar, DefaultForeColor);
+                var backColor = ResolveColor(palette, frame.Back[row, col], emptyChar, null);
+                glyphs.Add(ToGlyph(cellPosition, character, foreColor, backColor, camera));
+            }
+        }
+    }
+
+    private static string? ResolveColor(ColorPalette palette, char code, char emptyChar, string? fallback) =>
+        code == emptyChar ? fallback : palette.TryGetColor(code) ?? fallback;
+
+    private Glyph ToGlyph(Vector2D worldPosition, char character, string? foreColor, string? backColor, Camera2D camera)
     {
         var relative = worldPosition - camera.Position;
         var pixelX = relative.X * CellWidthPixels;
         var pixelY = relative.Y * CellHeightPixels;
-        return new Glyph(pixelX, pixelY, character);
+        return new Glyph(pixelX, pixelY, character, foreColor ?? DefaultForeColor, backColor);
     }
 }

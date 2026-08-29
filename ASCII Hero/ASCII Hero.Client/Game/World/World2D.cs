@@ -1,3 +1,6 @@
+using System.Globalization;
+using ASCII_Hero.Client.Game.Assets;
+
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>Holds all entities that make up the current game state.</summary>
@@ -5,19 +8,214 @@ public class World2D
 {
     public Player2D Player { get; } = new();
 
+    /// <summary>
+    /// The body the camera should follow. Defaults to <see cref="Player"/>, but a level can
+    /// designate a different body instead (e.g. the bouncing ball in LevelBallTest) by setting
+    /// <c>CameraTarget = true</c> on that object's section in the level's objects.ini.
+    /// </summary>
+    public IMovingBody CameraTarget { get; set; } = null!;
+
     public List<StaticObject2D> Platforms { get; } = [];
 
+    /// <summary>Non-static objects that move under their own velocity/gravity, e.g. the bouncing ball.</summary>
+    public List<DynamicObject2D> DynamicObjects { get; } = [];
+
+    /// <summary>Background layer of the level, purely visual - one glyph per world cell.</summary>
+    public char[,] BackgroundChars { get; private set; } = new char[0, 0];
+
+    /// <summary>Foreground color code per background cell, same dimensions as <see cref="BackgroundChars"/>.</summary>
+    public char[,] BackgroundFore { get; private set; } = new char[0, 0];
+
+    /// <summary>Background (fill) color code per background cell, same dimensions as <see cref="BackgroundChars"/>.</summary>
+    public char[,] BackgroundBack { get; private set; } = new char[0, 0];
+
+    /// <summary>"No cell here" marker used by this level's background/object grids.</summary>
+    public char EmptyChar { get; private set; } = ' ';
+
+    /// <summary>The resolved Global+Level color palette, used to render every fore/back color code.</summary>
+    public ColorPalette Palette { get; private set; } = null!;
+
     /// <summary>Gravity acceleration, in world cells per second squared.</summary>
-    public double Gravity { get; } = 40;
+    public double Gravity { get; private set; } = 40;
 
-    public World2D()
+    /// <summary>Width of the world, in cells, derived from the background layer.</summary>
+    public int WidthCells { get; private set; }
+
+    /// <summary>Height of the world, in cells, derived from the background layer.</summary>
+    public int HeightCells { get; private set; }
+
+    /// <summary>
+    /// Loads a level's background/object-placement files and the sprite assets they reference,
+    /// building up Platforms and the Player's spawn position/sprite. Replaces what used to be a
+    /// hardcoded constructor - see AssetFormat.md section 3 for the level file format and
+    /// section 1.1 for the Global/Level fallback rule applied by SpriteLoader.
+    /// </summary>
+    public static async Task<World2D> LoadAsync(IAssetFileProvider fileProvider, string levelName)
     {
-        Player.Position = new Vector2D(5, 5);
+        var world = new World2D();
+        var levelFolder = $"{AssetPathResolver.LevelsRoot}/{levelName}";
 
-        // Ground strip and a couple of floating platforms.
-        Platforms.Add(new StaticObject2D(0, 15, 60, 2));
-        Platforms.Add(new StaticObject2D(10, 11, 6, 1));
-        Platforms.Add(new StaticObject2D(20, 8, 6, 1));
-        Platforms.Add(new StaticObject2D(30, 12, 8, 1));
+        var settingsContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_settings.ini");
+        var settings = IniDocument.Parse(settingsContent ?? string.Empty);
+        var emptyChar = ParseEmptyChar(settings.TryGetValue("Layout", "EmptyChar"));
+        world.EmptyChar = emptyChar;
+
+        var globalSettingsContent = await fileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/Settings.ini");
+        var globalSettings = IniDocument.Parse(globalSettingsContent ?? string.Empty);
+        if (TryParseDouble(globalSettings.TryGetValue("Physics", "Gravity"), out var gravity))
+        {
+            world.Gravity = gravity;
+        }
+
+        world.Palette = await ColorPalette.LoadAsync(fileProvider, levelName);
+
+        var backgroundContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_background_characters.txt")
+            ?? throw new FileNotFoundException($"Missing required background layer for level '{levelName}'.");
+        var backgroundFrames = AssetTextReader.ParseCharsLayer(backgroundContent, emptyChar);
+        world.BackgroundChars = backgroundFrames[0];
+        var width = world.BackgroundChars.GetLength(1);
+        var height = world.BackgroundChars.GetLength(0);
+        world.WidthCells = width;
+        world.HeightCells = height;
+
+        var backgroundForeContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_background_foregroundcolors.txt");
+        var backgroundBackContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_background_backgroundcolors.txt");
+        world.BackgroundFore = AssetTextReader.ParseSecondaryLayer(backgroundForeContent, backgroundFrames, emptyChar)[0];
+        world.BackgroundBack = AssetTextReader.ParseSecondaryLayer(backgroundBackContent, backgroundFrames, emptyChar)[0];
+
+        var objectsIniContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_objects.ini")
+            ?? throw new FileNotFoundException($"Missing required object placement definitions for level '{levelName}'.");
+        var objectsIni = IniDocument.Parse(objectsIniContent);
+
+        var objectsContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_objects.txt")
+            ?? throw new FileNotFoundException($"Missing required object placement grid for level '{levelName}'.");
+        var objectsGrid = AssetTextReader.ParseFixedSizeGrid(objectsContent, width, height, emptyChar);
+
+        var spriteLoader = new SpriteLoader(fileProvider);
+        var spriteCache = new Dictionary<string, SpriteAsset>(StringComparer.OrdinalIgnoreCase);
+
+        for (var row = 0; row < height; row++)
+        {
+            for (var col = 0; col < width; col++)
+            {
+                var code = objectsGrid[row, col];
+                if (code == emptyChar)
+                {
+                    continue;
+                }
+
+                var codeKey = code.ToString();
+                var sectionName = objectsIni.TryGetValue("ObjectCodes", codeKey);
+                if (sectionName is null)
+                {
+                    continue;
+                }
+
+                var objectSection = objectsIni.Section(sectionName);
+                if (!objectSection.TryGetValue("Asset", out var assetName))
+                {
+                    continue;
+                }
+
+                var clipName = objectSection.TryGetValue("Clip", out var clip) ? clip : "default";
+                var frameIndex = objectSection.TryGetValue("Frame", out var frameText) && TryParseInt(frameText, out var parsedFrame)
+                    ? parsedFrame
+                    : 0;
+                var repeatCount = objectSection.TryGetValue("Repeat", out var repeatText) && TryParseInt(repeatText, out var parsedRepeat)
+                    ? parsedRepeat
+                    : 1;
+                var position = new Vector2D(col, row);
+
+                if (sectionName.Equals("PlayerSpawn", StringComparison.OrdinalIgnoreCase))
+                {
+                    var playerSprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, [clipName], levelName);
+                    world.Player.Spawn(playerSprite);
+                    world.Player.Position = position;
+                    if (IsCameraTarget(objectSection))
+                    {
+                        world.CameraTarget = world.Player;
+                    }
+                    continue;
+                }
+
+                var sprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, [clipName], levelName);
+                var isStatic = !objectSection.TryGetValue("Static", out var staticText) || !bool.TryParse(staticText, out var parsedStatic) || parsedStatic;
+
+                if (isStatic)
+                {
+                    var platform = new StaticObject2D();
+                    platform.Spawn(sprite, clipName, frameIndex, position, repeatCount);
+                    world.Platforms.Add(platform);
+                    continue;
+                }
+
+                var useGravity = !objectSection.TryGetValue("Gravity", out var gravityText) || !bool.TryParse(gravityText, out var parsedGravity) || parsedGravity;
+                var restitution = objectSection.TryGetValue("Restitution", out var restitutionText) && TryParseDouble(restitutionText, out var parsedRestitution)
+                    ? parsedRestitution
+                    : 1.0;
+                var initialVelocityX = objectSection.TryGetValue("InitialVelocityX", out var velocityXText) && TryParseDouble(velocityXText, out var parsedVelocityX)
+                    ? parsedVelocityX
+                    : 0.0;
+                var initialVelocityY = objectSection.TryGetValue("InitialVelocityY", out var velocityYText) && TryParseDouble(velocityYText, out var parsedVelocityY)
+                    ? parsedVelocityY
+                    : 0.0;
+
+                var dynamicObject = new DynamicObject2D();
+                dynamicObject.Spawn(sprite, clipName, frameIndex, position, new Vector2D(initialVelocityX, initialVelocityY), useGravity, restitution, repeatCount);
+                world.DynamicObjects.Add(dynamicObject);
+                if (IsCameraTarget(objectSection))
+                {
+                    world.CameraTarget = dynamicObject;
+                }
+            }
+        }
+
+        // No object explicitly claimed the camera via CameraTarget = true; default to the player.
+        world.CameraTarget ??= world.Player;
+
+        return world;
     }
+
+    private static async Task<SpriteAsset> GetOrLoadSpriteAsync(
+        SpriteLoader spriteLoader,
+        Dictionary<string, SpriteAsset> cache,
+        string assetName,
+        IReadOnlyList<string> clipNames,
+        string levelName)
+    {
+        if (cache.TryGetValue(assetName, out var cached))
+        {
+            return cached;
+        }
+
+        var sprite = await spriteLoader.LoadAsync(assetName, clipNames, levelName);
+        cache[assetName] = sprite;
+        return sprite;
+    }
+
+    private static char ParseEmptyChar(string? rawValue) =>
+        string.IsNullOrEmpty(rawValue) ? ' ' : rawValue[0];
+
+    /// <summary>
+    /// Whether an object's ini section explicitly opts in as the body the camera should follow
+    /// (<c>CameraTarget = true</c>). Absent or unparsable values default to false, i.e. "leave
+    /// the camera target as whatever it already is" (ultimately the player, unless some other
+    /// object claims it).
+    /// </summary>
+    private static bool IsCameraTarget(IReadOnlyDictionary<string, string> objectSection) =>
+        objectSection.TryGetValue("CameraTarget", out var cameraTargetText)
+        && bool.TryParse(cameraTargetText, out var isCameraTarget)
+        && isCameraTarget;
+
+    /// <summary>
+    /// Parses a numeric ini value with <see cref="CultureInfo.InvariantCulture"/> so a decimal
+    /// point (e.g. "1.0") is never misread as a thousands separator under locales where '.'
+    /// is the group separator (which silently turned "1.0" into 10 and sent physics values
+    /// like Restitution wildly out of range).
+    /// </summary>
+    private static bool TryParseDouble(string? rawValue, out double value) =>
+        double.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+
+    private static bool TryParseInt(string? rawValue, out int value) =>
+        int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
 }

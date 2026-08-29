@@ -68,8 +68,10 @@ public class CanvasBridge(IJSRuntime jsRuntime) : IAsyncDisposable
         var characters = new string(glyphs.Select(g => g.Character).ToArray());
         var xs = glyphs.Select(g => g.PixelX).ToArray();
         var ys = glyphs.Select(g => g.PixelY).ToArray();
+        var foreColors = glyphs.Select(g => g.ForeColor).ToArray();
+        var backColors = glyphs.Select(g => g.BackColor).ToArray();
 
-        await _module.InvokeVoidAsync("drawFrame", width, height, characters, xs, ys);
+        await _module.InvokeVoidAsync("drawFrame", width, height, characters, xs, ys, foreColors, backColors);
     }
 
     public async ValueTask DisposeAsync()

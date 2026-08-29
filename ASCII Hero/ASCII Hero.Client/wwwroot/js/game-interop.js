@@ -120,7 +120,7 @@ function onAnimationFrame(timestamp) {
     rafHandle = window.requestAnimationFrame(onAnimationFrame);
 }
 
-export function drawFrame(width, height, characters, xs, ys) {
+export function drawFrame(width, height, characters, xs, ys, foreColors, backColors) {
     if (!ctx) {
         return;
     }
@@ -135,7 +135,19 @@ export function drawFrame(width, height, characters, xs, ys) {
     ctx.save();
     ctx.scale(currentHorizontalScale, 1);
     for (let i = 0; i < characters.length; i++) {
-        ctx.fillText(characters[i], xs[i] / currentHorizontalScale, ys[i]);
+        const x = xs[i] / currentHorizontalScale;
+        const y = ys[i];
+
+        // Background fill (if any) is drawn as a plain rect behind the glyph, sized
+        // to the fixed target cell dimensions so it lines up with the glyph grid
+        // regardless of the active font's own natural metrics.
+        if (backColors[i]) {
+            ctx.fillStyle = backColors[i];
+            ctx.fillRect(x, y, TARGET_CELL_WIDTH_PX / currentHorizontalScale, TARGET_CELL_HEIGHT_PX);
+        }
+
+        ctx.fillStyle = foreColors[i];
+        ctx.fillText(characters[i], x, y);
     }
     ctx.restore();
 }
