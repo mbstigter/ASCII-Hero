@@ -24,6 +24,9 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         var tileAxis = ParseTileAxis(settings.TryGetValue("Layout", "TileAxis"));
         var defaultMaterial = settings.TryGetValue("Physics", "DefaultMaterial");
         var materialCodes = settings.Section("MaterialCodes");
+        var frameDurationSeconds = ParseFrameDurationSeconds(settings.TryGetValue("Animation", "FrameDurationSeconds"));
+        var animationMode = ParseAnimationMode(settings.TryGetValue("Animation", "Mode"));
+        var defaultFrame = ParseDefaultFrame(settings.TryGetValue("Animation", "DefaultFrame"));
 
         var clips = new Dictionary<string, SpriteClip>(StringComparer.OrdinalIgnoreCase);
         foreach (var clipName in clipNames)
@@ -37,6 +40,9 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             EmptyChar = emptyChar,
             Clips = clips,
             TileAxis = tileAxis,
+            FrameDurationSeconds = frameDurationSeconds,
+            AnimationMode = animationMode,
+            DefaultFrame = defaultFrame,
         };
     }
 
@@ -139,4 +145,31 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
 
     private static TileAxis ParseTileAxis(string? rawValue) =>
         Enum.TryParse<TileAxis>(rawValue, ignoreCase: true, out var parsed) ? parsed : TileAxis.None;
+
+    private static double? ParseFrameDurationSeconds(string? rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return null;
+        }
+
+        return double.TryParse(rawValue, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+    }
+
+    private static AnimationMode ParseAnimationMode(string? rawValue) =>
+        Enum.TryParse<AnimationMode>(rawValue, ignoreCase: true, out var parsed) ? parsed : AnimationMode.Loop;
+
+    private static int? ParseDefaultFrame(string? rawValue)
+    {
+        if (string.IsNullOrWhiteSpace(rawValue))
+        {
+            return null;
+        }
+
+        return int.TryParse(rawValue, System.Globalization.NumberStyles.Integer, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            ? parsed
+            : null;
+    }
 }

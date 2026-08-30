@@ -30,13 +30,17 @@ public class CollisionSystem
             _movingBodies.Add((movingBody, GetRestitution(movingBody)));
         }
 
-        var solids = world.Objects.Where(body => body.IsStatic && body is not ICollectableBody).ToList();
+        // Solid terrain a moving body can stand on/collide against. Both non-solid categories are
+        // excluded here rather than being treated as platforms: collectables (never blocking,
+        // just picked up) and hazards (even static ones like a toxic plant, which should be
+        // walked into rather than stood on, consistent with a moving hazard like MovingEnemy2D).
+        var solids = world.Objects.Where(body => body.IsStatic && body is not ICollectableBody and not IHazardBody).ToList();
 
         foreach (var (body, restitution) in _movingBodies)
         {
             foreach (var solid in solids)
             {
-                ResolveAgainstPlatform(body, restitution, solid);
+                ResolveAgainstSolid(body, restitution, solid);
             }
         }
 
@@ -71,9 +75,13 @@ public class CollisionSystem
     };
 
     /// <summary>
-    /// Any <see cref="IPhysicsBody"/> overlapping any <see cref="IHazardBody"/> or
-    /// <see cref="ICollectableBody"/> in <see cref="World2D.Objects"/>, checked generically without
-    /// regard to concrete type on either side.
+    /// Any <see cref="IPhysicsBody"/> overlapping any <see cref="IHazardBody"/> is a hazard hit,
+    /// checked generically without regard to concrete type on either side. Collectable pickup is
+    /// narrower: only bodies implementing <see cref="ICollectorBody"/> (e.g. any player, including
+    /// a second player in multiplayer) can pick up an <see cref="ICollectableBody"/> - this is the
+    /// one overlap check in this class that is restricted to a capability interface on the moving
+    /// side too, rather than "any" moving body, so non-player bodies (the bouncing ball, enemies)
+    /// never consume collectables.
     /// </summary>
     private static void ResolveHazardsAndCollectables(World2D world)
     {
@@ -105,7 +113,7 @@ public class CollisionSystem
 
             foreach (var collectable in collectables)
             {
-                if (Overlaps(movingBody, collectable))
+                if (movingBody is ICollectorBody && Overlaps(movingBody, collectable))
                 {
                     world.QueueRemoval(collectable);
                 }
@@ -179,38 +187,40 @@ public class CollisionSystem
 
 
     /// <summary>
-    /// Finds the deepest-overlapping pair of (body rect, platform rect) and resolves just that
+    /// Finds the deepest-overlapping pair of (body rect, solid rect) and resolves just that
     /// one pair. A body's collision shape may be made up of several rectangles (e.g. derived
     /// from sprite data), so every rect on each side is checked. <paramref name="restitution"/>
     /// drives the velocity response uniformly: 0 stops the body dead (the player's case), while
-    /// anything above 0 reflects velocity to varying degrees of bounce (dynamic objects).
+    /// anything above 0 reflects velocity to varying degrees of bounce (dynamic objects). Despite
+    /// the name, <paramref name="solid"/> is any immovable body from the <c>solids</c> list, not
+    /// specifically a platform - a wall, crate, or any other static terrain resolves the same way.
     /// </summary>
-    private static void ResolveAgainstPlatform(IPhysicsBody body, double restitution, Body2D platform)
+    private static void ResolveAgainstSolid(IPhysicsBody body, double restitution, Body2D solid)
     {
         Rect2D? bestBodyRect = null;
-        Rect2D bestPlatformRect = default;
+        Rect2D bestSolidRect = default;
         var bestPenetration = double.MaxValue;
 
         foreach (var bodyRect in body.CollisionRects)
         {
-            foreach (var platformRect in platform.CollisionRects)
+            foreach (var solidRect in solid.CollisionRects)
             {
-                if (!bodyRect.Overlaps(platformRect))
+                if (!bodyRect.Overlaps(solidRect))
                 {
                     continue;
                 }
 
-                var overlapLeft = bodyRect.Right - platformRect.Left;
-                var overlapRight = platformRect.Right - bodyRect.Left;
-                var overlapTop = bodyRect.Bottom - platformRect.Top;
-                var overlapBottom = platformRect.Bottom - bodyRect.Top;
+                var overlapLeft = bodyRect.Right - solidRect.Left;
+                var overlapRight = solidRect.Right - bodyRect.Left;
+                var overlapTop = bodyRect.Bottom - solidRect.Top;
+                var overlapBottom = solidRect.Bottom - bodyRect.Top;
 
                 var penetration = Math.Min(Math.Min(overlapLeft, overlapRight), Math.Min(overlapTop, overlapBottom));
                 if (penetration < bestPenetration)
                 {
                     bestPenetration = penetration;
                     bestBodyRect = bodyRect;
-                    bestPlatformRect = platformRect;
+                    bestSolidRect = solidRect;
                 }
             }
         }
@@ -220,10 +230,10 @@ public class CollisionSystem
             return;
         }
 
-        var overlapLeftBest = deepestBodyRect.Right - bestPlatformRect.Left;
-        var overlapRightBest = bestPlatformRect.Right - deepestBodyRect.Left;
-        var overlapTopBest = deepestBodyRect.Bottom - bestPlatformRect.Top;
-        var overlapBottomBest = bestPlatformRect.Bottom - deepestBodyRect.Top;
+        var overlapLeftBest = deepestBodyRect.Right - bestSolidRect.Left;
+        var overlapRightBest = bestSolidRect.Right - deepestBodyRect.Left;
+        var overlapTopBest = deepestBodyRect.Bottom - bestSolidRect.Top;
+        var overlapBottomBest = bestSolidRect.Bottom - deepestBodyRect.Top;
 
         var minHorizontal = Math.Min(overlapLeftBest, overlapRightBest);
         var minVertical = Math.Min(overlapTopBest, overlapBottomBest);
@@ -238,8 +248,8 @@ public class CollisionSystem
         {
             if (overlapTopBest < overlapBottomBest)
             {
-                // Landing on top of the platform.
-                var newRectBottom = bestPlatformRect.Top;
+                // Landing on top of the solid.
+                var newRectBottom = bestSolidRect.Top;
                 body.Position = new Vector2D(
                     body.Position.X,
                     newRectBottom - deepestBodyRect.Height - rectOffsetY);
@@ -248,10 +258,10 @@ public class CollisionSystem
             }
             else
             {
-                // Hitting the underside of the platform.
+                // Hitting the underside of the solid.
                 body.Position = new Vector2D(
                     body.Position.X,
-                    bestPlatformRect.Bottom - rectOffsetY);
+                    bestSolidRect.Bottom - rectOffsetY);
                 body.Velocity = new Vector2D(body.Velocity.X, -body.Velocity.Y * restitution);
             }
         }
@@ -259,16 +269,16 @@ public class CollisionSystem
         {
             if (overlapLeftBest < overlapRightBest)
             {
-                // Colliding with the platform's left edge.
+                // Colliding with the solid's left edge.
                 body.Position = new Vector2D(
-                    bestPlatformRect.Left - deepestBodyRect.Width - rectOffsetX,
+                    bestSolidRect.Left - deepestBodyRect.Width - rectOffsetX,
                     body.Position.Y);
             }
             else
             {
-                // Colliding with the platform's right edge.
+                // Colliding with the solid's right edge.
                 body.Position = new Vector2D(
-                    bestPlatformRect.Right - rectOffsetX,
+                    bestSolidRect.Right - rectOffsetX,
                     body.Position.Y);
             }
             body.Velocity = new Vector2D(-body.Velocity.X * restitution, body.Velocity.Y);
@@ -278,8 +288,8 @@ public class CollisionSystem
     /// <summary>
     /// Resolves a collision between two moving bodies (e.g. the player and the bouncing ball) -
     /// the one pairing that previously fell through the cracks entirely, since each body was
-    /// only ever checked against platforms/world bounds, never against each other. Uses the same
-    /// deepest-penetration approach as <see cref="ResolveAgainstPlatform"/>, but since neither
+    /// only ever checked against solids/world bounds, never against each other. Uses the same
+    /// deepest-penetration approach as <see cref="ResolveAgainstSolid"/>, but since neither
     /// side here is immovable, the position correction is split evenly between both bodies and
     /// each body's velocity is reflected using its own restitution - consistent with how that
     /// same body already bounces off platforms and world bounds.

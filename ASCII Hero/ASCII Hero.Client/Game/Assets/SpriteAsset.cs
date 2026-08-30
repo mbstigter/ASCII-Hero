@@ -14,6 +14,20 @@ public enum TileAxis
     Vertical,
 }
 
+/// <summary>
+/// How multi-frame clips advance through their frames over time. <see cref="Loop"/> cycles
+/// sequentially (0,1,2,0,1,2,...); <see cref="PingPong"/> bounces back and forth (0,1,2,1,0,1,...);
+/// <see cref="Off"/> disables playback entirely, holding on <see cref="SpriteAsset.DefaultFrame"/>
+/// forever even though the clip has multiple frames (e.g. a dead/inanimate variant of an
+/// otherwise-animated asset). See docs/AssetFormat.md for the full rationale.
+/// </summary>
+public enum AnimationMode
+{
+    Loop,
+    PingPong,
+    Off,
+}
+
 /// <summary>One drawable/collidable frame of a sprite clip: char/fore/back grids plus material per cell.</summary>
 public class SpriteFrame
 {
@@ -46,6 +60,23 @@ public class SpriteAsset
 
     /// <summary>Whether (and how) this asset's frames can be repeated to build a longer platform/wall.</summary>
     public TileAxis TileAxis { get; init; } = TileAxis.None;
+
+    /// <summary>
+    /// Duration each frame displays before advancing to the next, in seconds. Null means this
+    /// asset's frames do not animate (the frame set at spawn stays active forever). Only
+    /// meaningful when a clip has more than one frame.
+    /// </summary>
+    public double? FrameDurationSeconds { get; init; }
+
+    /// <summary>How multi-frame clips cycle through their frames. Defaults to Loop.</summary>
+    public AnimationMode AnimationMode { get; init; } = AnimationMode.Loop;
+
+    /// <summary>
+    /// The frame index a clip starts at when spawned, e.g. a "Center" frame in a
+    /// Left/Center/Right clip so PingPong mode bounces symmetrically (Center, Right, Center,
+    /// Left, ...). Null defaults to frame 0. Applies to every clip of this asset.
+    /// </summary>
+    public int? DefaultFrame { get; init; }
 
     public SpriteClip GetClip(string clipName) =>
         Clips.TryGetValue(clipName, out var clip)

@@ -151,41 +151,24 @@ public class World2D
                 var objectSection = objectsIni.Section(sectionName);
                 if (!objectSection.TryGetValue("Asset", out var assetName))
                 {
-                    continue;
+                    throw new FormatException($"Section '{sectionName}' of level '{levelName}' is missing required key 'Asset'.");
+                }
+
+                if (!objectSection.TryGetValue("Kind", out var kind))
+                {
+                    throw new FormatException($"Section '{sectionName}' of level '{levelName}' is missing required key 'Kind'.");
                 }
 
                 var clipName = objectSection.TryGetValue("Clip", out var clip) ? clip : "default";
-                var frameIndex = objectSection.TryGetValue("Frame", out var frameText) && TryParseInt(frameText, out var parsedFrame)
-                    ? parsedFrame
-                    : 0;
                 var repeatCount = objectSection.TryGetValue("Repeat", out var repeatText) && TryParseInt(repeatText, out var parsedRepeat)
                     ? parsedRepeat
                     : 1;
                 var position = new Vector2D(col, row);
 
-                if (sectionName.Equals("PlayerSpawn", StringComparison.OrdinalIgnoreCase))
-                {
-                    var playerSprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, [clipName], levelName);
-                    world.Player.Spawn(playerSprite);
-                    world.Player.Position = position;
-                    if (IsCameraTarget(objectSection))
-                    {
-                        world.CameraTarget = world.Player;
-                    }
-                    continue;
-                }
-
                 var sprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, [clipName], levelName);
+                var frameIndex = sprite.DefaultFrame ?? 0;
 
-                // `Kind` explicitly selects one of the seven object categories (see
-                // AssetFormat.md §3.2). When absent, fall back to the original `Static`/`Gravity`
-                // boolean-based selection (Static vs. Dynamic) so existing levels keep working
-                // unchanged.
-                var kind = objectSection.TryGetValue("Kind", out var kindText) ? kindText : null;
-                var isStatic = !objectSection.TryGetValue("Static", out var staticText) || !bool.TryParse(staticText, out var parsedStatic) || parsedStatic;
-                var effectiveKind = kind ?? (isStatic ? "Static" : "Dynamic");
-
-                var useGravity = !objectSection.TryGetValue("Gravity", out var gravityText) || !bool.TryParse(gravityText, out var parsedGravity) || parsedGravity;
+                var gravityAffected = !objectSection.TryGetValue("GravityAffected", out var gravityText) || !bool.TryParse(gravityText, out var parsedGravity) || parsedGravity;
                 var restitution = objectSection.TryGetValue("Restitution", out var restitutionText) && TryParseDouble(restitutionText, out var parsedRestitution)
                     ? parsedRestitution
                     : 1.0;
@@ -199,22 +182,31 @@ public class World2D
 
                 IPhysicsBody? movingBody = null;
 
-                switch (effectiveKind)
+                switch (kind)
                 {
-                    case "Static":
+                    case "Player":
+                        world.Player.Spawn(sprite);
+                        world.Player.Position = position;
+                        if (IsCameraTarget(objectSection))
+                        {
+                            world.CameraTarget = world.Player;
+                        }
+                        continue;
+
+                    case "StaticObject":
                         var platform = new StaticObject2D();
                         platform.Spawn(sprite, clipName, frameIndex, position, repeatCount);
                         world.Objects.Add(platform);
                         break;
 
-                    case "Dynamic":
+                    case "DynamicObject":
                         var dynamicObject = new DynamicObject2D();
-                        dynamicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, useGravity, restitution, repeatCount);
+                        dynamicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, restitution, repeatCount);
                         world.Objects.Add(dynamicObject);
                         movingBody = dynamicObject;
                         break;
 
-                    case "Kinematic":
+                    case "KinematicObject":
                         var kinematicObject = new KinematicObject2D();
                         kinematicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, repeatCount);
                         world.Objects.Add(kinematicObject);
@@ -223,7 +215,7 @@ public class World2D
 
                     case "MovingEnemy":
                         var movingEnemy = new MovingEnemy2D();
-                        movingEnemy.Spawn(sprite, clipName, frameIndex, position, initialVelocity, useGravity, restitution, repeatCount);
+                        movingEnemy.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, restitution, repeatCount);
                         world.Objects.Add(movingEnemy);
                         movingBody = movingEnemy;
                         break;
@@ -241,7 +233,7 @@ public class World2D
                         break;
 
                     default:
-                        throw new FormatException($"Unknown object Kind '{effectiveKind}' in section '{sectionName}' of level '{levelName}'.");
+                        throw new FormatException($"Unknown object Kind '{kind}' in section '{sectionName}' of level '{levelName}'.");
                 }
 
                 if (movingBody is not null && IsCameraTarget(objectSection))

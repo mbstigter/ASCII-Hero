@@ -15,6 +15,10 @@ AsciiHero is a browser-based retro ASCII platform game built with C# and .NET 10
 - Treat the ASCII character grid as a visual representation, not as the physics coordinate system.
 - Do not resurrect rejected design approaches unless explicitly asked.
 
+### Documentation Guidelines
+
+- Use generic examples in documentation (e.g., AssetFormat.md) rather than referencing specific concrete game assets, as those are spec/reference docs, not historical records.
+
 ### Before Changing Architecture
 
 Check [docs/Architecture.md](../ASCII%20Hero/docs/Architecture.md) and [docs/Decisions.md](../ASCII%20Hero/docs/Decisions.md).

@@ -5,6 +5,7 @@ using ASCII_Hero.Client.Game.Input;
 using ASCII_Hero.Client.Game.Physics;
 using ASCII_Hero.Client.Game.Rendering;
 using ASCII_Hero.Client.Game.World;
+using ASCII_Hero.Client.Game.Animation;
 using Microsoft.JSInterop;
 
 namespace ASCII_Hero.Client.Game;
@@ -28,6 +29,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private readonly CollisionSystem _collision = new();
     private readonly Camera2D _camera = new();
     private readonly AsciiRenderer _renderer = new();
+    private readonly AnimationSystem _animation = new();
 
     private World2D _world = null!;
 
@@ -38,7 +40,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     {
         // Assets are loaded once, up front, over HTTP (see IAssetFileProvider) so gameplay never
         // stalls mid-frame waiting on a fetch; the loop itself only starts once this completes.
-        _world = await World2D.LoadAsync(assetFileProvider, "Level1");
+        _world = await World2D.LoadAsync(assetFileProvider, "LevelBallTest");
 
         var cellMetrics = await canvasBridge.InitializeAsync(canvasElementId, this, fontMode);
         ApplyCellMetrics(cellMetrics);
@@ -103,6 +105,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         _physics.Step(_world, _input, deltaSeconds);
         _collision.Resolve(_world);
         _world.ApplyPendingRemovals();
+        _animation.Update(_world, deltaSeconds);
 
         _camera.Follow(
             _world.CameraTarget.Position,

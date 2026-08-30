@@ -2,6 +2,143 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## `Kind` made mandatory, `Static` key removed, `Player` via `Kind`, `Kind` values match class names
+
+- **`Kind` is now a required key on every `_objects.ini` placement section;
+  there is no default category anymore.** The prior scheme (see Milestone 3b
+  below) let `Kind` be omitted and fall back to a `Static`/`GravityAffected`
+  boolean-based guess (`Static` unless `Static = false`). This silently
+  produced the wrong concrete class whenever a section forgot to set `Kind`
+  — caught in practice when a `ToxicPlant` placement in `LevelBallTest`
+  omitted `Kind` and spawned as a plain `StaticObject2D` instead of
+  `StaticEnemy2D`, making it walkable instead of hazardous. `World2D.LoadAsync`
+  now throws a `FormatException` naming the offending section if `Kind`
+  (or `Asset`) is missing, rather than silently guessing or skipping.
+- **The `Static` key is removed entirely** — it only ever existed to drive the
+  now-removed fallback guess and is redundant with `Kind = StaticObject`.
+- **The player is now `Kind = Player` instead of `Kind = PlayerSpawn` matched
+  by special-cased section name.** Previously `World2D.LoadAsync`
+  special-cased any section literally named `PlayerSpawn`; this was
+  inconsistent with every other object category being explicitly selected via
+  `Kind`, and meant the player's category was implicit in a naming convention
+  rather than declared data. `PlayerSpawn` itself was then judged an
+  inconsistent `Kind` name too — every other `Kind` names *what the object is*
+  (`Static`, `Dynamic`, `MovingEnemy`, ...), not an event like "spawn," even
+  though every kind's placement position is, in the same sense, a spawn/start
+  location. Renamed to plain `Player` to match. All player placements
+  (`Level1`, `LevelBallTest`) were updated accordingly.
+- **Every `Kind` value now corresponds exactly to a concrete body class name
+  with the `2D` suffix dropped** (`Player` → `Player2D`, `StaticObject` →
+  `StaticObject2D`, `StaticEnemy` → `StaticEnemy2D`, etc.), so the
+  value-to-class mapping is discoverable directly from the codebase instead
+  of needing separate memorization. This required renaming `Static` →
+  `StaticObject`, `Dynamic` → `DynamicObject`, and `Kinematic` →
+  `KinematicObject` (previously inconsistent with their `...Object2D` class
+  names), in addition to `PlayerSpawn` → `Player`. `MovingEnemy`/
+  `StaticEnemy`/`Collectable` already matched their class names and are
+  unchanged. Multi-player (`Player1`/`Player2`, a `Players` collection) was
+  considered but rejected as a larger, separate feature — `World2D` currently
+  has a single `Player` field, so `Kind = Player` still means "the one
+  player" under the current single-player model.
+- Rationale: predictability and fail-fast behavior were prioritized over
+  backward-compatible fallbacks now that the schema is small and fully
+  controlled by this project — a silently-wrong placement is worse than a
+  level failing to load with a clear error.
+
+
+## `AnimationMode.Off`: explicit opt-out for multi-frame, non-animating assets
+
+- **Added `Mode = Off` to `[Animation]`'s `AnimationMode` enum.** Previously the
+  only way to keep a multi-frame clip static was to omit `[Animation]`/
+  `FrameDurationSeconds` entirely; there was no way for an asset that *does*
+  want `FrameDurationSeconds`/`DefaultFrame` configured (e.g. sharing one
+  settings file/art layout with an animated sibling) to explicitly disable
+  playback. `Body2D.AdvanceAnimation` now returns immediately whenever
+  `Sprite.AnimationMode == AnimationMode.Off`, holding forever on whatever
+  frame `DefaultFrame` selected at spawn.
+- **Motivating use case: dead vs. alive variants of the same visual family**
+  (e.g. a wilted `ToxicPlant` that should render a fixed pose while a living
+  one animates). Note this still requires two separate assets/settings.ini
+  files (`[Animation]` is asset-wide, not per-instance) — `Mode = Off` solves
+  "this asset should never animate despite having multiple frames and
+  animation settings," not "this specific placed instance should stop
+  animating." A true per-instance animation toggle would need further design
+  (e.g. a `Body2D`-level override) if that need arises later.
+
+## `DefaultFrame` in `[Animation]`, removal of placement-level `Frame`
+
+- **Added `DefaultFrame` to the `[Animation]` section** in `{Asset}_settings.ini`,
+  giving an asset an explicit starting frame index (default `0` when omitted).
+  This lets a Left/Center/Right clip (e.g. `ToxicPlant_idle`) declare `Center` as
+  its natural starting point instead of always starting at frame `0`
+  (`Left`). `SpriteAsset.DefaultFrame` (nullable `int`) is parsed in
+  `SpriteLoader` the same way as `FrameDurationSeconds`/`Mode`.
+- **Verified `PingPong` mode bouncing from a middle starting frame requires no
+  changes to the bounce mechanics themselves** — `Body2D.AdvanceAnimation`'s
+  existing direction-reversal logic (reverse at index `0` and `Count - 1`)
+  naturally produces `Center, Right, Center, Left, Center, Right, ...` when
+  `_animationFrameIndex` simply *starts* at `DefaultFrame` instead of `0`, with
+  no other change needed to the stepping algorithm.
+- **Removed the placement-level `Frame` key from `Level1_objects.ini` entirely**,
+  along with its parsing in `World2D.LoadAsync`. It was only ever used by
+  `ToxicPlant` (`Frame = 1`, now superseded by `ToxicPlant_settings.ini`'s
+  `[Animation] DefaultFrame = 1`) and the user judged the per-instance
+  override use case (e.g. staggering multiple placements of the same animated
+  asset to different starting frames) unlikely to ever be needed. Starting
+  frame is now purely an asset-level concern (`DefaultFrame`), computed once as
+  `sprite.DefaultFrame ?? 0` and applied uniformly to every placement of that
+  asset (including `Player2D.Spawn`, which previously always started its
+  `idle` clip at frame `0` unconditionally).
+- **This simplifies the frame-animation model from the prior milestone**: the
+  previous decision's "placement-time `Frame` selects the *starting* frame an
+  animated instance begins from" concept was short-lived — `DefaultFrame`
+  proved to be the simpler, sufficient mechanism, and per-placement frame
+  overrides added complexity without a concrete use case.
+
+## Frame Animation for Multi-Frame Clips (Idle Animation)
+
+- **Multi-frame clips can now animate over time via an opt-in `[Animation]`
+  section in `{Asset}_settings.ini`.** Previously, `Body2D.SetFrame` picked one
+  fixed `frameIndex` at spawn and never changed it again — multi-frame clips
+  existed structurally (per `AssetFormat.md` §2.1, `//end`-separated frames)
+  but were only used for static shape variants (e.g., `ToxicPlant`'s
+  left/middle/right-facing frames selected once at placement time via `Frame`
+  in the level's objects.ini). Now, when an asset declares
+  `FrameDurationSeconds` in an `[Animation]` section, `Body2D.AdvanceAnimation`
+  (called once per frame via the new `AnimationSystem`) cycles through frames
+  at the specified rate, updating `Frame`, `Size`, and collision rects each
+  advance so physics stays correct even if animated frames differ in shape.
+- **Two playback modes: `Loop` (0,1,2,0,1,2,...) and `PingPong`
+  (0,1,2,1,0,1,...),** selectable per asset via `[Animation] Mode` (defaults
+  to `Loop`). This design was chosen to satisfy the recollection of "maybe
+  back and forth or continuous" from the old `ConsoleGame2D` codebase without
+  having access to the specific old idle-animation implementation.
+- **Animation timing is per-instance, not shared per-clip.** Each `Body2D`
+  owns its own `_animationElapsedSeconds`, `_animationFrameIndex`, and
+  `_animationDirection` fields, so multiple instances of the same animated
+  asset can be out of sync (e.g., staggered via different starting `Frame`
+  values in objects.ini). This maximizes flexibility and matches the
+  per-instance nature of all other `Body2D` state.
+- **No hardcoded global default frame duration.** Per user instruction, if a
+  clip has multiple frames but no `[Animation]` section (or the section omits
+  a parseable `FrameDurationSeconds`), the asset simply keeps rendering
+  whichever frame it was spawned/set to, unchanged — exactly like today's
+  behavior, preserving backward compatibility with existing single-frame clips
+  and static shape-variant usage.
+- **`ToxicPlant`'s `idle` clip now animates** (when `[Animation]` is present
+  in its settings.ini), changing the documented example in `AssetFormat.md`
+  from "pure shape variant, not animation" to "animates left/middle/right
+  frames." Placement-time `Frame` (via objects.ini) now selects the *starting*
+  frame a given instance's animation begins from, rather than locking it to
+  one permanently fixed shape.
+- **Animation state managed entirely in `Body2D`, not in a separate
+  component/system object attached to each body.** This keeps the existing
+  simple object model unchanged (a single `Body2D` subclass per object
+  category, no component dictionary/attachment API), matching the project's
+  established anti-abstraction stance and the precedent set by
+  `IPhysicsBody.Velocity`/`IsGrounded` living directly on the body rather than
+  in a detached "VelocityComponent."
+
 ## Milestone 4b: interface naming cleanup, player gravity unification
 
 - **`IMovingBody` was renamed to `IPhysicsBody`.** The old name suggested a
@@ -55,15 +192,24 @@ Log of significant architecture/design decisions. Newest first.
   empty marker interfaces detected generically in `CollisionSystem` (any
   `IPhysicsBody` overlapping any `IHazardBody`/`ICollectableBody`), with no
   concrete-type checks on either side. `IGravityAffected` (exposing
-  `UseGravity`) lets `PhysicsSystem` apply gravity to any qualifying moving
+  `GravityAffected`) lets `PhysicsSystem` apply gravity to any qualifying moving
   body generically, replacing the earlier pattern where only
-  `DynamicObject2D` had a `UseGravity` flag read via a type-specific loop.
+  `DynamicObject2D` had a gravity flag read via a type-specific loop.
   Only one genuinely new concrete class was introduced per category with a
   fundamentally different update path (`KinematicObject2D`, whose per-frame
   motion is constant-velocity integration with no force/gravity, unlike every
   other moving body) — `MovingEnemy2D`/`StaticEnemy2D`/`Collectable2D` reuse
   the existing sprite-backed `Body2D` shape entirely, adding only the marker
   interface(s) relevant to their category.
+- **Collectable pickup is restricted to a new `ICollectorBody` marker interface,
+  implemented by `Player2D`, rather than any moving body.** Without this, the
+  bouncing ball (or any future dynamic object/enemy) would also consume
+  collectables purely by physically overlapping them, which was confirmed as
+  an actual bug while testing `LevelBallTest`. `ICollectorBody` is deliberately
+  a capability interface rather than a `Player2D` type-check, so a future
+  second player (multiplayer) automatically qualifies without
+  `CollisionSystem` needing to know how many player types or instances exist —
+  consistent with every other capability check in this class.
 - **Object removal from the world is deferred to end-of-frame via
   `World2D.QueueRemoval`/`ApplyPendingRemovals`, generic over any `Body2D`,**
   not collectable-specific. `CollisionSystem.Resolve` queues a collectable
@@ -78,11 +224,10 @@ Log of significant architecture/design decisions. Newest first.
   detection, not the effect, was the part relevant to this milestone's goal
   of generic categorization.
 - **The level `_objects.ini` schema gained an explicit `Kind` key**
-  (`Static`/`Dynamic`/`Kinematic`/`MovingEnemy`/`StaticEnemy`/`Collectable`,
-  see `AssetFormat.md` §3.2) selecting which concrete class a placement
-  spawns as. The previous `Static`/`Gravity` boolean-only scheme is preserved
-  as the default resolution path when `Kind` is omitted, so existing levels
-  (e.g. `Level1`, `LevelBallTest`) needed no edits.
+  (`PlayerSpawn`/`Static`/`Dynamic`/`Kinematic`/`MovingEnemy`/`StaticEnemy`/
+  `Collectable`, see `AssetFormat.md` §3.2) selecting which concrete class a
+  placement spawns as. `Kind` was later made mandatory with no fallback (see
+  the newer decision above).
 
 ## Milestone 3b: unified moving-body collision
 

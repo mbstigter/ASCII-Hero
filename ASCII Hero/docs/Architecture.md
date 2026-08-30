@@ -66,10 +66,10 @@ DOM keyboard events.
 - Every body in the world — static or moving, player or otherwise — lives in
   one generic `World2D.Objects` list. `PhysicsSystem`, `CollisionSystem`, and
   `AsciiRenderer` iterate this single list and filter by capability interface
-  (`IPhysicsBody`, `IGravityAffected`, `IHazardBody`, `ICollectableBody`) rather than by
-  concrete type or by maintaining separate per-category collections — adding
-  a new object category (e.g. a moving enemy) does not require touching
-  every system's iteration logic.
+  (`IPhysicsBody`, `IGravityAffected`, `IHazardBody`, `ICollectableBody`,
+  `ICollectorBody`) rather than by concrete type or by maintaining separate
+  per-category collections — adding a new object category (e.g. a moving
+  enemy) does not require touching every system's iteration logic.
 - The world's own edges (bounds) act as a generic physical surface, handled
   uniformly for any moving body (player or dynamic object) rather than
   special-cased per type: dynamic objects bounce off them according to their
@@ -81,14 +81,18 @@ DOM keyboard events.
   generically — there is no per-concrete-type collision method. The player
   differs from other moving bodies only by the restitution value passed in
   (0, so it stops dead instead of bouncing), not by a separate code path.
-- Hazard and collectable contact are resolved the same way: any `IPhysicsBody`
-  overlapping any `IHazardBody` or `ICollectableBody` in `World2D.Objects` is
-  detected generically, with no concrete-type checks on either side. A
-  collectable is queued for removal via `World2D.QueueRemoval` and actually
-  removed from `Objects` once per frame via `World2D.ApplyPendingRemovals` —
-  removal is always deferred to end-of-frame so no system mutates `Objects`
-  while iterating it. Hazard contact detection exists but does not yet apply
-  any effect, since no health/damage system exists in the game yet.
+- Hazard contact is resolved generically: any `IPhysicsBody` overlapping any
+  `IHazardBody` in `World2D.Objects` is detected, with no concrete-type checks
+  on either side. Hazard contact detection exists but does not yet apply any
+  effect, since no health/damage system exists in the game yet.
+- Collectable pickup is resolved similarly, but narrower: only a body
+  implementing `ICollectorBody` (e.g. the player) overlapping an
+  `ICollectableBody` triggers a pickup — a non-collector moving body (the
+  bouncing ball, an enemy) can physically collide with a collectable without
+  consuming it. A picked-up collectable is queued for removal via
+  `World2D.QueueRemoval` and actually removed from `Objects` once per frame via
+  `World2D.ApplyPendingRemovals` — removal is always deferred to end-of-frame
+  so no system mutates `Objects` while iterating it.
 - Numeric values parsed from level/asset `.ini` files always use
   `CultureInfo.InvariantCulture`, never the current culture — otherwise a
   decimal point in a value like `1.0` can be silently misread as a thousands

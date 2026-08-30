@@ -50,21 +50,21 @@ public class PhysicsSystem
                     break;
 
                 case IGravityAffected gravityAffected:
-                    StepMovingBody(world, gravityAffected, gravityAffected.UseGravity, deltaSeconds);
+                    StepMovingBody(world, gravityAffected, gravityAffected.GravityAffected, deltaSeconds);
                     break;
 
                 case IPhysicsBody physicsBody:
-                    StepMovingBody(world, physicsBody, useGravity: false, deltaSeconds);
+                    StepMovingBody(world, physicsBody, gravityAffected: false, deltaSeconds);
                     break;
             }
         }
     }
 
-    private static void StepMovingBody(World2D world, IPhysicsBody body, bool useGravity, double deltaSeconds)
+    private static void StepMovingBody(World2D world, IPhysicsBody body, bool gravityAffected, double deltaSeconds)
     {
         var velocity = body.Velocity;
 
-        if (useGravity)
+        if (gravityAffected)
         {
             velocity.Y += world.Gravity * deltaSeconds;
         }

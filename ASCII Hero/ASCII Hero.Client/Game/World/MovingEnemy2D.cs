@@ -18,7 +18,7 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
     public bool IsGrounded { get; set; }
 
     /// <summary>Whether this enemy is subject to normal world gravity.</summary>
-    public bool UseGravity { get; set; } = true;
+    public bool GravityAffected { get; set; } = true;
 
     /// <summary>
     /// Bounciness applied when this enemy hits world bounds or a platform, same semantics as
@@ -32,12 +32,12 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
     }
 
     /// <summary>Assigns the loaded sprite asset/clip/frame, initial position and velocity.</summary>
-    public void Spawn(SpriteAsset sprite, string clipName, int frameIndex, Vector2D position, Vector2D velocity, bool useGravity, double restitution, int repeatCount = 1)
+    public void Spawn(SpriteAsset sprite, string clipName, int frameIndex, Vector2D position, Vector2D velocity, bool gravityAffected, double restitution, int repeatCount = 1)
     {
         SetFrame(sprite, clipName, frameIndex, repeatCount);
         Position = position;
         Velocity = velocity;
-        UseGravity = useGravity;
+        GravityAffected = gravityAffected;
         Restitution = restitution;
     }
 }

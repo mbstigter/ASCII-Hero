@@ -14,6 +14,10 @@ namespace ASCII_Hero.Client.Game.World;
 public abstract class Body2D
 {
     private IReadOnlyList<Rect2D> _localCollisionRects = [];
+    private double _animationElapsedSeconds;
+    private int _animationFrameIndex;
+    private int _animationDirection = 1;
+    private int _repeatCount = 1;
 
     /// <summary>Position of the body's top-left corner, in world cells (not pixels).</summary>
     public Vector2D Position { get; set; }
@@ -70,9 +74,69 @@ public abstract class Body2D
     {
         Sprite = sprite;
         Clip = sprite.GetClip(clipName);
-        Frame = SpriteFrameTiler.Tile(Clip.Frames[frameIndex], sprite.TileAxis, repeatCount);
+        _animationFrameIndex = frameIndex;
+        _repeatCount = repeatCount;
+        _animationElapsedSeconds = 0;
+        _animationDirection = 1;
 
+        ApplyFrame(Clip.Frames[_animationFrameIndex]);
+    }
+
+    /// <summary>
+    /// Advances the animation timer and cycles to the next frame if enough time has elapsed.
+    /// No-ops immediately if the sprite has no animation settings, the clip has only one frame,
+    /// or the sprite's <see cref="AnimationMode"/> is <see cref="AnimationMode.Off"/> (holds
+    /// forever on the frame set at spawn, e.g. a dead/inanimate variant of an otherwise-animated
+    /// asset).
+    /// </summary>
+    public void AdvanceAnimation(double deltaSeconds)
+    {
+        // No animation configured, only one frame, or animation explicitly disabled - nothing to animate.
+        if (Sprite.FrameDurationSeconds is null || Clip.Frames.Count <= 1 || Sprite.AnimationMode == AnimationMode.Off)
+        {
+            return;
+        }
+
+        _animationElapsedSeconds += deltaSeconds;
+
+        while (_animationElapsedSeconds >= Sprite.FrameDurationSeconds.Value)
+        {
+            _animationElapsedSeconds -= Sprite.FrameDurationSeconds.Value;
+
+            if (Sprite.AnimationMode == AnimationMode.Loop)
+            {
+                _animationFrameIndex = (_animationFrameIndex + 1) % Clip.Frames.Count;
+            }
+            else // PingPong (Off already returned above)
+            {
+                _animationFrameIndex += _animationDirection;
+
+                // Bounce at the ends.
+                if (_animationFrameIndex >= Clip.Frames.Count - 1)
+                {
+                    _animationFrameIndex = Clip.Frames.Count - 1;
+                    _animationDirection = -1;
+                }
+                else if (_animationFrameIndex <= 0)
+                {
+                    _animationFrameIndex = 0;
+                    _animationDirection = 1;
+                }
+            }
+
+            ApplyFrame(Clip.Frames[_animationFrameIndex]);
+        }
+    }
+
+    /// <summary>
+    /// Applies a specific frame (with optional tiling) to this body, updating Frame, Size, and
+    /// collision rectangles. Used by both SetFrame (at spawn) and AdvanceAnimation (each frame
+    /// advance during playback).
+    /// </summary>
+    private void ApplyFrame(SpriteFrame sourceFrame)
+    {
+        Frame = SpriteFrameTiler.Tile(sourceFrame, Sprite.TileAxis, _repeatCount);
         Size = new Vector2D(Frame.Width, Frame.Height);
-        _localCollisionRects = CollisionShapeBuilder.DeriveRectangles(Frame.Chars, sprite.EmptyChar);
+        _localCollisionRects = CollisionShapeBuilder.DeriveRectangles(Frame.Chars, Sprite.EmptyChar);
     }
 }

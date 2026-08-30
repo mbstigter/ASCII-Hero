@@ -39,11 +39,11 @@ Assets/
 			Colors.ini            (optional, level-specific overrides/additions)
 			Materials.ini          (optional, level-specific overrides/additions)
 			Sprites/
-				ToxicPlant/         (optional, level-specific sprite - a boss unique
+				BossPlant/           (optional, level-specific sprite - a boss unique
 									 to this level, for example)
-					ToxicPlant_settings.ini
-					ToxicPlant_idle_characters.txt
-					...
+						BossPlant_settings.ini
+						BossPlant_idle_characters.txt
+						...
 ```
 
 - **`Global/`** holds everything shared across every level: the color palette, the
@@ -120,23 +120,26 @@ nothing to separate. The frame boundary, when used, applies at identical line
 positions across all layer files for that clip (a `_foregroundcolors.txt` frame
 boundary lines up with the corresponding `_characters.txt` frame boundary).
 
-Frames within a clip serve two distinct purposes, both using the exact same
+Frames within a clip serve two purposes, both using the exact same
 `//end`-separated mechanism:
 
-- **True animation** — frames play back over time (e.g. a subtle 2-frame idle
-  wobble, or a `Player_idle` clip gaining an occasional blink frame so the
-  player character isn't perfectly static while standing still).
-- **Shape variants of one static object** — frames are not played back over
-  time at all, but instead let one clip describe several interchangeable
-  silhouettes of a non-animating object, selected once at placement time via
-  `Frame` in `Level1_objects.ini` (see §3.2). `ToxicPlant`'s `idle` clip is the
-  reference example: its 3 frames are left/middle/right-facing shape variants
-  used to cap different ends of a row of plants, not an animation sequence.
+- **True animation** — frames play back over time when the asset declares animation
+  timing via an `[Animation]` section in its settings.ini (see §2.4). Examples:
+  `Player_idle` (3 subtle frames cycling to avoid a perfectly static character) and
+  an enemy's `idle` clip animating left/middle/right frames. The clip's starting frame
+  is controlled asset-wide by `[Animation] DefaultFrame` (see §2.4) — e.g. a
+  Left/Center/Right clip can start at the Center frame so `PingPong` mode bounces
+  symmetrically (Center, Right, Center, Left, ...).
+- **Static shape variants** (when no `[Animation]` section exists) — frames are
+  not played back over time at all; a clip simply always renders its
+  `DefaultFrame` (or frame 0 if unset), letting one clip describe several
+  interchangeable silhouettes of a non-animating object without needing separate
+  clips per shape (e.g. a fence post with left-cap/middle/right-cap frames), even
+  though only one is ever shown per asset.
 
 The loader does not need to distinguish these cases structurally - whether a
-clip's frames animate or are variant shapes is purely a matter of how the
-game code uses the loaded frames (cycling through them each animation tick,
-vs. picking one fixed frame at spawn time).
+clip's frames animate is determined by the presence of an `[Animation]` section
+in the asset's settings.ini.
 
 ### 2.2 Empty space
 
@@ -202,10 +205,52 @@ EmptyChar = ' '
 [Physics]
 DefaultMaterial = Flesh
 
+[Animation]
+FrameDurationSeconds = 0.5
+Mode = Loop
+DefaultFrame = 0
+
 [MaterialCodes]
 . = (inherit DefaultMaterial)
 B = Bone
 ```
+
+**`[Layout]`** — controls visual interpretation of layer files:
+- `EmptyChar` (default `' '`) — which character in layer files means "no cell here."
+- `TileAxis` (default `None`) — whether this asset is a tileable unit (see §2.5).
+
+**`[Physics]`** — controls material assignment:
+- `DefaultMaterial` — the material code used for every non-empty cell when no
+  per-cell `_materials.txt` file exists, or when a cell in `_materials.txt` uses
+  the inherit marker.
+
+**`[Animation]`** (optional) — controls frame-over-time playback for clips with
+multiple frames. If omitted, multi-frame clips remain static at frame `DefaultFrame`
+(or `0` if that's also unset):
+- `FrameDurationSeconds` (required for animation to occur) — how long each frame
+  displays before advancing to the next, in seconds. Must be parseable as a
+  floating-point number. If absent or unparseable, the clip does not animate.
+- `Mode` (default `Loop`) — playback pattern:
+  - `Loop`: cycles sequentially, wrapping at the end (0, 1, 2, 0, 1, 2, ...).
+  - `PingPong`: bounces back and forth (0, 1, 2, 1, 0, 1, 2, 1, ...).
+  - `Off`: disables playback entirely — the clip holds forever on `DefaultFrame`
+    even though it has multiple frames and `FrameDurationSeconds` is set. Useful
+    for an inanimate variant of an otherwise-animated asset that still wants to
+    share the same multi-frame art/settings file (e.g. a dead enemy variant that
+    should render a fixed pose while a living one animates).
+- `DefaultFrame` (default `0`) — the frame index a clip starts at, whether or not
+  it animates. Useful for starting an animated Left/Center/Right clip at the
+  Center frame so `PingPong` bounces symmetrically, or for a static shape-variant
+  clip that should always render a frame other than `0`.
+
+Animation timing applies asset-wide (every clip of the asset uses the same frame
+duration, mode, and starting frame). Per-clip or per-placement overrides are not
+currently supported — there is no placement-time `Frame` key. A genuinely
+different animation state (e.g. dead vs. alive) requires a separate asset (its
+own settings.ini), since `[Animation]` is not currently overridable per-instance.
+
+**`[MaterialCodes]`** — maps single-character codes in `_materials.txt` to material
+names (see §2.3).
 
 ### 2.5 Tileable assets (`TileAxis`)
 
@@ -232,7 +277,7 @@ TileAxis = Horizontal
 - **`TileAxis = None`** (the default, and the only option when the key is
   omitted) — the asset is not tileable; it is always used exactly as
   authored, `Repeat` has no effect, and every other asset (`Player`, `Ball`,
-  `ToxicPlant`, ...) is entirely unaffected by this feature.
+  ...) is entirely unaffected by this feature.
 
 Tiling happens once, in memory, at spawn time — it repeats the authored unit's
 characters/foregroundcolors/backgroundcolors/materials grids to produce a
@@ -266,6 +311,11 @@ Level1_objects.ini
   has a single frame). This layer is purely visual/background terrain (e.g. distant
   mountains); it may optionally carry per-cell materials for background elements
   that are also physically solid (e.g. a rock ledge drawn as background art).
+  **Not yet implemented**: `World2D.LoadAsync` does not currently read
+  `Level1_background_materials.txt` or expose any per-cell background material
+  data — this is a documented design intent for a future alternative to
+  defining solid terrain via `_objects.ini`, not a working feature today. Omit
+  the file until this is implemented.
 - `Level1_objects.txt` is a **separate** grid, at the same dimensions as
   `Level1_background_characters.txt`, used only to mark where object instances
   spawn.
@@ -302,20 +352,28 @@ Level1_objects.ini
 
 ```ini
 [ObjectCodes]
-0 = PlayerSpawn
+0 = Player
 1 = BrickPlatform
-P0 = PlayerSpawn
+P0 = Player
 E0 = Goblin
 
-[PlayerSpawn]
+[Player]
 Asset = Player
 Clip = idle
+Kind = Player
 
 [Goblin]
 Asset = Goblin
 Clip = idle
+Kind = MovingEnemy
 Facing = Left
 ```
+
+Every placement section requires two keys: `Asset` (which sprite asset to spawn)
+and `Kind` (which of the game's object categories it spawns as - see below).
+Both are validated at load time; a section missing either throws a load error
+rather than silently spawning something unintended. `Clip` (default `"default"`)
+selects which clip within the asset to display/collide against.
 
 Each `[ObjectCodes]` entry maps a placement code to a section name, which in turn
 specifies which sprite asset/clip to spawn and any additional per-type properties.
@@ -323,21 +381,10 @@ Per-instance overrides (e.g. one specific enemy with a custom patrol range) can 
 a dedicated numbered code (`E1`) with its own `[E1]` section, falling back to a
 shared template section for common properties.
 
-An optional `Frame` key selects which frame (0-based) of the referenced clip this
-placed instance uses at spawn time. This matters for a **static** object whose
-clip has multiple frames not because it animates, but because it has multiple
-shape *variants* sharing one silhouette family (e.g. `ToxicPlant`'s `idle` clip
-has a left/middle/right-facing frame, used to cap different ends of a row of
-plants without needing three separate clips). `Frame` defaults to `0` when
-omitted.
-
-```ini
-[ToxicPlant]
-Asset = ToxicPlant
-Clip = idle
-Frame = 1
-Static = true
-```
+There is no placement-time frame-selection key — a clip's starting/static frame is
+always controlled asset-wide via `[Animation] DefaultFrame` in the asset's own
+settings.ini (see §2.4), not per-placement. This keeps starting frame a purely
+asset-level concern rather than something every placement needs to repeat.
 
 An optional `Repeat` key (default `1`) selects how many times a tileable
 asset's authored unit (see §2.5, `TileAxis`) is repeated along its declared
@@ -349,50 +396,53 @@ placement actually needs, without hand-authoring a separate asset per length:
 [SteelPlatform]
 Asset = SteelPlatform
 Clip = default
-Static = true
+Kind = StaticObject
 Repeat = 8
 
 [BrickWall]
 Asset = BrickWall
 Clip = default
-Static = true
+Kind = StaticObject
 Repeat = 6
 ```
 
-An optional `Static` key (default `true`) marks a placement as immovable
-terrain versus a body that moves under its own velocity/gravity (a
-`DynamicObject2D`, e.g. a bouncing ball). Non-static placements also read
-`Gravity` (default `true`), `Restitution` (default `1.0`), and
-`InitialVelocityX`/`InitialVelocityY` (default `0`) to configure their initial
-motion:
+A `Kind` value of `DynamicObject` marks a placement as a body that moves
+under its own velocity/gravity (a `DynamicObject2D`, e.g. a bouncing ball),
+reading `GravityAffected` (default `true`), `Restitution` (default `1.0`),
+and `InitialVelocityX`/`InitialVelocityY` (default `0`) to configure its
+initial motion:
 
 ```ini
 [BouncingBall]
 Asset = Ball
 Clip = default
-Static = false
-Gravity = false
+Kind = DynamicObject
+GravityAffected = false
 Restitution = 1.0
 InitialVelocityX = 14
 InitialVelocityY = 10
 ```
 
-An optional `Kind` key explicitly selects which of the game's object
-categories a placement spawns as, instead of relying on `Static`/`Gravity`
-alone. Valid values: `Static` (immovable terrain, e.g. a platform - the
-default when `Kind` is omitted and `Static` is true or absent), `Dynamic`
-(moves under its own velocity/gravity, e.g. a bouncing ball - the default
-when `Kind` is omitted and `Static = false`), `Kinematic` (moves at a
-constant, predefined velocity - never affected by gravity, restitution, or
-`Gravity`/`Restitution` keys), `MovingEnemy` (an AI-controlled hazard that
-moves like a `Dynamic` object and damages the player on contact),
-`StaticEnemy` (a non-moving hazard, e.g. spikes), and `Collectable` (a
-non-solid, non-moving item removed from the world when the player contacts
-it). `Kinematic`/`MovingEnemy`/`StaticEnemy`/`Collectable` placements read the
-same `Gravity`/`Restitution`/`InitialVelocityX`/`InitialVelocityY` keys as
-`Dynamic` where applicable (`Kinematic` ignores `Gravity`/`Restitution`
-entirely, `StaticEnemy`/`Collectable` ignore all of them since they never
-move):
+`Kind` is a **mandatory** key for every placement - there is no default
+category and no separate `Static` key to fall back on. Each value corresponds
+exactly to a concrete body class name with the `2D` suffix dropped (e.g.
+`Kind = MovingEnemy` spawns a `MovingEnemy2D`, `Kind = StaticObject` spawns a
+`StaticObject2D`), so the mapping is discoverable directly from the codebase
+rather than needing to be memorized separately. Valid values: `Player` (the
+player's spawn point and sprite - exactly one placement per level should use
+this), `StaticObject` (immovable terrain, e.g. a platform), `DynamicObject`
+(moves under its own velocity/gravity, e.g. a bouncing ball),
+`KinematicObject` (moves at a constant, predefined velocity - never affected
+by gravity, restitution, or `GravityAffected`/`Restitution` keys),
+`MovingEnemy` (an AI-controlled hazard that moves like a `DynamicObject` and
+damages the player on contact), `StaticEnemy` (a non-moving hazard, e.g.
+spikes), and `Collectable` (a non-solid, non-moving item removed from the
+world when the player contacts it). `KinematicObject`/`MovingEnemy`/
+`StaticEnemy`/`Collectable` placements read the same
+`GravityAffected`/`Restitution`/`InitialVelocityX`/`InitialVelocityY` keys as
+`DynamicObject` where applicable (`KinematicObject` ignores
+`GravityAffected`/`Restitution` entirely, `StaticEnemy`/`Collectable` ignore
+all of them since they never move):
 
 ```ini
 [Coin]
@@ -412,7 +462,7 @@ Kind = MovingEnemy
 InitialVelocityX = 4
 ```
 
-Any placement (the `PlayerSpawn` section, or a non-static object) may also set
+Any placement (the `Player` section, or a non-static object) may also set
 `CameraTarget = true` to have the camera follow that body instead of the
 player. If no placement sets it, the camera defaults to following the player;
 if more than one does, the last one loaded (in top-to-bottom, left-to-right
@@ -422,7 +472,7 @@ grid scan order) wins:
 [BouncingBall]
 Asset = Ball
 Clip = default
-Static = false
+Kind = DynamicObject
 CameraTarget = true
 ```
 
