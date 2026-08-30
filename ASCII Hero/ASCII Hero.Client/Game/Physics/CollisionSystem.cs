@@ -3,35 +3,40 @@ using ASCII_Hero.Client.Game.World;
 namespace ASCII_Hero.Client.Game.Physics;
 
 /// <summary>
-/// Resolves simple axis-aligned bounding box collisions between moving bodies (the player and
-/// dynamic objects), platforms, and the world's own bounds. All three kinds of collision are
-/// resolved generically against <see cref="IMovingBody"/> - the player is just a moving body
+/// Resolves simple axis-aligned bounding box collisions between moving bodies (the player,
+/// dynamic objects, kinematic objects, moving enemies), solid static bodies, and the world's own
+/// bounds, plus generic hazard/collectable overlap. All collision is resolved generically against
+/// <see cref="IPhysicsBody"/>/<see cref="World2D.Objects"/> - the player is just a moving body
 /// whose restitution happens to be 0 (it stops dead rather than bouncing); there is no
 /// special-casing by concrete type anywhere in this class.
 /// </summary>
 public class CollisionSystem
 {
     /// <summary>Reused across frames to avoid an allocation every call for what is normally a tiny list.</summary>
-    private readonly List<(IMovingBody Body, double Restitution)> _movingBodies = [];
+    private readonly List<(IPhysicsBody Body, double Restitution)> _movingBodies = [];
 
     public void Resolve(World2D world)
     {
         _movingBodies.Clear();
 
-        world.Player.IsGrounded = false;
-        _movingBodies.Add((world.Player, 0.0));
-
-        foreach (var dynamicObject in world.DynamicObjects)
+        foreach (var body in world.Objects)
         {
-            dynamicObject.IsGrounded = false;
-            _movingBodies.Add((dynamicObject, dynamicObject.Restitution));
+            if (body is not IPhysicsBody movingBody)
+            {
+                continue;
+            }
+
+            movingBody.IsGrounded = false;
+            _movingBodies.Add((movingBody, GetRestitution(movingBody)));
         }
+
+        var solids = world.Objects.Where(body => body.IsStatic && body is not ICollectableBody).ToList();
 
         foreach (var (body, restitution) in _movingBodies)
         {
-            foreach (var platform in world.Platforms)
+            foreach (var solid in solids)
             {
-                ResolveAgainstPlatform(body, restitution, platform);
+                ResolveAgainstPlatform(body, restitution, solid);
             }
         }
 
@@ -49,6 +54,79 @@ public class CollisionSystem
         {
             ResolveWorldBounds(world, body, restitution);
         }
+
+        ResolveHazardsAndCollectables(world);
+    }
+
+    /// <summary>
+    /// Bounciness used for collision response, generic over any concrete moving body: bodies that
+    /// expose their own <c>Restitution</c> (<see cref="DynamicObject2D"/>, <see cref="MovingEnemy2D"/>)
+    /// use it, everything else (the player, kinematic objects) stops dead (0.0).
+    /// </summary>
+    private static double GetRestitution(IPhysicsBody body) => body switch
+    {
+        DynamicObject2D dynamicObject => dynamicObject.Restitution,
+        MovingEnemy2D movingEnemy => movingEnemy.Restitution,
+        _ => 0.0,
+    };
+
+    /// <summary>
+    /// Any <see cref="IPhysicsBody"/> overlapping any <see cref="IHazardBody"/> or
+    /// <see cref="ICollectableBody"/> in <see cref="World2D.Objects"/>, checked generically without
+    /// regard to concrete type on either side.
+    /// </summary>
+    private static void ResolveHazardsAndCollectables(World2D world)
+    {
+        var hazards = world.Objects.OfType<IHazardBody>().Cast<Body2D>().ToList();
+        var collectables = world.Objects.OfType<ICollectableBody>().Cast<Body2D>().ToList();
+
+        if (hazards.Count == 0 && collectables.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var body in world.Objects)
+        {
+            if (body is not IPhysicsBody movingBody)
+            {
+                continue;
+            }
+
+            foreach (var hazard in hazards)
+            {
+                if (ReferenceEquals(body, hazard) || !Overlaps(movingBody, hazard))
+                {
+                    continue;
+                }
+
+                // TODO: apply damage once a health/damage system exists. Detection is generic
+                // (any IPhysicsBody overlapping any IHazardBody); only the effect is not wired yet.
+            }
+
+            foreach (var collectable in collectables)
+            {
+                if (Overlaps(movingBody, collectable))
+                {
+                    world.QueueRemoval(collectable);
+                }
+            }
+        }
+    }
+
+    private static bool Overlaps(IPhysicsBody a, Body2D b)
+    {
+        foreach (var rectA in a.CollisionRects)
+        {
+            foreach (var rectB in b.CollisionRects)
+            {
+                if (rectA.Overlaps(rectB))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
     /// <summary>
@@ -60,7 +138,7 @@ public class CollisionSystem
     /// treated the same as a platform's top surface for grounding purposes, so any body resting
     /// against it (not just the player) is considered grounded - no special-casing by type.
     /// </summary>
-    private static void ResolveWorldBounds(World2D world, IMovingBody body, double restitution)
+    private static void ResolveWorldBounds(World2D world, IPhysicsBody body, double restitution)
     {
         var position = body.Position;
         var velocity = body.Velocity;
@@ -107,7 +185,7 @@ public class CollisionSystem
     /// drives the velocity response uniformly: 0 stops the body dead (the player's case), while
     /// anything above 0 reflects velocity to varying degrees of bounce (dynamic objects).
     /// </summary>
-    private static void ResolveAgainstPlatform(IMovingBody body, double restitution, StaticObject2D platform)
+    private static void ResolveAgainstPlatform(IPhysicsBody body, double restitution, Body2D platform)
     {
         Rect2D? bestBodyRect = null;
         Rect2D bestPlatformRect = default;
@@ -206,7 +284,7 @@ public class CollisionSystem
     /// each body's velocity is reflected using its own restitution - consistent with how that
     /// same body already bounces off platforms and world bounds.
     /// </summary>
-    private static void ResolveBodyPair((IMovingBody Body, double Restitution) a, (IMovingBody Body, double Restitution) b)
+    private static void ResolveBodyPair((IPhysicsBody Body, double Restitution) a, (IPhysicsBody Body, double Restitution) b)
     {
         Rect2D? bestRectA = null;
         Rect2D bestRectB = default;

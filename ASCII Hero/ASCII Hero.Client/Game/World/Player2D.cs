@@ -3,13 +3,20 @@ using ASCII_Hero.Client.Game.Assets;
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>The player-controlled character, backed by the loaded "Player" sprite asset.</summary>
-public class Player2D : GameObject2D, IMovingBody
+public class Player2D : Body2D, IGravityAffected
 {
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }
 
     /// <summary>Whether the player is currently standing on a platform or the world's floor.</summary>
     public bool IsGrounded { get; set; }
+
+    /// <summary>
+    /// The player is always subject to normal world gravity - unlike <see cref="DynamicObject2D"/>/
+    /// <see cref="MovingEnemy2D"/> there is no per-instance toggle, so this is a fixed <c>true</c>
+    /// rather than a settable property.
+    /// </summary>
+    public bool UseGravity => true;
 
     public Player2D()
     {

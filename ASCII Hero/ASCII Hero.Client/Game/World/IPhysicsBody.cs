@@ -1,12 +1,13 @@
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>
-/// A body that moves under its own velocity (player, dynamic objects) as opposed to static
-/// terrain. Lets movement-related systems (world bounds, platform collision, and collision
-/// between moving bodies themselves) operate generically without caring which concrete type
-/// they're given.
+/// A body that participates in physics integration (position/velocity) and collision, as opposed
+/// to static terrain. Lets movement-related systems (world bounds, platform collision, and
+/// collision between moving bodies themselves) operate generically without caring which concrete
+/// type they're given. Named for the capability (participates in physics), not for whether the
+/// body is currently in motion - a body at rest still implements this.
 /// </summary>
-public interface IMovingBody
+public interface IPhysicsBody
 {
     Vector2D Position { get; set; }
     Vector2D Velocity { get; set; }

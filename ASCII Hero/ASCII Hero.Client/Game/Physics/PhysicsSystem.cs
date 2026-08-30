@@ -3,7 +3,12 @@ using ASCII_Hero.Client.Game.World;
 
 namespace ASCII_Hero.Client.Game.Physics;
 
-/// <summary>Applies horizontal movement input, gravity and jumping to the player each frame.</summary>
+/// <summary>
+/// Applies horizontal movement input to the player, gravity to any <see cref="IGravityAffected"/>
+/// body, and integrates position from velocity for every <see cref="IPhysicsBody"/> in
+/// <see cref="World2D.Objects"/> each frame. Kinematic bodies move at a constant, predefined
+/// velocity and never receive gravity or input.
+/// </summary>
 public class PhysicsSystem
 {
     private const double MoveSpeed = 12.0;
@@ -25,9 +30,6 @@ public class PhysicsSystem
             velocity.X += MoveSpeed;
         }
 
-        // Gravity.
-        velocity.Y += world.Gravity * deltaSeconds;
-
         if (input.IsJumpPressed && player.IsGrounded)
         {
             velocity.Y = -JumpSpeed;
@@ -36,30 +38,41 @@ public class PhysicsSystem
 
         player.Velocity = velocity;
 
-        // Integrate position.
-        player.Position = new Vector2D(
-            player.Position.X + velocity.X * deltaSeconds,
-            player.Position.Y + velocity.Y * deltaSeconds);
-
-        foreach (var dynamicObject in world.DynamicObjects)
+        foreach (var body in world.Objects)
         {
-            StepDynamicObject(world, dynamicObject, deltaSeconds);
+            switch (body)
+            {
+                case KinematicObject2D kinematicObject:
+                    // Predefined constant motion, no gravity/force integration.
+                    kinematicObject.Position = new Vector2D(
+                        kinematicObject.Position.X + kinematicObject.Velocity.X * deltaSeconds,
+                        kinematicObject.Position.Y + kinematicObject.Velocity.Y * deltaSeconds);
+                    break;
+
+                case IGravityAffected gravityAffected:
+                    StepMovingBody(world, gravityAffected, gravityAffected.UseGravity, deltaSeconds);
+                    break;
+
+                case IPhysicsBody physicsBody:
+                    StepMovingBody(world, physicsBody, useGravity: false, deltaSeconds);
+                    break;
+            }
         }
     }
 
-    private static void StepDynamicObject(World2D world, DynamicObject2D dynamicObject, double deltaSeconds)
+    private static void StepMovingBody(World2D world, IPhysicsBody body, bool useGravity, double deltaSeconds)
     {
-        var velocity = dynamicObject.Velocity;
+        var velocity = body.Velocity;
 
-        if (dynamicObject.UseGravity)
+        if (useGravity)
         {
             velocity.Y += world.Gravity * deltaSeconds;
         }
 
-        dynamicObject.Velocity = velocity;
+        body.Velocity = velocity;
 
-        dynamicObject.Position = new Vector2D(
-            dynamicObject.Position.X + velocity.X * deltaSeconds,
-            dynamicObject.Position.Y + velocity.Y * deltaSeconds);
+        body.Position = new Vector2D(
+            body.Position.X + velocity.X * deltaSeconds,
+            body.Position.Y + velocity.Y * deltaSeconds);
     }
 }

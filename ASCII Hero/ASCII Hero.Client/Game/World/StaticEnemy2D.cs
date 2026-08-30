@@ -2,10 +2,14 @@ using ASCII_Hero.Client.Game.Assets;
 
 namespace ASCII_Hero.Client.Game.World;
 
-/// <summary>A solid, static object (platform, wall, decoration) backed by a loaded sprite asset.</summary>
-public class StaticObject2D : Body2D
+/// <summary>
+/// A non-moving hazard (e.g. spikes) backed by a loaded sprite asset. Like
+/// <see cref="StaticObject2D"/> it is immovable terrain, but it also damages the player (or any
+/// moving body) on contact.
+/// </summary>
+public class StaticEnemy2D : Body2D, IHazardBody
 {
-    public StaticObject2D()
+    public StaticEnemy2D()
     {
         IsStatic = true;
     }

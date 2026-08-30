@@ -377,6 +377,41 @@ InitialVelocityX = 14
 InitialVelocityY = 10
 ```
 
+An optional `Kind` key explicitly selects which of the game's object
+categories a placement spawns as, instead of relying on `Static`/`Gravity`
+alone. Valid values: `Static` (immovable terrain, e.g. a platform - the
+default when `Kind` is omitted and `Static` is true or absent), `Dynamic`
+(moves under its own velocity/gravity, e.g. a bouncing ball - the default
+when `Kind` is omitted and `Static = false`), `Kinematic` (moves at a
+constant, predefined velocity - never affected by gravity, restitution, or
+`Gravity`/`Restitution` keys), `MovingEnemy` (an AI-controlled hazard that
+moves like a `Dynamic` object and damages the player on contact),
+`StaticEnemy` (a non-moving hazard, e.g. spikes), and `Collectable` (a
+non-solid, non-moving item removed from the world when the player contacts
+it). `Kinematic`/`MovingEnemy`/`StaticEnemy`/`Collectable` placements read the
+same `Gravity`/`Restitution`/`InitialVelocityX`/`InitialVelocityY` keys as
+`Dynamic` where applicable (`Kinematic` ignores `Gravity`/`Restitution`
+entirely, `StaticEnemy`/`Collectable` ignore all of them since they never
+move):
+
+```ini
+[Coin]
+Asset = Coin
+Clip = default
+Kind = Collectable
+
+[SpikeTrap]
+Asset = Spikes
+Clip = default
+Kind = StaticEnemy
+
+[PatrolGoblin]
+Asset = Goblin
+Clip = idle
+Kind = MovingEnemy
+InitialVelocityX = 4
+```
+
 Any placement (the `PlayerSpawn` section, or a non-static object) may also set
 `CameraTarget = true` to have the camera follow that body instead of the
 player. If no placement sets it, the camera defaults to following the player;

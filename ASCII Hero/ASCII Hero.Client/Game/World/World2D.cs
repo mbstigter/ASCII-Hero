@@ -13,12 +13,49 @@ public class World2D
     /// designate a different body instead (e.g. the bouncing ball in LevelBallTest) by setting
     /// <c>CameraTarget = true</c> on that object's section in the level's objects.ini.
     /// </summary>
-    public IMovingBody CameraTarget { get; set; } = null!;
+    public IPhysicsBody CameraTarget { get; set; } = null!;
 
-    public List<StaticObject2D> Platforms { get; } = [];
+    /// <summary>
+    /// Every body in the world - static or moving, player or otherwise - as one generic
+    /// collection. Systems (<see cref="Physics.PhysicsSystem"/>, <see cref="Physics.CollisionSystem"/>,
+    /// <see cref="Rendering.AsciiRenderer"/>) iterate this list and filter by capability
+    /// interface (<see cref="IPhysicsBody"/>, <see cref="IHazardBody"/>, <see cref="ICollectableBody"/>)
+    /// rather than by concrete type, so no system needs to know about every noun in the game.
+    /// </summary>
+    public List<Body2D> Objects { get; } = [];
 
-    /// <summary>Non-static objects that move under their own velocity/gravity, e.g. the bouncing ball.</summary>
-    public List<DynamicObject2D> DynamicObjects { get; } = [];
+    private readonly List<Body2D> _pendingRemovals = [];
+
+    /// <summary>
+    /// Marks a body for removal from <see cref="Objects"/>, applied at the start of the next
+    /// call to <see cref="ApplyPendingRemovals"/> rather than immediately, so callers iterating
+    /// <see cref="Objects"/> (e.g. <see cref="Physics.CollisionSystem"/> resolving overlaps) never
+    /// mutate the list they're enumerating. Safe to call more than once for the same body.
+    /// </summary>
+    public void QueueRemoval(Body2D body)
+    {
+        _pendingRemovals.Add(body);
+    }
+
+    /// <summary>
+    /// Removes every body queued via <see cref="QueueRemoval"/> since the last call, e.g. a
+    /// collectable picked up this frame. Called once per frame after all systems that might
+    /// queue a removal have run.
+    /// </summary>
+    public void ApplyPendingRemovals()
+    {
+        if (_pendingRemovals.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var body in _pendingRemovals)
+        {
+            Objects.Remove(body);
+        }
+
+        _pendingRemovals.Clear();
+    }
 
     /// <summary>Background layer of the level, purely visual - one glyph per world cell.</summary>
     public char[,] BackgroundChars { get; private set; } = new char[0, 0];
@@ -139,15 +176,14 @@ public class World2D
                 }
 
                 var sprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, [clipName], levelName);
-                var isStatic = !objectSection.TryGetValue("Static", out var staticText) || !bool.TryParse(staticText, out var parsedStatic) || parsedStatic;
 
-                if (isStatic)
-                {
-                    var platform = new StaticObject2D();
-                    platform.Spawn(sprite, clipName, frameIndex, position, repeatCount);
-                    world.Platforms.Add(platform);
-                    continue;
-                }
+                // `Kind` explicitly selects one of the seven object categories (see
+                // AssetFormat.md §3.2). When absent, fall back to the original `Static`/`Gravity`
+                // boolean-based selection (Static vs. Dynamic) so existing levels keep working
+                // unchanged.
+                var kind = objectSection.TryGetValue("Kind", out var kindText) ? kindText : null;
+                var isStatic = !objectSection.TryGetValue("Static", out var staticText) || !bool.TryParse(staticText, out var parsedStatic) || parsedStatic;
+                var effectiveKind = kind ?? (isStatic ? "Static" : "Dynamic");
 
                 var useGravity = !objectSection.TryGetValue("Gravity", out var gravityText) || !bool.TryParse(gravityText, out var parsedGravity) || parsedGravity;
                 var restitution = objectSection.TryGetValue("Restitution", out var restitutionText) && TryParseDouble(restitutionText, out var parsedRestitution)
@@ -159,16 +195,64 @@ public class World2D
                 var initialVelocityY = objectSection.TryGetValue("InitialVelocityY", out var velocityYText) && TryParseDouble(velocityYText, out var parsedVelocityY)
                     ? parsedVelocityY
                     : 0.0;
+                var initialVelocity = new Vector2D(initialVelocityX, initialVelocityY);
 
-                var dynamicObject = new DynamicObject2D();
-                dynamicObject.Spawn(sprite, clipName, frameIndex, position, new Vector2D(initialVelocityX, initialVelocityY), useGravity, restitution, repeatCount);
-                world.DynamicObjects.Add(dynamicObject);
-                if (IsCameraTarget(objectSection))
+                IPhysicsBody? movingBody = null;
+
+                switch (effectiveKind)
                 {
-                    world.CameraTarget = dynamicObject;
+                    case "Static":
+                        var platform = new StaticObject2D();
+                        platform.Spawn(sprite, clipName, frameIndex, position, repeatCount);
+                        world.Objects.Add(platform);
+                        break;
+
+                    case "Dynamic":
+                        var dynamicObject = new DynamicObject2D();
+                        dynamicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, useGravity, restitution, repeatCount);
+                        world.Objects.Add(dynamicObject);
+                        movingBody = dynamicObject;
+                        break;
+
+                    case "Kinematic":
+                        var kinematicObject = new KinematicObject2D();
+                        kinematicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, repeatCount);
+                        world.Objects.Add(kinematicObject);
+                        movingBody = kinematicObject;
+                        break;
+
+                    case "MovingEnemy":
+                        var movingEnemy = new MovingEnemy2D();
+                        movingEnemy.Spawn(sprite, clipName, frameIndex, position, initialVelocity, useGravity, restitution, repeatCount);
+                        world.Objects.Add(movingEnemy);
+                        movingBody = movingEnemy;
+                        break;
+
+                    case "StaticEnemy":
+                        var staticEnemy = new StaticEnemy2D();
+                        staticEnemy.Spawn(sprite, clipName, frameIndex, position, repeatCount);
+                        world.Objects.Add(staticEnemy);
+                        break;
+
+                    case "Collectable":
+                        var collectable = new Collectable2D();
+                        collectable.Spawn(sprite, clipName, frameIndex, position, repeatCount);
+                        world.Objects.Add(collectable);
+                        break;
+
+                    default:
+                        throw new FormatException($"Unknown object Kind '{effectiveKind}' in section '{sectionName}' of level '{levelName}'.");
+                }
+
+                if (movingBody is not null && IsCameraTarget(objectSection))
+                {
+                    world.CameraTarget = movingBody;
                 }
             }
         }
+
+        // Player participates in the generic Objects list alongside every other body.
+        world.Objects.Add(world.Player);
 
         // No object explicitly claimed the camera via CameraTarget = true; default to the player.
         world.CameraTarget ??= world.Player;

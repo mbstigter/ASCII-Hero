@@ -63,17 +63,32 @@ DOM keyboard events.
 - Physics operates on continuous world coordinates.
 - Collision detection operates on game-world geometry, not rendered ASCII
   characters.
+- Every body in the world — static or moving, player or otherwise — lives in
+  one generic `World2D.Objects` list. `PhysicsSystem`, `CollisionSystem`, and
+  `AsciiRenderer` iterate this single list and filter by capability interface
+  (`IPhysicsBody`, `IGravityAffected`, `IHazardBody`, `ICollectableBody`) rather than by
+  concrete type or by maintaining separate per-category collections — adding
+  a new object category (e.g. a moving enemy) does not require touching
+  every system's iteration logic.
 - The world's own edges (bounds) act as a generic physical surface, handled
   uniformly for any moving body (player or dynamic object) rather than
   special-cased per type: dynamic objects bounce off them according to their
   `Restitution`, and any body resting against the floor is considered
-  grounded (`IMovingBody.IsGrounded`), exactly as if it were resting on a
+  grounded (`IPhysicsBody.IsGrounded`), exactly as if it were resting on a
   platform.
 - Platform collision and moving-body-vs-moving-body collision (e.g. the
-  player and a dynamic object) are both resolved against `IMovingBody`
+  player and a dynamic object) are both resolved against `IPhysicsBody`
   generically — there is no per-concrete-type collision method. The player
   differs from other moving bodies only by the restitution value passed in
   (0, so it stops dead instead of bouncing), not by a separate code path.
+- Hazard and collectable contact are resolved the same way: any `IPhysicsBody`
+  overlapping any `IHazardBody` or `ICollectableBody` in `World2D.Objects` is
+  detected generically, with no concrete-type checks on either side. A
+  collectable is queued for removal via `World2D.QueueRemoval` and actually
+  removed from `Objects` once per frame via `World2D.ApplyPendingRemovals` —
+  removal is always deferred to end-of-frame so no system mutates `Objects`
+  while iterating it. Hazard contact detection exists but does not yet apply
+  any effect, since no health/damage system exists in the game yet.
 - Numeric values parsed from level/asset `.ini` files always use
   `CultureInfo.InvariantCulture`, never the current culture — otherwise a
   decimal point in a value like `1.0` can be silently misread as a thousands

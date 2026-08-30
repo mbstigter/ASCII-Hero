@@ -24,17 +24,10 @@ public class AsciiRenderer
 
         AddBackgroundGlyphs(glyphs, world, camera);
 
-        foreach (var platform in world.Platforms)
+        foreach (var body in world.Objects)
         {
-            AddGameObjectGlyphs(glyphs, platform, world, camera);
+            AddGameObjectGlyphs(glyphs, body, world, camera);
         }
-
-        foreach (var dynamicObject in world.DynamicObjects)
-        {
-            AddGameObjectGlyphs(glyphs, dynamicObject, world, camera);
-        }
-
-        AddGameObjectGlyphs(glyphs, world.Player, world, camera);
 
         return glyphs;
     }
@@ -63,7 +56,7 @@ public class AsciiRenderer
         }
     }
 
-    private void AddGameObjectGlyphs(List<Glyph> glyphs, GameObject2D gameObject, World2D world, Camera2D camera)
+    private void AddGameObjectGlyphs(List<Glyph> glyphs, Body2D gameObject, World2D world, Camera2D camera)
     {
         var frame = gameObject.Frame;
         var emptyChar = gameObject.Sprite.EmptyChar;

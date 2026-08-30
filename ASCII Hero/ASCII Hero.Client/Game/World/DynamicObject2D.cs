@@ -8,7 +8,7 @@ namespace ASCII_Hero.Client.Game.World;
 /// <see cref="StaticObject2D"/> it participates in motion integration and bounces off world
 /// bounds and platforms instead of just sitting still.
 /// </summary>
-public class DynamicObject2D : GameObject2D, IMovingBody
+public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected
 {
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }

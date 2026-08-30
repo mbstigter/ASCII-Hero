@@ -1,4 +1,5 @@
 <Solution>
+  <Project Path="../../../OneDrive/Documenten/Coding/Console Game/ConsoleGame2D/ConsoleGame2D/ConsoleGame2D.csproj" />
   <Project Path="ASCII Hero/ASCII Hero.Client/ASCII Hero.Client.csproj" />
   <Project Path="ASCII Hero/ASCII Hero/ASCII Hero.csproj" />
 </Solution>

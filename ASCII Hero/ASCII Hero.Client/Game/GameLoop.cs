@@ -102,6 +102,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
         _physics.Step(_world, _input, deltaSeconds);
         _collision.Resolve(_world);
+        _world.ApplyPendingRemovals();
 
         _camera.Follow(
             _world.CameraTarget.Position,
