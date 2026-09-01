@@ -40,11 +40,60 @@ public class SpriteFrame
     public int Height => Chars.GetLength(0);
 }
 
-/// <summary>One named clip (e.g. "idle", "walk_left") of a sprite asset, made up of one or more frames.</summary>
+/// <summary>One named clip (e.g. "walk_idle", "walk_left") of a sprite asset, made up of one or more frames.</summary>
 public class SpriteClip
 {
     public required string Name { get; init; }
     public required IReadOnlyList<SpriteFrame> Frames { get; init; }
+
+    /// <summary>
+    /// Duration each frame of this clip displays before advancing to the next, in seconds. Null
+    /// means this clip does not animate (the frame set at spawn stays active forever). Only
+    /// meaningful when the clip has more than one frame. Resolved per-clip from an optional
+    /// <c>[Animation.{clipName}]</c> section, falling back to the asset-wide <c>[Animation]</c>
+    /// section - see docs/AssetFormat.md §2.4.
+    /// </summary>
+    public double? FrameDurationSeconds { get; init; }
+
+    /// <summary>How this clip cycles through its frames. Defaults to Loop.</summary>
+    public AnimationMode AnimationMode { get; init; } = AnimationMode.Loop;
+
+    /// <summary>
+    /// The frame index this clip starts at when spawned, e.g. a "Center" frame in a
+    /// Left/Center/Right clip so PingPong mode bounces symmetrically (Center, Right, Center,
+    /// Left, ...). Defaults to 0.
+    /// </summary>
+    public int DefaultFrame { get; init; }
+}
+
+/// <summary>
+/// Which way a stance's clip should face: <see cref="Idle"/> looks at the viewer, <see cref="Left"/>/
+/// <see cref="Right"/> face sideways. See <see cref="StanceDefinition"/> and docs/AssetFormat.md §2.6.
+/// </summary>
+public enum Facing
+{
+    Idle,
+    Left,
+    Right,
+}
+
+/// <summary>
+/// One named stance (e.g. "Walk", "Crawl") of a sprite asset, mapping each <see cref="Facing"/> to
+/// the clip name that should be shown. <see cref="LeftClip"/>/<see cref="RightClip"/> are optional -
+/// when absent, that facing falls back to <see cref="IdleClip"/>. See docs/AssetFormat.md §2.6.
+/// </summary>
+public class StanceDefinition
+{
+    public required string IdleClip { get; init; }
+    public string? LeftClip { get; init; }
+    public string? RightClip { get; init; }
+
+    public string GetClipName(Facing facing) => facing switch
+    {
+        Facing.Left => LeftClip ?? IdleClip,
+        Facing.Right => RightClip ?? IdleClip,
+        _ => IdleClip,
+    };
 }
 
 /// <summary>
@@ -62,25 +111,35 @@ public class SpriteAsset
     public TileAxis TileAxis { get; init; } = TileAxis.None;
 
     /// <summary>
-    /// Duration each frame displays before advancing to the next, in seconds. Null means this
-    /// asset's frames do not animate (the frame set at spawn stays active forever). Only
-    /// meaningful when a clip has more than one frame.
+    /// Optional stance/facing metadata (see docs/AssetFormat.md §2.6) mapping each stance name
+    /// (e.g. "Walk", "Crawl") to the clips shown for its Idle/Left/Right facings. Null for assets
+    /// that don't declare a <c>[Stances]</c> section - such assets only ever show whichever single
+    /// clip was explicitly requested at spawn time, with no stance/facing switching.
     /// </summary>
-    public double? FrameDurationSeconds { get; init; }
+    public IReadOnlyDictionary<string, StanceDefinition>? Stances { get; init; }
 
-    /// <summary>How multi-frame clips cycle through their frames. Defaults to Loop.</summary>
-    public AnimationMode AnimationMode { get; init; } = AnimationMode.Loop;
-
-    /// <summary>
-    /// The frame index a clip starts at when spawned, e.g. a "Center" frame in a
-    /// Left/Center/Right clip so PingPong mode bounces symmetrically (Center, Right, Center,
-    /// Left, ...). Null defaults to frame 0. Applies to every clip of this asset.
-    /// </summary>
-    public int? DefaultFrame { get; init; }
+    /// <summary>The stance active at spawn, from <c>[Stances] Default</c>. Null when <see cref="Stances"/> is null.</summary>
+    public string? DefaultStance { get; init; }
 
     public SpriteClip GetClip(string clipName) =>
         Clips.TryGetValue(clipName, out var clip)
             ? clip
             : throw new KeyNotFoundException($"Sprite '{Name}' has no clip named '{clipName}'.");
+
+    /// <summary>Resolves the clip name to show for a given stance/facing, per docs/AssetFormat.md §2.6.</summary>
+    public string GetClipName(string stance, Facing facing)
+    {
+        if (Stances is null)
+        {
+            throw new KeyNotFoundException($"Sprite '{Name}' has no [Stances] section defined.");
+        }
+
+        if (!Stances.TryGetValue(stance, out var stanceDef))
+        {
+            throw new KeyNotFoundException($"Sprite '{Name}' has no stance named '{stance}'.");
+        }
+
+        return stanceDef.GetClipName(facing);
+    }
 }
 

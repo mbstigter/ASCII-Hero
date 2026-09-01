@@ -77,33 +77,35 @@ public abstract class Body2D
         _animationFrameIndex = frameIndex;
         _repeatCount = repeatCount;
         _animationElapsedSeconds = 0;
-        _animationDirection = 1;
+        // Starting already at the last frame means the next PingPong tick should move backward,
+        // not forward-then-immediately-clamp (which would otherwise waste one full tick doing
+        // nothing visible - noticeable on short clips, e.g. a 2-frame walk cycle started at index 1).
+        _animationDirection = _animationFrameIndex >= Clip.Frames.Count - 1 ? -1 : 1;
 
         ApplyFrame(Clip.Frames[_animationFrameIndex]);
     }
 
     /// <summary>
     /// Advances the animation timer and cycles to the next frame if enough time has elapsed.
-    /// No-ops immediately if the sprite has no animation settings, the clip has only one frame,
-    /// or the sprite's <see cref="AnimationMode"/> is <see cref="AnimationMode.Off"/> (holds
-    /// forever on the frame set at spawn, e.g. a dead/inanimate variant of an otherwise-animated
-    /// asset).
+    /// No-ops immediately if the clip has no animation settings, only one frame, or the clip's
+    /// <see cref="AnimationMode"/> is <see cref="AnimationMode.Off"/> (holds forever on the
+    /// frame set at spawn, e.g. a dead/inanimate variant of an otherwise-animated asset).
     /// </summary>
     public void AdvanceAnimation(double deltaSeconds)
     {
         // No animation configured, only one frame, or animation explicitly disabled - nothing to animate.
-        if (Sprite.FrameDurationSeconds is null || Clip.Frames.Count <= 1 || Sprite.AnimationMode == AnimationMode.Off)
+        if (Clip.FrameDurationSeconds is null || Clip.Frames.Count <= 1 || Clip.AnimationMode == AnimationMode.Off)
         {
             return;
         }
 
         _animationElapsedSeconds += deltaSeconds;
 
-        while (_animationElapsedSeconds >= Sprite.FrameDurationSeconds.Value)
+        while (_animationElapsedSeconds >= Clip.FrameDurationSeconds.Value)
         {
-            _animationElapsedSeconds -= Sprite.FrameDurationSeconds.Value;
+            _animationElapsedSeconds -= Clip.FrameDurationSeconds.Value;
 
-            if (Sprite.AnimationMode == AnimationMode.Loop)
+            if (Clip.AnimationMode == AnimationMode.Loop)
             {
                 _animationFrameIndex = (_animationFrameIndex + 1) % Clip.Frames.Count;
             }
@@ -126,6 +128,39 @@ public abstract class Body2D
 
             ApplyFrame(Clip.Frames[_animationFrameIndex]);
         }
+    }
+
+    /// <summary>
+    /// Switches this body to display/collide as the clip for the given stance/facing pair (see
+    /// docs/AssetFormat.md §2.6), re-deriving Size and collision rectangles from that clip's
+    /// active frame exactly like <see cref="SetFrame"/> - a stance with a different silhouette
+    /// (e.g. a shorter "Crawl" stance) is picked up automatically, with no separate pre-transition
+    /// collision check required. No-ops if <paramref name="sprite"/> declares no matching stance
+    /// (preserving single-clip behavior for assets without <c>[Stances]</c>), or if the resolved
+    /// clip is already active (avoiding resetting that clip's own animation timer every call).
+    /// </summary>
+    public void SetPose(SpriteAsset sprite, string stance, Facing facing)
+    {
+        if (sprite.Stances is null || !sprite.Stances.TryGetValue(stance, out var stanceDef))
+        {
+            return;
+        }
+
+        var clipName = stanceDef.GetClipName(facing);
+        if (Sprite == sprite && Clip is not null && string.Equals(Clip.Name, clipName, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        // DefaultFrame is tuned per-clip (e.g. to center a 3-frame Left/Idle/Right head-turn so
+        // PingPong bounces symmetrically), but different clips of the same asset can have fewer
+        // frames (e.g. a 2-frame walk cycle). Clamp so switching to a shorter clip never starts
+        // out-of-range - and, critically, never starts a PingPong clip already pinned at its last
+        // frame, which would otherwise waste its first bounce tick returning to that same frame.
+        var targetClip = sprite.GetClip(clipName);
+        var startFrame = Math.Min(targetClip.DefaultFrame, targetClip.Frames.Count - 1);
+
+        SetFrame(sprite, clipName, startFrame);
     }
 
     /// <summary>

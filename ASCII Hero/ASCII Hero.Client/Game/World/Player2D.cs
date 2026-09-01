@@ -18,11 +18,31 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody
     /// </summary>
     public bool GravityAffected => true;
 
+    /// <summary>
+    /// Current stance (e.g. "Walk", "Crawl"). Plain string rather than an enum so this
+    /// mechanism (and <see cref="Body2D.SetPose(Assets.SpriteAsset, string, Assets.Facing)"/>) stays generic across any body's own stance
+    /// vocabulary, not just the player's. Settable directly (e.g. by <see cref="Physics.PhysicsSystem"/>
+    /// toggling Walk/Crawl) without immediately re-resolving a clip - <see cref="Body2D.SetPose(Assets.SpriteAsset, string, Assets.Facing)"/>
+    /// is the separate call that actually applies a stance+facing pair's clip. See docs/AssetFormat.md §2.6.
+    /// </summary>
+    public string Stance { get; set; } = "Walk";
+
     public Player2D()
     {
         IsStatic = false;
     }
 
-    /// <summary>Assigns the loaded Player sprite asset and activates its "idle" clip.</summary>
-    public void Spawn(SpriteAsset sprite) => SetFrame(sprite, "idle", sprite.DefaultFrame ?? 0);
+    /// <summary>Assigns the loaded Player sprite asset and activates its default stance/idle facing.</summary>
+    public void Spawn(SpriteAsset sprite)
+    {
+        if (sprite.Stances is not null)
+        {
+            Stance = sprite.DefaultStance ?? "Walk";
+            SetPose(sprite, Stance, Facing.Idle);
+        }
+        else
+        {
+            SetFrame(sprite, "walk_idle", sprite.GetClip("walk_idle").DefaultFrame);
+        }
+    }
 }

@@ -16,4 +16,6 @@ public class InputState
     public bool IsRightPressed => IsPressed("ArrowRight") || IsPressed("KeyD");
 
     public bool IsJumpPressed => IsPressed("Space") || IsPressed("ArrowUp") || IsPressed("KeyW");
+
+    public bool IsCrawlPressed => IsPressed("ArrowDown") || IsPressed("KeyS");
 }

@@ -166,7 +166,7 @@ public class World2D
                 var position = new Vector2D(col, row);
 
                 var sprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, [clipName], levelName);
-                var frameIndex = sprite.DefaultFrame ?? 0;
+                var frameIndex = sprite.GetClip(clipName).DefaultFrame;
 
                 var gravityAffected = !objectSection.TryGetValue("GravityAffected", out var gravityText) || !bool.TryParse(gravityText, out var parsedGravity) || parsedGravity;
                 var restitution = objectSection.TryGetValue("Restitution", out var restitutionText) && TryParseDouble(restitutionText, out var parsedRestitution)

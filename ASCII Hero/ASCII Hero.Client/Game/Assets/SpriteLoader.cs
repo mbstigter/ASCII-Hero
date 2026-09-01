@@ -24,14 +24,43 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         var tileAxis = ParseTileAxis(settings.TryGetValue("Layout", "TileAxis"));
         var defaultMaterial = settings.TryGetValue("Physics", "DefaultMaterial");
         var materialCodes = settings.Section("MaterialCodes");
-        var frameDurationSeconds = ParseFrameDurationSeconds(settings.TryGetValue("Animation", "FrameDurationSeconds"));
-        var animationMode = ParseAnimationMode(settings.TryGetValue("Animation", "Mode"));
-        var defaultFrame = ParseDefaultFrame(settings.TryGetValue("Animation", "DefaultFrame"));
+        var defaultFrameDurationSeconds = ParseFrameDurationSeconds(settings.TryGetValue("Animation", "FrameDurationSeconds"));
+        var defaultAnimationMode = ParseAnimationMode(settings.TryGetValue("Animation", "Mode"));
+        var defaultDefaultFrame = ParseDefaultFrame(settings.TryGetValue("Animation", "DefaultFrame"));
+        var (stances, defaultStance) = ParseStances(settings.Section("Stances"));
+
+        var allClipNames = new List<string>(clipNames);
+        if (stances is not null)
+        {
+            foreach (var stanceDef in stances.Values)
+            {
+                allClipNames.Add(stanceDef.IdleClip);
+                if (stanceDef.LeftClip is not null) allClipNames.Add(stanceDef.LeftClip);
+                if (stanceDef.RightClip is not null) allClipNames.Add(stanceDef.RightClip);
+            }
+        }
+
+        var distinctClipNames = allClipNames.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
 
         var clips = new Dictionary<string, SpriteClip>(StringComparer.OrdinalIgnoreCase);
-        foreach (var clipName in clipNames)
+        foreach (var clipName in distinctClipNames)
         {
-            clips[clipName] = await LoadClipAsync(folder, assetName, clipName, emptyChar, defaultMaterial, materialCodes);
+            // Per-clip [Animation.{clipName}] overrides fall back to the asset-wide [Animation]
+            // section for any key it doesn't itself set (see docs/AssetFormat.md §2.4).
+            var clipAnimationSection = settings.Section($"Animation.{clipName}");
+            var frameDurationSeconds = clipAnimationSection.TryGetValue("FrameDurationSeconds", out var clipDurationText)
+                ? ParseFrameDurationSeconds(clipDurationText)
+                : defaultFrameDurationSeconds;
+            var animationMode = clipAnimationSection.TryGetValue("Mode", out var clipModeText)
+                ? ParseAnimationMode(clipModeText)
+                : defaultAnimationMode;
+            var clipDefaultFrame = clipAnimationSection.TryGetValue("DefaultFrame", out var clipDefaultFrameText)
+                ? ParseDefaultFrame(clipDefaultFrameText)
+                : defaultDefaultFrame;
+
+            clips[clipName] = await LoadClipAsync(
+                folder, assetName, clipName, emptyChar, defaultMaterial, materialCodes,
+                frameDurationSeconds, animationMode, clipDefaultFrame ?? 0);
         }
 
         return new SpriteAsset
@@ -40,9 +69,8 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             EmptyChar = emptyChar,
             Clips = clips,
             TileAxis = tileAxis,
-            FrameDurationSeconds = frameDurationSeconds,
-            AnimationMode = animationMode,
-            DefaultFrame = defaultFrame,
+            Stances = stances,
+            DefaultStance = defaultStance,
         };
     }
 
@@ -52,7 +80,10 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         string clipName,
         char emptyChar,
         string? defaultMaterial,
-        IReadOnlyDictionary<string, string> materialCodes)
+        IReadOnlyDictionary<string, string> materialCodes,
+        double? frameDurationSeconds,
+        AnimationMode animationMode,
+        int defaultFrame)
     {
         var baseName = $"{folder}/{assetName}_{clipName}";
 
@@ -81,7 +112,14 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             });
         }
 
-        return new SpriteClip { Name = clipName, Frames = frames };
+        return new SpriteClip
+        {
+            Name = clipName,
+            Frames = frames,
+            FrameDurationSeconds = frameDurationSeconds,
+            AnimationMode = animationMode,
+            DefaultFrame = defaultFrame,
+        };
     }
 
     private static string?[,] ResolveMaterials(
@@ -131,6 +169,41 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         }
 
         return result;
+    }
+
+    private static (IReadOnlyDictionary<string, StanceDefinition>? Stances, string? DefaultStance) ParseStances(
+        IReadOnlyDictionary<string, string> stancesSection)
+    {
+        if (stancesSection.Count == 0)
+        {
+            return (null, null);
+        }
+
+        var defaultStance = stancesSection.TryGetValue("Default", out var defaultValue) ? defaultValue : null;
+        var stances = new Dictionary<string, StanceDefinition>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var (key, value) in stancesSection)
+        {
+            if (string.Equals(key, "Default", StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var clipNames = value.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+            if (clipNames.Length == 0)
+            {
+                continue;
+            }
+
+            stances[key] = new StanceDefinition
+            {
+                IdleClip = clipNames[0],
+                LeftClip = clipNames.Length > 1 ? clipNames[1] : null,
+                RightClip = clipNames.Length > 2 ? clipNames[2] : null,
+            };
+        }
+
+        return (stances, defaultStance);
     }
 
     private static char ParseEmptyChar(string? rawValue)

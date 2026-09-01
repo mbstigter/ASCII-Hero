@@ -2,6 +2,54 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## Jump stance is a visual-only pose swap, not a real `Stance`
+
+- **`Player_settings.ini` gained a `Jump = jump_idle, jump_left, jump_right`
+  stance entry**, backed by three new `Player_jump_*_characters.txt` art
+  files (plus matching `_foregroundcolors.txt`, generated to mirror the
+  existing walk/crawl coloring: `F` head/limbs, `R` torso, `B` legs).
+- **`PhysicsSystem.Step` resolves the pose's stance separately from
+  `Player.Stance`.** `Player.Stance` continues to only ever hold `"Walk"` or
+  `"Crawl"` — the actual toggle the player controls via the crawl key — and
+  is unaffected by being airborne. When resolving which clip to show each
+  frame, `PhysicsSystem` swaps in the `"Jump"` stance in place of whatever
+  `Player.Stance` currently is whenever `!player.IsGrounded`, so crawling off
+  a ledge assumes the jump pose mid-air just like walking off one does. This
+  keeps "what stance can the player be in" (a persistent, input-driven
+  state) distinct from "what pose looks right to render this instant" (a
+  transient, physics-derived one), matching the `Stance`/`Pose` split
+  established earlier — see `SetPose`'s naming, which was reverted from a
+  bad interim rename to `SetStance` for the same reason.
+
+## Per-clip `[Animation]` overrides, `Stand` renamed to `Walk`
+
+- **Animation timing (`FrameDurationSeconds`, `Mode`, `DefaultFrame`) moved from
+  asset-wide to per-clip.** Previously all three lived on `SpriteAsset` and
+  applied identically to every clip of an asset; this broke down once a single
+  asset had clips with very different frame counts/pacing (e.g. `Player`'s
+  3-frame idle head-turn vs. its 2-frame walk cycle) — a `DefaultFrame` tuned
+  for one clip could start another clip already pinned at its last frame,
+  wasting its first bounce tick and making walking left/right look
+  unanimated. `SpriteClip` now owns these three properties directly, resolved
+  once at load time in `SpriteLoader`, and `Body2D.AdvanceAnimation`/`SetPose`
+  read them from `Clip` instead of `Sprite`.
+- **Resolution uses an optional dot-qualified `[Animation.{clipName}]`
+  section** falling back to the asset-wide `[Animation]` section per-key. This
+  keeps the common case (every clip shares one asset's timing) a single
+  section, while letting any one clip (e.g. `walk_left`) override just the
+  keys it needs (e.g. a much shorter `FrameDurationSeconds` for a fast walk
+  loop) without repeating the other keys.
+- **`Player`'s "Stand" stance/vocabulary renamed to "Walk"** throughout code,
+  docs, and assets (`Player2D.Stance` default, `PhysicsSystem`'s stance
+  checks, `Player_settings.ini`'s `[Stances]` section, and
+  `AssetFormat.md` §2.6's example). The player's non-crawling stance is not
+  literally "standing still" (it's the stance used while walking, running,
+  jumping, and idling alike), so "Walk" was judged the clearer, more
+  consistent name — matching the also-renamed `walk_idle`/`walk_left`/
+  `walk_right` clip names (previously just `idle`). `Player_idle_*.txt` was
+  renamed to `Player_walk_idle_*.txt` to match, and both levels'
+  `[Player] Clip = idle` placements updated to `Clip = walk_idle`.
+
 ## `Kind` made mandatory, `Static` key removed, `Player` via `Kind`, `Kind` values match class names
 
 - **`Kind` is now a required key on every `_objects.ini` placement section;

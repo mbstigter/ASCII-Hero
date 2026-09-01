@@ -16,10 +16,10 @@ Assets/
 		Sprites/
 			Player/
 				Player_settings.ini
-				Player_idle_characters.txt
-				Player_idle_foregroundcolors.txt
-				Player_idle_backgroundcolors.txt
-				Player_idle_materials.txt
+				Player_walk_idle_characters.txt
+				Player_walk_idle_foregroundcolors.txt
+				Player_walk_idle_backgroundcolors.txt
+				Player_walk_idle_materials.txt
 				Player_walk_left_characters.txt
 				Player_walk_left_foregroundcolors.txt
 				Player_walk_left_backgroundcolors.txt
@@ -79,7 +79,7 @@ files, while still allowing full per-level customization when actually needed.
 
 Naming case convention: global shared files use "first word capitalized" naming
 (`Settings.ini`, `Colors.ini`, `Materials.ini`). Per-asset files stay entirely
-lowercase-prefixed, matching the asset/clip name (`Player_idle_characters.txt`).
+lowercase-prefixed, matching the asset/clip name (`Player_walk_idle_characters.txt`).
 
 ## 2. Sprite files
 
@@ -87,7 +87,7 @@ Pattern: `{AssetName}_{clipName}_{characters|foregroundcolors|backgroundcolors|m
 plus one `{AssetName}_settings.ini` per asset folder.
 
 - `clipName` defaults to `default` for single-clip static assets (platforms, tiles).
-- Animated assets have one set of layer files per clip (`idle`, `walk_left`, ...).
+- Animated assets have one set of layer files per clip (`walk_idle`, `walk_left`, ...).
 - The loader derives `AssetName` from the containing folder name, and cross-checks
   it against the file name prefixes as a cheap sanity check (fails loudly if a
   folder was renamed but its files weren't, or vice versa).
@@ -112,7 +112,7 @@ optional layers), the missing rows are treated as entirely `EmptyChar`.
 
 Multiple **frames** within one clip are separated by a line containing only
 `//end`. This is a **frame** separator, not a clip separator — different clips
-(`idle`, `walk_left`, ...) always live in their own separate files (per the
+(`walk_idle`, `walk_left`, ...) always live in their own separate files (per the
 naming pattern above) and never need a delimiter between them, since a clip's
 files only ever contain that one clip's frame(s). A single-frame clip (the
 common case, e.g. `BrickWall_default`) simply omits `//end` entirely - there is
@@ -125,7 +125,7 @@ Frames within a clip serve two purposes, both using the exact same
 
 - **True animation** — frames play back over time when the asset declares animation
   timing via an `[Animation]` section in its settings.ini (see §2.4). Examples:
-  `Player_idle` (3 subtle frames cycling to avoid a perfectly static character) and
+  `Player_walk_idle` (3 subtle frames cycling to avoid a perfectly static character) and
   an enemy's `idle` clip animating left/middle/right frames. The clip's starting frame
   is controlled asset-wide by `[Animation] DefaultFrame` (see §2.4) — e.g. a
   Left/Center/Right clip can start at the Center frame so `PingPong` mode bounces
@@ -183,7 +183,7 @@ R = Rubber
 ```
 
 ```
-Player_idle_materials.txt
+Player_walk_idle_materials.txt
 -------------------------
 .....
 ..R..
@@ -243,11 +243,32 @@ multiple frames. If omitted, multi-frame clips remain static at frame `DefaultFr
   Center frame so `PingPong` bounces symmetrically, or for a static shape-variant
   clip that should always render a frame other than `0`.
 
-Animation timing applies asset-wide (every clip of the asset uses the same frame
-duration, mode, and starting frame). Per-clip or per-placement overrides are not
-currently supported — there is no placement-time `Frame` key. A genuinely
-different animation state (e.g. dead vs. alive) requires a separate asset (its
-own settings.ini), since `[Animation]` is not currently overridable per-instance.
+Animation settings are resolved **per clip**, not asset-wide, since clips of the
+same asset can have very different frame counts and desired pacing (e.g. a
+3-frame idle head-turn bouncing slowly vs. a 2-frame walk cycle looping
+quickly). The `[Animation]` section above is the **default** applied to every
+clip of the asset; an optional `[Animation.{clipName}]` section overrides any
+of its three keys for one specific clip only, falling back to the asset-wide
+default for any key it doesn't itself set:
+
+```ini
+[Animation]
+FrameDurationSeconds = 1.5
+Mode = PingPong
+DefaultFrame = 1
+
+[Animation.walk_left]
+FrameDurationSeconds = 0.2
+Mode = Loop
+DefaultFrame = 0
+```
+
+Here, every clip defaults to the slow `PingPong` idle-style timing, except
+`walk_left`, which overrides all three keys for a fast `Loop`ing walk cycle
+starting at frame `0`. A genuinely different animation *state* (e.g. dead vs.
+alive) still requires a separate asset (its own settings.ini) — per-clip
+`[Animation.{clipName}]` overrides one clip's timing, not a per-instance
+runtime toggle.
 
 **`[MaterialCodes]`** — maps single-character codes in `_materials.txt` to material
 names (see §2.3).
@@ -290,6 +311,60 @@ the loading step differ.
 `SteelPlatform` and `BrickWall` are the reference tileable assets: `SteelPlatform`
 is authored one cell wide with `TileAxis = Horizontal`, `BrickWall` is authored
 one cell tall with `TileAxis = Vertical`.
+
+### 2.6 Stances and facing (`[Stances]`)
+
+Some assets — the player, and later any NPC that visibly changes posture or
+direction — need more than one whole-body pose, each of which can also face
+`Idle` (facing the viewer), `Left`, or `Right`. This is a second, orthogonal
+axis on top of everything in §2.1-§2.5: whichever clip is currently selected
+for the active stance/facing combination still authors its own frames,
+`EmptyChar`, materials, and its own resolved `[Animation]`/`[Animation.{clipName}]`
+timing exactly as described above — a stance/facing pair is simply *which
+clip* is currently active, not a new kind of clip content.
+
+Declared via an optional `[Stances]` section in `settings.ini`:
+
+```ini
+[Stances]
+Default = Walk
+Walk = walk_idle, walk_left, walk_right
+Crawl = crawl_idle, crawl_left, crawl_right
+```
+
+- Each non-`Default` key names a stance (`Walk`, `Crawl`, ...); its value is a
+  comma-separated list of clip names in the order **`Idle, Left, Right`**
+  (matching the facing enum order the engine uses). `Left`/`Right` are
+  optional — a line with only one clip name means that stance always shows
+  the same clip regardless of facing (e.g. a stance with no meaningful
+  sideways pose).
+- `Default` names the stance active at spawn (required whenever `[Stances]`
+  is present at all).
+- Every clip named here is an ordinary clip following the normal
+  `{AssetName}_{clipName}_*` file-naming convention (§2) - `[Stances]` only
+  adds grouping metadata on top of clips that already exist; it introduces no
+  new file-naming rule.
+- `[Stances]` is entirely optional. Assets that don't declare it behave
+  exactly as before: whatever single clip a placement/spawn requests (e.g.
+  `Clip = idle` in a level's `objects.ini`) is the only clip ever shown, with
+  no stance/facing switching at all.
+- Frame counts are independent per clip - a stance's `Idle` clip can have three
+  frames (e.g. a subtle idle head-turn) while its `Left`/`Right` clips have
+  two frames each (e.g. a walk cycle), or one frame (a static crouched pose).
+  Nothing about `[Stances]` requires matching frame counts across facings or
+  across stances.
+- Switching stance/facing at runtime re-derives the object's size and
+  collision shape from whichever clip's frame is now active, the same way any
+  other clip/frame switch already does - a stance with a different silhouette
+  (e.g. a shorter `Crawl` pose) is picked up automatically, with no special
+  pre-transition validation needed anywhere in the format or the loader.
+
+Note the two different orderings used by this format, both intentional:
+**`[Stances]` clip lists are authored `Idle, Left, Right`** (matching the
+facing enum), while **a single clip's own multi-frame `_characters.txt` for a
+Left/Idle/Right-style animation (e.g. `Player_walk_idle`'s head-turn) is authored
+`Left, Idle, Right`**, since that is the natural sequence for a symmetric
+`PingPong` head-turn to bounce through.
 
 ## 3. World/level files
 
@@ -359,7 +434,7 @@ E0 = Goblin
 
 [Player]
 Asset = Player
-Clip = idle
+Clip = walk_idle
 Kind = Player
 
 [Goblin]
