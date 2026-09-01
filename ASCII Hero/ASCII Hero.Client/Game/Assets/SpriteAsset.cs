@@ -17,15 +17,20 @@ public enum TileAxis
 /// <summary>
 /// How multi-frame clips advance through their frames over time. <see cref="Loop"/> cycles
 /// sequentially (0,1,2,0,1,2,...); <see cref="PingPong"/> bounces back and forth (0,1,2,1,0,1,...);
-/// <see cref="Off"/> disables playback entirely, holding on <see cref="SpriteAsset.DefaultFrame"/>
-/// forever even though the clip has multiple frames (e.g. a dead/inanimate variant of an
-/// otherwise-animated asset). See docs/AssetFormat.md for the full rationale.
+/// <see cref="Once"/> advances sequentially like <see cref="Loop"/> but stops and holds on the
+/// last frame instead of wrapping back to the first (e.g. a one-shot transformation - a killed
+/// enemy crumbling down to its final husk appearance - that should visibly play through once and
+/// then stay there, as opposed to <see cref="Off"/>'s "never animate at all"); <see cref="Off"/>
+/// disables playback entirely, holding on <see cref="SpriteAsset.DefaultFrame"/> forever even
+/// though the clip has multiple frames (e.g. a dead/inanimate variant of an otherwise-animated
+/// asset). See docs/AssetFormat.md for the full rationale.
 /// </summary>
 public enum AnimationMode
 {
     Loop,
     PingPong,
     Off,
+    Once,
 }
 
 /// <summary>One drawable/collidable frame of a sprite clip: char/fore/back grids plus material per cell.</summary>

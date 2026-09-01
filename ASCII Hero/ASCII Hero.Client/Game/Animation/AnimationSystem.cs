@@ -12,12 +12,23 @@ public class AnimationSystem
     /// <summary>
     /// Advances animation timers for all bodies in the world. Bodies without animation settings
     /// or with single-frame clips no-op internally (see <see cref="Body2D.AdvanceAnimation"/>).
+    /// Also ticks the lifetime of any <see cref="EffectInstance2D"/>, queuing it for removal once
+    /// its effect has finished playing (unless it's configured to persist).
     /// </summary>
     public void Update(World2D world, double deltaSeconds)
     {
         foreach (var body in world.Objects)
         {
             body.AdvanceAnimation(deltaSeconds);
+
+            if (body is EffectInstance2D effect)
+            {
+                effect.Tick(deltaSeconds);
+                if (effect.IsExpiredAndShouldBeRemoved)
+                {
+                    world.QueueRemoval(effect);
+                }
+            }
         }
     }
 }

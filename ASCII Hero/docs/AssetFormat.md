@@ -233,6 +233,12 @@ multiple frames. If omitted, multi-frame clips remain static at frame `DefaultFr
 - `Mode` (default `Loop`) — playback pattern:
   - `Loop`: cycles sequentially, wrapping at the end (0, 1, 2, 0, 1, 2, ...).
   - `PingPong`: bounces back and forth (0, 1, 2, 1, 0, 1, 2, 1, ...).
+  - `Once`: advances sequentially like `Loop` (0, 1, 2, ...) but stops and holds
+    on the last frame instead of wrapping back to the first. Useful for a
+    one-shot transformation that should visibly play through once and then
+    stay there (e.g. an enemy's "crumble" clip on being killed, if the object
+    persists afterward as a decorative husk) - as opposed to `Off`, which never
+    animates at all.
   - `Off`: disables playback entirely — the clip holds forever on `DefaultFrame`
     even though it has multiple frames and `FrameDurationSeconds` is set. Useful
     for an inanimate variant of an otherwise-animated asset that still wants to
@@ -549,6 +555,42 @@ Asset = Ball
 Clip = default
 Kind = DynamicObject
 CameraTarget = true
+```
+
+Any non-`Player` placement may also set `Passable`, `Climbable`, and/or
+`Hangable` (each default `false`, except `Passable` which defaults to `true`
+for `Kind = StaticEnemy`/`Collectable`) to control how it interacts with
+moving bodies, independent of its `Kind`:
+
+- **`Passable`** — if `true`, the object never blocks movement even though it
+  is otherwise solid terrain (e.g. a wall placement used as a level design
+  "secret passage"). `StaticEnemy`/`Collectable` default to `true` since
+  neither has ever blocked movement (a hazard is meant to be walked into, a
+  collectable is picked up on contact) — this default simply keeps that
+  existing behavior data-driven instead of hardcoded by `Kind`.
+- **`Climbable`** — if `true`, the player can climb straight up/down while
+  overlapping this object (e.g. a ladder), with gravity suspended for the
+  duration. Usually paired with `Passable = true` so the object doesn't also
+  block horizontal movement.
+- **`Hangable`** — if `true`, the player can hang from and move laterally
+  along this object while overlapping it from below (e.g. a pipe/bar), with
+  gravity mostly suspended for the duration. Usually paired with
+  `Passable = true` for the same reason as `Climbable`.
+
+```ini
+[Ladder]
+Asset = Ladder
+Clip = default
+Kind = StaticObject
+Passable = true
+Climbable = true
+
+[HangingPipe]
+Asset = Pipe
+Clip = default
+Kind = StaticObject
+Passable = true
+Hangable = true
 ```
 
 

@@ -2,6 +2,49 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## `Passable`/`Climbable`/`Hangable` are plain per-instance bools, not new classes or interfaces
+
+- **Prompted by planning ladders/pipes/ropes and by `EffectInstance2D` being
+  accidentally treated as solid terrain.** The old `ConsoleGame2D` reference
+  project modeled this as `IsClimbable`/`IsHangable`/`IsPassable` plain bool
+  properties directly on its body base class, with collision resolution
+  gating on `!IsPassable` rather than excluding specific types. That pattern
+  was ported, rather than introducing dedicated `Ladder2D`/`Pipe2D` classes,
+  because the actual requirement is purely per-instance/data-driven (any
+  static placement - a wall, a hazard, a plain platform used as a secret
+  passage - can independently be made passable/climbable/hangable), with
+  nothing about it varying by concrete type.
+- **`Body2D` gained `IsPassable`, `IsClimbable`, `IsHangable` bool properties**
+  (default `false`), settable per-placement from `_objects.ini` via new
+  `Passable`/`Climbable`/`Hangable` keys in `World2D.LoadAsync`, with
+  `Passable` defaulting to `true` for `StaticEnemy`/`Collectable` kinds to
+  preserve their prior (previously hardcoded) non-blocking behavior.
+- **`CollisionSystem.Resolve`'s `solids` filter was simplified from an
+  exclusion list (`is not ICollectableBody and not IHazardBody and not
+  EffectInstance2D`) to a single positive check: `body.IsStatic &&
+  !body.IsPassable`.** This directly fixes the `EffectInstance2D`-as-terrain
+  bug at its root (that type now just always sets `IsPassable = true` in its
+  own constructor, since it is only ever spawned by code and never authored
+  in level data) rather than special-casing it in `CollisionSystem`, and
+  means any future static category never needs another `is not` entry added
+  to that filter - it opts out via data, not by the filter knowing about it.
+- **Consistency rule for bool property vs. marker interface, generalized from
+  existing code (`IHazardBody`/`ICollectableBody`/`ICollectorBody` as bare
+  markers vs. `IsKillable`/`EffectPersists`/`GravityAffected`/`Restitution` as
+  plain properties on concrete classes):** use a marker interface when a
+  capability is restricted to certain *types* and the restriction itself is
+  meaningful (only some classes should ever be eligible to opt in at all -
+  e.g. only the player should ever be able to stomp-kill via `IKillerBody`,
+  only some bodies are hazards at all via `IHazardBody`); use a plain bool
+  property directly on `Body2D` when a capability could apply to *any* body
+  and only the per-instance value differs, with nothing gated by type
+  (`IsPassable`/`IsClimbable`/`IsHangable` fall here, same as `IsStatic`
+  itself). `IKillableBody` remains the one interface that also carries state
+  (`IsKillable`, `EffectPersists`) because the interface's presence is itself
+  meaningful there too - not every body should be eligible to be killed at
+  all (e.g. the player), so it isn't a case of "any body, per-instance value
+  differs."
+
 ## Jump stance is a visual-only pose swap, not a real `Stance`
 
 - **`Player_settings.ini` gained a `Jump = jump_idle, jump_left, jump_right`

@@ -3,7 +3,7 @@ using ASCII_Hero.Client.Game.Assets;
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>The player-controlled character, backed by the loaded "Player" sprite asset.</summary>
-public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody
+public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody, IKillerBody, IEffectTrigger
 {
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }
@@ -26,6 +26,12 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody
     /// is the separate call that actually applies a stance+facing pair's clip. See docs/AssetFormat.md §2.6.
     /// </summary>
     public string Stance { get; set; } = "Walk";
+
+    /// <summary>
+    /// Optional clip name (on this instance's own <see cref="Body2D.Sprite"/>) to play as a
+    /// cosmetic effect on contact (e.g. a hazard-hit spark). Null (the default) means no effect.
+    /// </summary>
+    public string? EffectClipName { get; set; }
 
     public Player2D()
     {

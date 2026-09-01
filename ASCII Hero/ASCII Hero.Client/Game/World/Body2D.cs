@@ -28,6 +28,36 @@ public abstract class Body2D
     /// <summary>Whether this body is immovable terrain (true) or subject to physics/movement (false).</summary>
     public bool IsStatic { get; protected init; }
 
+    /// <summary>
+    /// Whether a static body blocks movement. Defaults to false, so an ordinary <c>IsStatic</c>
+    /// body (a platform, wall) still blocks by default via <see cref="Physics.CollisionSystem"/>'s
+    /// <c>solids</c> filter, which only checks this flag directly - never a body's concrete type
+    /// or category, so any static placement (a collectable, a hazard, a plain wall used as a
+    /// level-design "secret passage") can be made non-blocking per-instance without a new class.
+    /// Meaningless on a non-static body, which was never blocking to begin with.
+    /// </summary>
+    public bool IsPassable { get; set; }
+
+    /// <summary>
+    /// Whether the player can climb this static body (e.g. a ladder) - straight up/down movement,
+    /// gravity suspended while overlapping. Checked generically by <see cref="Physics.PhysicsSystem"/>
+    /// against the player's current overlap each frame, independent of concrete type - any static
+    /// placement (not just a dedicated "ladder" asset) can opt in via this flag. A climbable body
+    /// is not automatically passable; set <see cref="IsPassable"/> too if it shouldn't also block
+    /// movement (the usual case for an actual ladder).
+    /// </summary>
+    public bool IsClimbable { get; set; }
+
+    /// <summary>
+    /// Whether the player can hang and move laterally from this static body (e.g. a pipe/bar) -
+    /// gravity mostly suspended while overlapping from below. Checked generically by
+    /// <see cref="Physics.PhysicsSystem"/> against the player's current overlap each frame,
+    /// independent of concrete type, the same way <see cref="IsClimbable"/> is. A hangable body is
+    /// not automatically passable; set <see cref="IsPassable"/> too if it shouldn't also block
+    /// movement (the usual case for an actual pipe/bar).
+    /// </summary>
+    public bool IsHangable { get; set; }
+
     /// <summary>The sprite asset this object was spawned from.</summary>
     public SpriteAsset Sprite { get; private set; } = null!;
 
@@ -108,6 +138,16 @@ public abstract class Body2D
             if (Clip.AnimationMode == AnimationMode.Loop)
             {
                 _animationFrameIndex = (_animationFrameIndex + 1) % Clip.Frames.Count;
+            }
+            else if (Clip.AnimationMode == AnimationMode.Once)
+            {
+                // Advance toward the last frame and then clamp there - unlike Loop, never wraps
+                // back to the first frame, so a one-shot transformation (e.g. a killed enemy's
+                // crumble-to-husk clip) visibly plays through once and then holds indefinitely.
+                if (_animationFrameIndex < Clip.Frames.Count - 1)
+                {
+                    _animationFrameIndex++;
+                }
             }
             else // PingPong (Off already returned above)
             {

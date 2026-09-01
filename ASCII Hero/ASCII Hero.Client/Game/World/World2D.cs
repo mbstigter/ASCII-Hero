@@ -165,7 +165,15 @@ public class World2D
                     : 1;
                 var position = new Vector2D(col, row);
 
-                var sprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, [clipName], levelName);
+                var effectClipName = objectSection.TryGetValue("EffectClip", out var effectClipText) ? effectClipText : null;
+
+                // The effect clip (if any) lives on this same object's own asset (see
+                // IEffectTrigger), so it must be requested here alongside the object's main clip -
+                // SpriteLoader only loads clips it's explicitly asked for (plus stance clips).
+                var requestedClipNames = effectClipName is null
+                    ? (IReadOnlyList<string>)[clipName]
+                    : [clipName, effectClipName];
+                var sprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, requestedClipNames, levelName);
                 var frameIndex = sprite.GetClip(clipName).DefaultFrame;
 
                 var gravityAffected = !objectSection.TryGetValue("GravityAffected", out var gravityText) || !bool.TryParse(gravityText, out var parsedGravity) || parsedGravity;
@@ -180,13 +188,30 @@ public class World2D
                     : 0.0;
                 var initialVelocity = new Vector2D(initialVelocityX, initialVelocityY);
 
+                var killable = objectSection.TryGetValue("Killable", out var killableText) && bool.TryParse(killableText, out var parsedKillable) && parsedKillable;
+                var effectPersists = objectSection.TryGetValue("EffectPersists", out var effectPersistsText) && bool.TryParse(effectPersistsText, out var parsedEffectPersists) && parsedEffectPersists;
+
+                // Passable/Climbable/Hangable are plain per-instance flags on Body2D (see its own
+                // doc comments) rather than anything gated by Kind - any static placement can set
+                // any combination of them. Passable defaults to true for hazards/collectables
+                // (never blocking today, matching prior hardcoded behavior) and false otherwise
+                // (an ordinary wall/platform still blocks unless explicitly overridden).
+                var defaultPassable = kind is "StaticEnemy" or "Collectable";
+                var passable = objectSection.TryGetValue("Passable", out var passableText) && bool.TryParse(passableText, out var parsedPassable)
+                    ? parsedPassable
+                    : defaultPassable;
+                var climbable = objectSection.TryGetValue("Climbable", out var climbableText) && bool.TryParse(climbableText, out var parsedClimbable) && parsedClimbable;
+                var hangable = objectSection.TryGetValue("Hangable", out var hangableText) && bool.TryParse(hangableText, out var parsedHangable) && parsedHangable;
+
                 IPhysicsBody? movingBody = null;
+                Body2D? spawnedBody = null;
 
                 switch (kind)
                 {
                     case "Player":
                         world.Player.Spawn(sprite);
                         world.Player.Position = position;
+                        world.Player.EffectClipName = effectClipName;
                         if (IsCameraTarget(objectSection))
                         {
                             world.CameraTarget = world.Player;
@@ -197,6 +222,7 @@ public class World2D
                         var platform = new StaticObject2D();
                         platform.Spawn(sprite, clipName, frameIndex, position, repeatCount);
                         world.Objects.Add(platform);
+                        spawnedBody = platform;
                         break;
 
                     case "DynamicObject":
@@ -204,6 +230,7 @@ public class World2D
                         dynamicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, restitution, repeatCount);
                         world.Objects.Add(dynamicObject);
                         movingBody = dynamicObject;
+                        spawnedBody = dynamicObject;
                         break;
 
                     case "KinematicObject":
@@ -211,30 +238,45 @@ public class World2D
                         kinematicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, repeatCount);
                         world.Objects.Add(kinematicObject);
                         movingBody = kinematicObject;
+                        spawnedBody = kinematicObject;
                         break;
 
                     case "MovingEnemy":
                         var movingEnemy = new MovingEnemy2D();
                         movingEnemy.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, restitution, repeatCount);
+                        movingEnemy.EffectClipName = effectClipName;
+                        movingEnemy.IsKillable = killable;
+                        movingEnemy.EffectPersists = effectPersists;
                         world.Objects.Add(movingEnemy);
                         movingBody = movingEnemy;
+                        spawnedBody = movingEnemy;
                         break;
 
                     case "StaticEnemy":
                         var staticEnemy = new StaticEnemy2D();
                         staticEnemy.Spawn(sprite, clipName, frameIndex, position, repeatCount);
+                        staticEnemy.EffectClipName = effectClipName;
+                        staticEnemy.IsKillable = killable;
+                        staticEnemy.EffectPersists = effectPersists;
                         world.Objects.Add(staticEnemy);
+                        spawnedBody = staticEnemy;
                         break;
 
                     case "Collectable":
                         var collectable = new Collectable2D();
                         collectable.Spawn(sprite, clipName, frameIndex, position, repeatCount);
+                        collectable.EffectClipName = effectClipName;
                         world.Objects.Add(collectable);
+                        spawnedBody = collectable;
                         break;
 
                     default:
                         throw new FormatException($"Unknown object Kind '{kind}' in section '{sectionName}' of level '{levelName}'.");
                 }
+
+                spawnedBody.IsPassable = passable;
+                spawnedBody.IsClimbable = climbable;
+                spawnedBody.IsHangable = hangable;
 
                 if (movingBody is not null && IsCameraTarget(objectSection))
                 {
