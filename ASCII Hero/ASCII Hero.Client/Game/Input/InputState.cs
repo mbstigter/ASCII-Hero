@@ -15,25 +15,21 @@ public class InputState
 
     public bool IsRightPressed => IsPressed("ArrowRight") || IsPressed("KeyD");
 
-    /// <summary>Directional up - posture/direction input (ladder climb, hang-crawl pull-up,
-    /// ground stand-up), which also doubles as a jump trigger everywhere <see cref="IsJumpPressed"/>
-    /// applies (see its own doc comment for why this is safe). "Player 1" (arrow keys) and
-    /// "Player 2" (WASD) each have their own physically-separate up key, mirrored by their own
-    /// separate jump key below, rather than sharing one.</summary>
+    /// <summary>Directional up - posture/direction input only (ladder climb, hang-crawl pull-up,
+    /// ground stand-up). Deliberately never includes jump keys - see <see cref="IsJumpPressed"/>.
+    /// "Player 1" (arrow keys) and "Player 2" (WASD) each have their own physically-separate up
+    /// key, mirrored by their own separate jump key below, rather than sharing one.</summary>
     public bool IsUpPressed => IsPressed("ArrowUp") || IsPressed("KeyW");
 
     public bool IsDownPressed => IsPressed("ArrowDown") || IsPressed("KeyS");
 
-    /// <summary>Explicit jump/action input - includes both a dedicated jump key and <see
-    /// cref="IsUpPressed"/> (arrow-key/WASD convention: Up also jumps). This is safe everywhere
-    /// a context needs to tell "directional up" and "jump" apart at the same time (e.g. the hang
-    /// stance ladder: Up pulls into Clamber, Jump swings/jumps off) because every such call site
-    /// gives the directional/posture action priority over the jump action when both would apply
-    /// to the same key press - so Up always still means "pull up"/"climb"/"stand up" first, and
-    /// only ever falls through to a jump/let-go action in states where no directional meaning of
-    /// Up exists to take priority (e.g. an ordinary standing/Walk jump). "Player 1" (arrow keys)
-    /// uses <c>Space</c> (in addition to <c>ArrowUp</c>); "Player 2" (WASD) uses
-    /// <c>ControlLeft</c> (in addition to <c>KeyW</c>) as its own equivalent jump key, positioned
-    /// next to WASD the same way Space sits next to the arrow keys.</summary>
-    public bool IsJumpPressed => IsPressed("Space") || IsPressed("ControlLeft") || IsUpPressed;
+    /// <summary>Explicit jump/action input - always its own dedicated key, never doubling as
+    /// <see cref="IsUpPressed"/> (unlike some platformers' convention of treating them as
+    /// equivalent), so contexts needing both a directional "up" and a separate "action" input at
+    /// the same time (e.g. the hang stance ladder: Up pulls into Clamber, Jump swings/jumps
+    /// off) can always tell them apart - including on the ground, where Up alone no longer jumps.
+    /// "Player 1" (arrow keys) uses <c>Space</c>; "Player 2" (WASD) uses <c>ControlLeft</c> as its
+    /// own equivalent jump key, positioned next to WASD the same way Space sits next to the arrow
+    /// keys.</summary>
+    public bool IsJumpPressed => IsPressed("Space") || IsPressed("ControlLeft");
 }

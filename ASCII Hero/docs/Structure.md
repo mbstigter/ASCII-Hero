@@ -168,20 +168,15 @@ The live game state and the entity types that make it up.
   direction - Up pulls into the compact `Clamber` pose (mirroring Crawl) and
   Down extends back out to the fully-stretched `Hang` pose (mirroring Walk),
   with a further Down from already-`Hang` meaning an explicit "let go" and
-  dropping. `Up` also doubles as a `Jump` trigger (see
-  `InputState.IsUpPressed`/`IsJumpPressed` below), but every call site gives
-  Up's directional/posture meaning priority whenever one applies for the
-  current stance, so a plain Up press from `Hang` always pulls into
-  `Clamber` first and never accidentally swings off, and a plain Up press
-  while climbing always keeps climbing rather than letting go - only a jump
-  press with Up *not* held (i.e. just Space/`ControlLeft`) actually
-  jumps/lets go in either case. Instead of Up/Down, a Jump press from `Hang`
-  swings/jumps off with an upward-plus-current-lateral-velocity impulse (not
-  available from `Clamber`), and a Jump press while climbing likewise lets
-  go of the ladder and launches upward. All three launch impulses (ground
-  jump, climb jump-off, hang jump-off) use their own progressively weaker
-  speed constant, reflecting how much "grip"/momentum each stance has behind
-  it. While climbing, vertical movement is locked to a
+  dropping. `Up` (directional) and `Jump` (action) are always distinct
+  inputs, never equivalent anywhere including the ground - see
+  `InputState.IsUpPressed`/`IsJumpPressed` below - so a Jump press instead of
+  Up/Down from `Hang` swings/jumps off with an upward-plus-current-lateral-
+  velocity impulse (not available from `Clamber`), and a Jump press while
+  climbing likewise lets go of the ladder and launches upward. All three
+  launch impulses (ground jump, climb jump-off, hang jump-off) use their own
+  progressively weaker speed constant, reflecting how much "grip"/momentum
+  each stance has behind it. While climbing, vertical movement is locked to a
   fixed climb speed but horizontal input still applies at a slower dedicated
   speed so the player can step off sideways onto a floor or another ladder;
   while hanging, the player is held in place vertically (still laterally
@@ -267,16 +262,14 @@ The live game state and the entity types that make it up.
   JavaScript directly.
 - **`InputState`** - tracks which keyboard keys are currently held down and
   exposes them as game-oriented queries (`IsLeftPressed`, `IsUpPressed`,
-  `IsJumpPressed`, etc.), so gameplay code never depends on raw DOM key
-  codes. Two full, independent key sets are supported for local
-  co-op/preference - "Player 1" (arrow keys + `Space`) and "Player 2"
-  (`WASD` + `Left Ctrl`) - rather than one shared movement set plus one
-  shared jump key. `IsJumpPressed` includes `IsUpPressed` (Up also jumps,
-  matching arrow-key/WASD platformer convention), in addition to each key
-  set's own dedicated jump key (`Space`/`ControlLeft`) - see `PhysicsSystem`
-  above for how each stance's own directional meaning of Up (climb, pull
-  into `Clamber`, stand up) is still given priority over its jump meaning
-  wherever both could otherwise apply to the same press.
+  etc.), so gameplay code never depends on raw DOM key codes. Two full,
+  independent key sets are supported for local co-op/preference - "Player 1"
+  (arrow keys + `Space`) and "Player 2" (`WASD` + `Left Ctrl`) - rather than
+  one shared movement set plus one shared jump key. `IsUpPressed` and
+  `IsJumpPressed` are deliberately never combined into one query anywhere,
+  even for the ordinary ground jump - see `PhysicsSystem` above for why
+  (`Hang`/`Climb` both need to tell "pull in"/"climb" apart from "let go and
+  launch").
 
 ### Game Loop
 

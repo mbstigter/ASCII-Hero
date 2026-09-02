@@ -2,7 +2,49 @@
 
 Log of significant architecture/design decisions. Newest first.
 
-## `Up` becomes a jump trigger again everywhere `Jump` applies, superseding the earlier full separation - but only where Up has no directional meaning to prioritize instead
+## Climbing's jump-off moved into the same stance-ladder chain as the other transitions, and gains a debounce fixing a real re-grab bug
+
+- **Prompted by user follow-up asking for a "trivial" cleanup for
+  consistency:** the climbing jump-off (letting go of a ladder via a Jump
+  press) lived inline inside the vertical-movement block, structurally
+  different from the ground stance toggle and the `Hang` stance ladder,
+  which both live in one shared, ordered `if`/`else if` chain earlier in
+  `Step`. Moved climbing's jump-off into that same chain (as its own `else
+  if (player.IsClimbing)` branch) purely for consistency - the vertical
+  movement block itself is now a plain speed calculation with no branching
+  on `jumpPressedThisFrame` left in it.
+- **This surfaced (and fixed) a genuine, previously-unnoticed bug the user
+  suspected from testing:** unlike `Hang`'s "let go", climbing's jump-off had
+  no debounce - and `ClimbJumpSpeed` (15) is comfortably under
+  `CollisionSystem.MaxSnapSpeed` (24), so a player jumping off a ladder was
+  still both geometrically overlapping it and (very likely) still holding
+  Up/Down for a frame or two afterward. Without a debounce, the very next
+  frame's climb-engage check would immediately re-grab the same ladder
+  before the jump was ever visible - making the jump-off silently do
+  nothing from the player's perspective, exactly the "released too early to
+  jump?" symptom reported. Fixed by adding `_suppressClimbUntilClear`,
+  mirroring the existing `_suppressHangUntilClear`: set the instant the
+  player jumps off, cleared once `IsTouchingClimbable` goes false again.
+
+## `Up` becoming a jump trigger again is reverted - it's not intuitive; back to `Up`/`Jump` always fully separate (supersedes the entry below)
+
+- **Prompted by user follow-up, immediately after trying the change below:**
+  even though the priority-based aliasing was logically sound (verified via
+  walkthroughs of the climbing jump-off guard and the `Hang`->`Clamber`
+  transition), it didn't feel intuitive in practice - a single input
+  (`IsJumpPressed`) silently meaning different things depending on context
+  and priority rules was more confusing to reason about day to day than
+  having Up and Jump be two inputs that are simply always distinct.
+- **Fix: reverted `InputState.IsJumpPressed` to no longer include
+  `IsUpPressed`**, back to only the dedicated jump keys
+  (`Space`/`ControlLeft`). The climbing jump-off check's `!upKeyDown &&
+  !downKeyDown` guard - only needed to stop Up/Down from being misread as a
+  jump-off once Up aliased into Jump - is no longer necessary and was
+  removed at the same time, restoring the climbing branch to a plain
+  `if (jumpPressedThisFrame)` check. All associated comments/docs describing
+  the aliasing were reverted alongside it.
+
+## `Up` becomes a jump trigger again everywhere `Jump` applies, superseding the earlier full separation - but only where Up has no directional meaning to prioritize instead (reverted by the entry above)
 
 - **Prompted by user follow-up, reversing part of the "always fully
   separate" decision below:** the earlier full separation was originally
@@ -16,26 +58,26 @@ Log of significant architecture/design decisions. Newest first.
   ("stand up"/"keep climbing") that a jump/let-go action should never
   override anyway - so Up can safely also be a jump trigger there and simply
   never actually acts as one while that directional meaning is available.
-- **Fix: `InputState.IsJumpPressed` now includes `IsUpPressed`** (in addition
-  to each key set's own dedicated jump key), restoring the more familiar
-  "Up/W also jumps" convention. To prevent this from reintroducing the
-  original conflict, every `PhysicsSystem` call site that branches on both
-  gives Up's directional/posture meaning priority whenever one applies for
-  the current stance: the `Hang` stance ladder already checked
+- **Fix (at the time): `InputState.IsJumpPressed` included `IsUpPressed`**
+  (in addition to each key set's own dedicated jump key), restoring the more
+  familiar "Up/W also jumps" convention. To prevent this from reintroducing
+  the original conflict, every `PhysicsSystem` call site that branches on
+  both gave Up's directional/posture meaning priority whenever one applied
+  for the current stance: the `Hang` stance ladder already checked
   Up-to-`Clamber` before Jump-to-swing-off (no change needed there), and the
   climbing jump-off check was tightened to require a jump-key press with
   neither Up nor Down held (i.e. only the dedicated Space/`ControlLeft`
-  keys) so holding Up to climb a ladder can never be misread as "let go and
+  keys) so holding Up to climb a ladder couldn't be misread as "let go and
   jump". A plain ground jump (`Stance == "Walk"`, no directional meaning of
   Up applies there beyond the already-separate Crawl->Walk stance toggle,
-  which only fires from `Crawl`) is unaffected by this priority rule and
-  simply jumps from either key, same as before the original separation.
-- **Confirms an assumption the user checked while requesting this:** jumping
-  is still not reachable directly from `Crawl` or `Clamber` - both remain
+  which only fires from `Crawl`) was unaffected by this priority rule and
+  simply jumped from either key, same as before the original separation.
+- **Confirmed an assumption the user checked while requesting this:** jumping
+  was still not reachable directly from `Crawl` or `Clamber` - both remained
   reachable only via their own stance-ladder step (standing up first, or
-  un-clambering back to `Hang` first), exactly as before. This decision only
-  changes which keys can trigger a jump, not from which stances a jump is
-  possible.
+  un-clambering back to `Hang` first), exactly as before. This entry only
+  changed which keys could trigger a jump, not from which stances a jump was
+  possible - but the entry above reverts the whole change regardless.
 
 ## `HangCrawl`/`HangCrawling` renamed to `Clamber`/`Clambering`; hanging gains its own dedicated lateral speed constants
 

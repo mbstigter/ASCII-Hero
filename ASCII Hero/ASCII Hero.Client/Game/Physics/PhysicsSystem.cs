@@ -36,6 +36,16 @@ public class PhysicsSystem
     /// </summary>
     private bool _suppressHangUntilClear;
 
+    /// <summary>
+    /// Set the instant the player jumps off a ladder (see the stance ladder in <see cref="Step"/>),
+    /// and held until <see cref="IClimberBody.IsTouchingClimbable"/> goes false again. Without
+    /// this, <see cref="ClimbJumpSpeed"/> is slow enough that the player is still both overlapping
+    /// the same ladder and holding Up/Down on the very next frame or two, which would otherwise
+    /// immediately re-engage <see cref="IClimberBody.IsClimbing"/> before the jump is even visible
+    /// - mirroring <see cref="_suppressHangUntilClear"/> for the same underlying reason.
+    /// </summary>
+    private bool _suppressClimbUntilClear;
+
     public void Step(World2D world, InputState input, double deltaSeconds)
     {
         var player = world.Player;
@@ -62,9 +72,17 @@ public class PhysicsSystem
         {
             player.IsClimbing = false;
         }
-        else if (!player.IsClimbing && player.IsTouchingClimbable && player.Stance == "Walk" && (input.IsUpPressed || input.IsDownPressed))
+        else if (!player.IsClimbing && player.IsTouchingClimbable && player.Stance == "Walk" && !_suppressClimbUntilClear && (input.IsUpPressed || input.IsDownPressed))
         {
             player.IsClimbing = true;
+        }
+
+        // Once the player is no longer touching the climbable surface at all (having actually
+        // jumped clear of it after the jump-off below), the debounce lock is released so a later
+        // approach can grab on again normally - mirroring the equivalent hang debounce below.
+        if (!player.IsTouchingClimbable)
+        {
+            _suppressClimbUntilClear = false;
         }
 
         var wasHanging = player.IsHanging;
@@ -102,12 +120,12 @@ public class PhysicsSystem
         // position rather than screen direction: Up pulls the knees up into the compact
         // clamber pose (mirroring Crawl), Down extends back out into the normal fully-stretched
         // hang (mirroring Walk) - and, since fully stretched is already the "least attached" pose,
-        // a second Down from there means letting go entirely and dropping. Up also doubles as a
-        // jump key (see InputState.IsJumpPressed), but every call site here gives Up's
-        // directional/posture meaning priority whenever one applies - so from Hang specifically,
-        // Up always pulls into Clamber first, and only a jump press with Up *not* held (i.e. just
-        // Space/ControlLeft) actually swings/jumps off; same idea while climbing (see below). All
-        // three latches are edge-triggered (only the frame the key is first pressed) so holding a
+        // a second Down from there means letting go entirely and dropping. Up and Jump are
+        // deliberately distinct inputs everywhere (see InputState.IsJumpPressed) - Up is always a
+        // directional/posture action, Jump is always a distinct explicit action - because Hang
+        // genuinely needs both at the same time (Up pulls into Clamber, Jump swings off), and
+        // keeping the same rule on the ground and while climbing avoids a special case. All three
+        // latches are edge-triggered (only the frame the key is first pressed) so holding a
         // direction doesn't repeatedly cycle through every step in one press.
         var upKeyDown = input.IsUpPressed;
         var downKeyDown = input.IsDownPressed;
@@ -126,6 +144,22 @@ public class PhysicsSystem
             {
                 player.Stance = "Walk";
                 stoodUpThisFrame = true;
+            }
+        }
+        else if (player.IsClimbing)
+        {
+            if (jumpPressedThisFrame)
+            {
+                // Lets go of the ladder entirely and launches upward (mirroring the Hang jump-off
+                // below) - weaker than a standing jump since a ladder grip has less legs-planted
+                // momentum behind it than solid ground. Same debounce concern as the hang jump-off
+                // below: ClimbJumpSpeed alone isn't fast enough to clear the ladder's overlap
+                // (and Up/Down are still likely held) within a single frame, so without
+                // _suppressClimbUntilClear the very next frame would immediately re-grab the same
+                // ladder before the jump is ever visible.
+                player.IsClimbing = false;
+                velocity.Y = -ClimbJumpSpeed;
+                _suppressClimbUntilClear = true;
             }
         }
         else if (player.IsHanging && wasHanging)
@@ -195,32 +229,19 @@ public class PhysicsSystem
         if (player.IsClimbing)
         {
             // Straight up/down movement at a fixed climb speed, gravity already suspended via
-            // Player2D.GravityAffected while IsClimbing is set. A Jump press lets go of the ladder
-            // entirely instead (mirroring the Hang jump-off below) - weaker than a standing jump
-            // since a ladder grip has less legs-planted momentum behind it than solid ground.
-            // Since Up also doubles as a jump key (see InputState.IsJumpPressed), Up/Down being
-            // held always take priority here - only a jump-key press with neither held (i.e. the
-            // dedicated Space/ControlLeft keys, not Up) actually lets go of the ladder, the same
-            // way the hang stance ladder below gives Up-to-Clamber priority over Jump-to-swing-off
-            // for the same underlying reason.
-            if (jumpPressedThisFrame && !upKeyDown && !downKeyDown)
+            // Player2D.GravityAffected while IsClimbing is set. Jump-off (letting go of the
+            // ladder entirely) is handled above, alongside the other stance-ladder transitions -
+            // this only runs for an ordinary climb with no exit this frame.
+            velocity.Y = 0;
+            if (input.IsUpPressed)
             {
-                player.IsClimbing = false;
-                velocity.Y = -ClimbJumpSpeed;
+                velocity.Y -= ClimbVerticalSpeed;
             }
-            else
+            if (input.IsDownPressed)
             {
-                velocity.Y = 0;
-                if (input.IsUpPressed)
-                {
-                    velocity.Y -= ClimbVerticalSpeed;
-                }
-                if (input.IsDownPressed)
-                {
-                    velocity.Y += ClimbVerticalSpeed;
-                }
-                player.IsGrounded = false;
+                velocity.Y += ClimbVerticalSpeed;
             }
+            player.IsGrounded = false;
         }
         else if (player.IsHanging)
         {
