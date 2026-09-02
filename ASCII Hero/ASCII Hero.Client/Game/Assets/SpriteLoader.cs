@@ -28,6 +28,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         var defaultAnimationMode = ParseAnimationMode(settings.TryGetValue("Animation", "Mode"));
         var defaultDefaultFrame = ParseDefaultFrame(settings.TryGetValue("Animation", "DefaultFrame"));
         var (stances, defaultStance) = ParseStances(settings.Section("Stances"));
+        var clipFolders = ParseClipFolders(settings.Section("ClipFolders"));
 
         var allClipNames = new List<string>(clipNames);
         if (stances is not null)
@@ -35,8 +36,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             foreach (var stanceDef in stances.Values)
             {
                 allClipNames.Add(stanceDef.IdleClip);
-                if (stanceDef.LeftClip is not null) allClipNames.Add(stanceDef.LeftClip);
-                if (stanceDef.RightClip is not null) allClipNames.Add(stanceDef.RightClip);
+                allClipNames.AddRange(stanceDef.DirectionalClips.Values);
             }
         }
 
@@ -58,8 +58,10 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
                 ? ParseDefaultFrame(clipDefaultFrameText)
                 : defaultDefaultFrame;
 
+            var clipFolder = ResolveClipFolder(folder, clipName, clipFolders);
+
             clips[clipName] = await LoadClipAsync(
-                folder, assetName, clipName, emptyChar, defaultMaterial, materialCodes,
+                clipFolder, assetName, clipName, emptyChar, defaultMaterial, materialCodes,
                 frameDurationSeconds, animationMode, clipDefaultFrame ?? 0);
         }
 
@@ -171,6 +173,47 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         return result;
     }
 
+    /// <summary>
+    /// Parses the optional <c>[ClipFolders]</c> section (see docs/AssetFormat.md §2.7), mapping a
+    /// clip-name prefix (e.g. "walk", matching "walk_idle"/"walk_left"/"walk_right") to the
+    /// subfolder its files live in, for sprites busy enough to want to group clips by stance
+    /// instead of keeping every clip's files flat in the asset's root folder. Absent entirely for
+    /// simple single-/few-clip assets (e.g. Pipe), which keep the flat layout.
+    /// </summary>
+    private static IReadOnlyDictionary<string, string> ParseClipFolders(
+        IReadOnlyDictionary<string, string> clipFoldersSection) =>
+        new Dictionary<string, string>(clipFoldersSection, StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Resolves the folder a given clip's files should be read from: the asset's own root
+    /// <paramref name="assetFolder"/> by default, or a subfolder if <paramref name="clipFolders"/>
+    /// maps the clip name (or its "_"-prefix, e.g. "walk" for "walk_left") to one.
+    /// </summary>
+    private static string ResolveClipFolder(
+        string assetFolder, string clipName, IReadOnlyDictionary<string, string> clipFolders)
+    {
+        if (clipFolders.Count == 0)
+        {
+            return assetFolder;
+        }
+
+        if (clipFolders.TryGetValue(clipName, out var exactSubFolder))
+        {
+            return $"{assetFolder}/{exactSubFolder}";
+        }
+
+        var prefix = clipName;
+        var underscoreIndex = clipName.IndexOf('_');
+        if (underscoreIndex > 0)
+        {
+            prefix = clipName[..underscoreIndex];
+        }
+
+        return clipFolders.TryGetValue(prefix, out var subFolder)
+            ? $"{assetFolder}/{subFolder}"
+            : assetFolder;
+    }
+
     private static (IReadOnlyDictionary<string, StanceDefinition>? Stances, string? DefaultStance) ParseStances(
         IReadOnlyDictionary<string, string> stancesSection)
     {
@@ -195,15 +238,55 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
                 continue;
             }
 
+            // Each clip name's own trailing suffix (_idle/_left/_right/_up/_down) says which
+            // Facing it's for - see docs/AssetFormat.md §2.6 - rather than a fixed slot
+            // position/count, so a stance can freely declare any subset of the five facings it
+            // actually needs (just Left/Right for walking, just Up/Down for climbing, or all four
+            // directions plus Idle for something like swimming).
+            string? idleClip = null;
+            var directionalClips = new Dictionary<Facing, string>();
+            foreach (var clipName in clipNames)
+            {
+                var facing = ResolveFacingFromClipName(clipName);
+                if (facing == Facing.Idle)
+                {
+                    idleClip = clipName;
+                }
+                else
+                {
+                    directionalClips[facing] = clipName;
+                }
+            }
+
+            // A stance with no clip whose suffix actually resolved to Idle (e.g. an author typo,
+            // or a stance authored with only directional clips) falls back to its first-listed
+            // clip as Idle, so a malformed line still resolves to *something* playable rather than
+            // throwing at spawn.
+            idleClip ??= clipNames[0];
+
             stances[key] = new StanceDefinition
             {
-                IdleClip = clipNames[0],
-                LeftClip = clipNames.Length > 1 ? clipNames[1] : null,
-                RightClip = clipNames.Length > 2 ? clipNames[2] : null,
+                IdleClip = idleClip,
+                DirectionalClips = directionalClips,
             };
         }
 
         return (stances, defaultStance);
+    }
+
+    /// <summary>
+    /// Resolves which <see cref="Facing"/> a stance's clip name is for, from its own trailing
+    /// suffix (<c>_idle</c>/<c>_left</c>/<c>_right</c>/<c>_up</c>/<c>_down</c>) - see
+    /// docs/AssetFormat.md §2.6. A clip with none of these suffixes is treated as
+    /// <see cref="Facing.Idle"/> (the neutral/only pose for a stance that declares just one clip).
+    /// </summary>
+    private static Facing ResolveFacingFromClipName(string clipName)
+    {
+        if (clipName.EndsWith("_left", StringComparison.OrdinalIgnoreCase)) return Facing.Left;
+        if (clipName.EndsWith("_right", StringComparison.OrdinalIgnoreCase)) return Facing.Right;
+        if (clipName.EndsWith("_up", StringComparison.OrdinalIgnoreCase)) return Facing.Up;
+        if (clipName.EndsWith("_down", StringComparison.OrdinalIgnoreCase)) return Facing.Down;
+        return Facing.Idle;
     }
 
     private static char ParseEmptyChar(string? rawValue)

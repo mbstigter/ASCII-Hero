@@ -72,33 +72,44 @@ public class SpriteClip
 }
 
 /// <summary>
-/// Which way a stance's clip should face: <see cref="Idle"/> looks at the viewer, <see cref="Left"/>/
-/// <see cref="Right"/> face sideways. See <see cref="StanceDefinition"/> and docs/AssetFormat.md §2.6.
+/// Which way a stance's clip should face: <see cref="Idle"/> is a stance's neutral pose (facing
+/// the viewer for a stance that moves horizontally, or whatever a stance's own neutral direction
+/// is otherwise, e.g. facing the ladder while climbing); <see cref="Left"/>/<see cref="Right"/>/
+/// <see cref="Up"/>/<see cref="Down"/> are directional variants. Unlike a fixed pair of axes, a
+/// stance can freely declare any subset of these five - not just one axis - which is what a
+/// four-directional stance (e.g. swimming) needs. See <see cref="StanceDefinition"/> and
+/// docs/AssetFormat.md §2.6.
 /// </summary>
 public enum Facing
 {
     Idle,
     Left,
     Right,
+    Up,
+    Down,
 }
 
 /// <summary>
-/// One named stance (e.g. "Walk", "Crawl") of a sprite asset, mapping each <see cref="Facing"/> to
-/// the clip name that should be shown. <see cref="LeftClip"/>/<see cref="RightClip"/> are optional -
-/// when absent, that facing falls back to <see cref="IdleClip"/>. See docs/AssetFormat.md §2.6.
+/// One named stance (e.g. "Walk", "Crawl", "Climb", "Swim") of a sprite asset, mapping each
+/// <see cref="Facing"/> to the clip name that should be shown. Built from clip names' own
+/// suffixes (<c>_idle</c>/<c>_left</c>/<c>_right</c>/<c>_up</c>/<c>_down</c>) rather than a fixed
+/// position/count, so a stance can declare any subset of the five facings it actually needs - one
+/// axis (e.g. `Left`/`Right` for walking), the other (e.g. `Up`/`Down` for climbing), or all four
+/// at once (e.g. swimming). Any facing not declared by this stance falls back to
+/// <see cref="IdleClip"/>. See docs/AssetFormat.md §2.6.
 /// </summary>
 public class StanceDefinition
 {
     public required string IdleClip { get; init; }
-    public string? LeftClip { get; init; }
-    public string? RightClip { get; init; }
 
-    public string GetClipName(Facing facing) => facing switch
-    {
-        Facing.Left => LeftClip ?? IdleClip,
-        Facing.Right => RightClip ?? IdleClip,
-        _ => IdleClip,
-    };
+    /// <summary>
+    /// Clips for non-idle facings this stance actually declared, keyed by <see cref="Facing"/>
+    /// (never contains <see cref="Facing.Idle"/> - that's always <see cref="IdleClip"/>).
+    /// </summary>
+    public IReadOnlyDictionary<Facing, string> DirectionalClips { get; init; } = new Dictionary<Facing, string>();
+
+    public string GetClipName(Facing facing) =>
+        facing != Facing.Idle && DirectionalClips.TryGetValue(facing, out var clip) ? clip : IdleClip;
 }
 
 /// <summary>

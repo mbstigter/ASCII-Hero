@@ -18,29 +18,51 @@ public class AsciiRenderer
     public double CellWidthPixels { get; set; } = 16;
     public double CellHeightPixels { get; set; } = 24;
 
-    public List<Glyph> BuildFrame(World2D world, Camera2D camera)
+    public List<Glyph> BuildFrame(World2D world, Camera2D camera, double viewportWidthCells, double viewportHeightCells)
     {
         var glyphs = new List<Glyph>();
 
-        AddBackgroundGlyphs(glyphs, world, camera);
+        AddBackgroundGlyphs(glyphs, world, camera, viewportWidthCells, viewportHeightCells);
+
+        var viewLeft = camera.Position.X;
+        var viewTop = camera.Position.Y;
+        var viewRight = camera.Position.X + viewportWidthCells;
+        var viewBottom = camera.Position.Y + viewportHeightCells;
 
         foreach (var body in world.Objects)
         {
+            // Skip any game object whose bounding box doesn't intersect the visible viewport at
+            // all, before touching its (possibly much larger) sprite frame grid - avoids doing
+            // per-cell work for objects that are nowhere near the camera.
+            if (body.Position.X + body.Size.X <= viewLeft || body.Position.X >= viewRight ||
+                body.Position.Y + body.Size.Y <= viewTop || body.Position.Y >= viewBottom)
+            {
+                continue;
+            }
+
             AddGameObjectGlyphs(glyphs, body, world, camera);
         }
 
         return glyphs;
     }
 
-    private void AddBackgroundGlyphs(List<Glyph> glyphs, World2D world, Camera2D camera)
+    private void AddBackgroundGlyphs(List<Glyph> glyphs, World2D world, Camera2D camera, double viewportWidthCells, double viewportHeightCells)
     {
         var chars = world.BackgroundChars;
         var height = chars.GetLength(0);
         var width = chars.GetLength(1);
 
-        for (var row = 0; row < height; row++)
+        // Only the rows/columns actually visible through the camera's current viewport need to
+        // become glyphs; a world larger than the viewport would otherwise have every off-screen
+        // cell built (and later clipped by the canvas) every single frame regardless.
+        var startRow = Math.Max(0, (int)Math.Floor(camera.Position.Y));
+        var endRow = Math.Min(height, (int)Math.Ceiling(camera.Position.Y + viewportHeightCells));
+        var startCol = Math.Max(0, (int)Math.Floor(camera.Position.X));
+        var endCol = Math.Min(width, (int)Math.Ceiling(camera.Position.X + viewportWidthCells));
+
+        for (var row = startRow; row < endRow; row++)
         {
-            for (var col = 0; col < width; col++)
+            for (var col = startCol; col < endCol; col++)
             {
                 var character = chars[row, col];
                 if (character == world.EmptyChar)

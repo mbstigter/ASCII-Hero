@@ -116,7 +116,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             _viewportHeightCells,
             deltaSeconds);
 
-        var glyphs = _renderer.BuildFrame(_world, _camera);
+        var glyphs = _renderer.BuildFrame(_world, _camera, _viewportWidthCells, _viewportHeightCells);
         await canvasBridge.DrawFrameAsync(ViewportWidthPixels, ViewportHeightPixels, glyphs);
     }
 }

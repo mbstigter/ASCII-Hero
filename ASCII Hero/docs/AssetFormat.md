@@ -16,13 +16,17 @@ Assets/
 		Sprites/
 			Player/
 				Player_settings.ini
-				Player_walk_idle_characters.txt
-				Player_walk_idle_foregroundcolors.txt
-				Player_walk_idle_backgroundcolors.txt
-				Player_walk_idle_materials.txt
-				Player_walk_left_characters.txt
-				Player_walk_left_foregroundcolors.txt
-				Player_walk_left_backgroundcolors.txt
+				Walk/
+					Player_walk_idle_characters.txt
+					Player_walk_idle_foregroundcolors.txt
+					Player_walk_idle_backgroundcolors.txt
+					Player_walk_idle_materials.txt
+					Player_walk_left_characters.txt
+					Player_walk_left_foregroundcolors.txt
+					Player_walk_left_backgroundcolors.txt
+				Crawl/
+					Player_crawl_idle_characters.txt
+					...
 			BrickWall/
 				BrickWall_settings.ini
 				BrickWall_default_characters.txt
@@ -322,12 +326,17 @@ one cell tall with `TileAxis = Vertical`.
 
 Some assets — the player, and later any NPC that visibly changes posture or
 direction — need more than one whole-body pose, each of which can also face
-`Idle` (facing the viewer), `Left`, or `Right`. This is a second, orthogonal
-axis on top of everything in §2.1-§2.5: whichever clip is currently selected
-for the active stance/facing combination still authors its own frames,
-`EmptyChar`, materials, and its own resolved `[Animation]`/`[Animation.{clipName}]`
-timing exactly as described above — a stance/facing pair is simply *which
-clip* is currently active, not a new kind of clip content.
+`Idle` (its neutral pose - facing the viewer for a stance that moves
+horizontally, or whatever a stance's own neutral direction is otherwise, e.g.
+facing the ladder while climbing), or one of four directions: `Left`/`Right`
+(horizontal - walking, crawling, jumping, hanging), `Up`/`Down` (vertical -
+climbing), or any combination of all four at once (e.g. swimming, which can
+move in all four directions). This is a second, orthogonal axis on top of
+everything in §2.1-§2.5: whichever clip is currently selected for the active
+stance/facing combination still authors its own frames, `EmptyChar`,
+materials, and its own resolved `[Animation]`/`[Animation.{clipName}]` timing
+exactly as described above — a stance/facing pair is simply *which clip* is
+currently active, not a new kind of clip content.
 
 Declared via an optional `[Stances]` section in `settings.ini`:
 
@@ -336,27 +345,34 @@ Declared via an optional `[Stances]` section in `settings.ini`:
 Default = Walk
 Walk = walk_idle, walk_left, walk_right
 Crawl = crawl_idle, crawl_left, crawl_right
+Climb = climb_idle, climb_up, climb_down
+Swim = swim_idle, swim_left, swim_right, swim_up, swim_down
 ```
 
 - Each non-`Default` key names a stance (`Walk`, `Crawl`, ...); its value is a
-  comma-separated list of clip names in the order **`Idle, Left, Right`**
-  (matching the facing enum order the engine uses). `Left`/`Right` are
-  optional — a line with only one clip name means that stance always shows
-  the same clip regardless of facing (e.g. a stance with no meaningful
-  sideways pose).
+  comma-separated list of clip names, in any order. Which `Facing` each clip
+  is for is read from **the clip name's own trailing suffix** -
+  `_idle`/`_left`/`_right`/`_up`/`_down` - not from its position in the list;
+  a clip with none of these suffixes is treated as `Idle`. A stance lists only
+  the facings it actually has art for: just `_left`/`_right` for a stance
+  that only ever moves sideways (walking), just `_up`/`_down` for one that
+  only ever moves vertically (climbing), or all four directional suffixes at
+  once for a stance that can move any of the four ways (swimming). Any facing
+  a stance doesn't list falls back to that stance's `_idle` clip.
 - `Default` names the stance active at spawn (required whenever `[Stances]`
   is present at all).
 - Every clip named here is an ordinary clip following the normal
   `{AssetName}_{clipName}_*` file-naming convention (§2) - `[Stances]` only
   adds grouping metadata on top of clips that already exist; it introduces no
-  new file-naming rule.
+  new file-naming rule, and a clip's suffix is simply the tail end of its
+  already-required name.
 - `[Stances]` is entirely optional. Assets that don't declare it behave
   exactly as before: whatever single clip a placement/spawn requests (e.g.
   `Clip = idle` in a level's `objects.ini`) is the only clip ever shown, with
   no stance/facing switching at all.
 - Frame counts are independent per clip - a stance's `Idle` clip can have three
-  frames (e.g. a subtle idle head-turn) while its `Left`/`Right` clips have
-  two frames each (e.g. a walk cycle), or one frame (a static crouched pose).
+  frames (e.g. a subtle idle head-turn) while its directional clips have two
+  frames each (e.g. a walk cycle), or one frame (a static crouched pose).
   Nothing about `[Stances]` requires matching frame counts across facings or
   across stances.
 - Switching stance/facing at runtime re-derives the object's size and
@@ -364,13 +380,71 @@ Crawl = crawl_idle, crawl_left, crawl_right
   other clip/frame switch already does - a stance with a different silhouette
   (e.g. a shorter `Crawl` pose) is picked up automatically, with no special
   pre-transition validation needed anywhere in the format or the loader.
+- For an asset whose stance set is dictated by code rather than purely by
+  level design (the player being the main example - `PhysicsSystem`/its
+  capability interfaces can put it into any stance it supports, e.g.
+  `Clamber` as soon as a hangable surface is grabbed while crawling), every
+  stance the code can produce must have a matching entry in `[Stances]`, and
+  every clip listed there must have at least its `_characters.txt` file (the
+  matching `_foregroundcolors.txt`/`_backgroundcolors.txt` layers stay
+  optional per §2.3). There is no generic fallback (e.g. defaulting to some
+  idle clip) for a missing stance or clip - it is a hard load/runtime error
+  by design, since a code-driven stance silently rendering wrong (or not at
+  all) would be a much worse failure mode than a loud, immediate crash during
+  asset authoring/QA.
 
-Note the two different orderings used by this format, both intentional:
-**`[Stances]` clip lists are authored `Idle, Left, Right`** (matching the
-facing enum), while **a single clip's own multi-frame `_characters.txt` for a
-Left/Idle/Right-style animation (e.g. `Player_walk_idle`'s head-turn) is authored
-`Left, Idle, Right`**, since that is the natural sequence for a symmetric
-`PingPong` head-turn to bounce through.
+Note the two different naming conventions used by this format, both
+intentional and unrelated: **a `[Stances]` clip list is authored in any
+order, each clip's own name suffix (`_idle`/`_left`/`_right`/`_up`/`_down`)
+saying which facing it's for**, while **a single clip's own multi-frame
+`_characters.txt` for a Left/Idle/Right-style animation (e.g.
+`Player_walk_idle`'s head-turn) is authored `Left, Idle, Right`** (frame
+order within that one clip, unrelated to facing), since that is the natural
+sequence for a symmetric `PingPong` head-turn to bounce through.
+
+### 2.7 Organizing clips into subfolders (`[ClipFolders]`)
+
+A simple asset (`Pipe`, `BrickWall`) has only one or two clips and is happiest
+kept as a flat folder of files. A busy multi-stance asset (`Player`, and any
+future NPC with many poses) accumulates many files per stance and reads more
+clearly split into one subfolder per stance. Both are supported by the same
+loader, with **no change to how a level's `_objects.ini` references the
+asset or any of its clips** - callers keep asking for a clip by its plain name
+(`walk_idle`, `hang_left`, ...) exactly as before; only the on-disk layout
+changes.
+
+An asset opts into subfolders via an optional `[ClipFolders]` section in its
+own `settings.ini`, mapping a clip-name prefix to the subfolder its files live
+in:
+
+```ini
+[ClipFolders]
+walk = Walk
+crawl = Crawl
+```
+
+- Each key is a clip-name prefix — either a whole clip name (e.g. `spark`) or
+  the part of a clip name before its first `_` (e.g. `walk` matches
+  `walk_idle`, `walk_left`, `walk_right`). The longer, exact-clip-name form is
+  checked first, so a prefix rule (`walk = Walk`) and a same-named exact
+  override (`walk_left = SomeOtherFolder`) can coexist if ever needed.
+- Its value is the subfolder name (relative to the asset's own folder) that
+  clip's files are read from, e.g. `Player_walk_idle_characters.txt` lives at
+  `Player/Walk/Player_walk_idle_characters.txt` instead of directly under
+  `Player/`.
+- A clip whose name (or prefix) has no entry in `[ClipFolders]` is read from
+  the asset's own root folder, unaffected - this is what keeps `[ClipFolders]`
+  fully optional and opt-in per clip, not an all-or-nothing switch for the
+  whole asset. `{AssetName}_settings.ini` itself always stays in the asset's
+  root folder regardless of `[ClipFolders]`.
+- This is purely a file-organization convenience — it has no effect on
+  `[Stances]`, `[Animation.{clipName}]`, tiling, or anything else described
+  above, all of which keep referring to clips by their plain name.
+
+`Player` is the reference busy asset using this: `Player_settings.ini` (and its
+one-off `spark` effect clip) stay in `Sprites/Player/`, while `walk`, `crawl`,
+`jump`, `climb`, `hang`, and `clamber` clips each live in their own matching
+subfolder (`Sprites/Player/Walk/`, `Sprites/Player/Crawl/`, ...).
 
 ## 3. World/level files
 

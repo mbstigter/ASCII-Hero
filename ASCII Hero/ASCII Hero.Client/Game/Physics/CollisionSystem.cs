@@ -12,6 +12,26 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// </summary>
 public class CollisionSystem
 {
+    /// <summary>
+    /// Small positional slack used by the generic edge-approach checks in
+    /// <see cref="WouldSnapFromBelow"/>/<see cref="WouldSnapFromAbove"/>, so a body whose edge
+    /// sits a fraction of a cell past the surface's own edge (as can happen after a rect is
+    /// pushed into rounding by float integration) still counts as a valid approach rather than
+    /// falsely failing the check on an otherwise valid grab/landing.
+    /// </summary>
+    private const double EdgeTolerance = 0.05;
+
+    /// <summary>
+    /// Speed (in cells/second, on the axis relevant to the surface) above which a body is moving
+    /// too fast to snap onto a climbable/hangable surface on first touch - it should instead keep
+    /// falling/moving through, exactly like a body still rising past the peak of a jump shouldn't
+    /// instantly snap onto a platform's underside. Deliberately generous (comparable to a fast
+    /// fall speed under gravity) so an ordinary jump arc or ladder dismount is never blocked by
+    /// this, while a body in true freefall barrelling straight through a thin pipe/ladder cell in
+    /// a single frame is not mistakenly caught mid-flight.
+    /// </summary>
+    private const double MaxSnapSpeed = 24.0;
+
     /// <summary>Reused across frames to avoid an allocation every call for what is normally a tiny list.</summary>
     private readonly List<(IPhysicsBody Body, double Restitution)> _movingBodies = [];
 
@@ -38,6 +58,8 @@ public class CollisionSystem
             movingBody.IsGrounded = false;
             _movingBodies.Add((movingBody, GetRestitution(movingBody)));
         }
+
+        ResolveClimbingAndHanging(world);
 
         // Solid terrain a moving body can stand on/collide against - any static body not marked
         // Body2D.IsPassable, checked directly and generically rather than by excluding specific
@@ -72,6 +94,56 @@ public class CollisionSystem
 
         ResolveHazardsAndCollectables(world);
     }
+
+    /// <summary>
+    /// Sets <see cref="IClimberBody.IsTouchingClimbable"/>/<see cref="IHangerBody.IsTouchingHangable"/>
+    /// from a body's current overlap against static <see cref="Body2D.IsClimbable"/>/
+    /// <see cref="Body2D.IsHangable"/> terrain - the same "recomputed fresh every frame, never
+    /// persisted" pattern already used for <see cref="IPhysicsBody.IsGrounded"/>. Generic over
+    /// any <see cref="IClimberBody"/>/<see cref="IHangerBody"/> in the world, not just the player -
+    /// an enemy could implement either capability the same way. <see cref="Physics.PhysicsSystem"/>
+    /// reads these the following frame to decide whether to actually engage
+    /// <see cref="IClimberBody.IsClimbing"/>/<see cref="IHangerBody.IsHanging"/>.
+    /// </summary>
+    /// <remarks>
+    /// A ladder can be grabbed from any side (climbing up into it, sideways into it mid-jump, or
+    /// falling down onto/through it), so climbable overlap has no directional restriction - just
+    /// overlap plus a generic snap-speed gate (see <see cref="MaxSnapSpeed"/>). A hangable surface
+    /// is different: reaching up and grabbing a bar/pipe should only trigger when actually
+    /// approaching from underneath (see <see cref="WouldSnapFromBelow"/>) - not merely brushing
+    /// its top while landing on it - and likewise gated on vertical speed so a body plummeting
+    /// straight through a thin pipe in one frame isn't caught mid-fall.
+    /// </remarks>
+    private static void ResolveClimbingAndHanging(World2D world)
+    {
+        var climbables = world.Objects.Where(body => body.IsStatic && body.IsClimbable).ToList();
+        var hangables = world.Objects.Where(body => body.IsStatic && body.IsHangable).ToList();
+
+        foreach (var body in world.Objects)
+        {
+            if (body is IClimberBody climber)
+            {
+                climber.IsTouchingClimbable = IsWithinSnapSpeed(climber.Velocity) &&
+                    climbables.Any(climbable => Overlaps(climber, climbable));
+            }
+
+            if (body is IHangerBody hanger)
+            {
+                hanger.IsTouchingHangable = IsWithinSnapSpeed(hanger.Velocity) &&
+                    hangables.Any(hangable => Overlaps(hanger, hangable) && WouldSnapFromBelow(hanger, hangable));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="body"/> is moving slowly enough to snap onto a climbable/hangable
+    /// surface on first touch, rather than blowing straight through it - see
+    /// <see cref="MaxSnapSpeed"/>. Checked against the body's overall speed (not just one axis),
+    /// since either a fast horizontal dash into a ladder or a fast vertical fall past a pipe
+    /// should equally fail to snap.
+    /// </summary>
+    private static bool IsWithinSnapSpeed(Vector2D velocity) =>
+        Math.Sqrt(velocity.X * velocity.X + velocity.Y * velocity.Y) <= MaxSnapSpeed;
 
     /// <summary>
     /// Bounciness used for collision response, generic over any concrete moving body: bodies that
@@ -255,17 +327,48 @@ public class CollisionSystem
 
 
     /// <summary>
-    /// Finds the deepest-overlapping pair of (body rect, solid rect) and resolves just that
-    /// one pair. A body's collision shape may be made up of several rectangles (e.g. derived
-    /// from sprite data), so every rect on each side is checked. <paramref name="restitution"/>
-    /// drives the velocity response uniformly: 0 stops the body dead (the player's case), while
-    /// anything above 0 reflects velocity to varying degrees of bounce (dynamic objects). Despite
-    /// the name, <paramref name="solid"/> is any immovable body from the <c>solids</c> list, not
-    /// specifically a platform - a wall, crate, or any other static terrain resolves the same way.
+    /// Resolves <paramref name="body"/> against <paramref name="solid"/>, one body collision
+    /// rectangle at a time (see <see cref="ResolveRectAgainstSolid"/> for why). <paramref
+    /// name="restitution"/> drives the velocity response uniformly: 0 stops the body dead (the
+    /// player's case), while anything above 0 reflects velocity to varying degrees of bounce
+    /// (dynamic objects). Despite the name, <paramref name="solid"/> is any immovable body from
+    /// the <c>solids</c> list, not specifically a platform - a wall, crate, or any other static
+    /// terrain resolves the same way.
     /// </summary>
     private static void ResolveAgainstSolid(IPhysicsBody body, double restitution, Body2D solid)
     {
-        if (!TryFindDeepestOverlap(body.CollisionRects, solid.CollisionRects, out var deepestBodyRect, out var bestSolidRect))
+        // A body's collision shape can be made up of several rectangles that don't all have the
+        // same width/offset (e.g. the player's narrower "head" rect above its wider "torso"
+        // rect - see CollisionShapeBuilder). Picking a single globally-deepest-penetrating pair
+        // across every combination of the body's rects and the solid's rects is wrong: a
+        // shallow/differently-axised overlap on one rect (say the head clipping a solid's top
+        // corner) can "win" over a more significant overlap on another rect (the torso still
+        // embedded in the solid's side), so only the head gets pushed out and the torso stays
+        // stuck inside the solid. Resolving each of the body's own rects against the solid
+        // independently - one at a time - ensures every part of the body's shape ends up outside
+        // the solid, not just whichever part happened to look "deepest". CollisionRects is
+        // re-fetched every iteration (rather than enumerating one snapshot list) because it is
+        // computed fresh from the body's *current* Position - resolving rect 0 can move the
+        // body, and rect 1 must then be checked/pushed out from that already-corrected position,
+        // not the stale pre-frame one, otherwise the two rects' corrections fight each other and
+        // the body jitters between resolved positions frame to frame.
+        var rectCount = body.CollisionRects.Count;
+        for (var rectIndex = 0; rectIndex < rectCount; rectIndex++)
+        {
+            ResolveRectAgainstSolid(body, restitution, solid, body.CollisionRects[rectIndex]);
+        }
+    }
+
+    /// <summary>
+    /// Resolves a single one of the body's own collision rectangles against whichever of the
+    /// solid's rectangles it overlaps most deeply, then pushes the body out along the
+    /// shallower-penetration axis, same as the original single-rect logic. Called once per body
+    /// rect by <see cref="ResolveAgainstSolid"/> so a multi-rect body (e.g. the player's
+    /// head+torso shape) gets every part of itself pushed fully clear of the solid.
+    /// </summary>
+    private static void ResolveRectAgainstSolid(IPhysicsBody body, double restitution, Body2D solid, Rect2D bodyRect)
+    {
+        if (!TryFindDeepestOverlap([bodyRect], solid.CollisionRects, out var deepestBodyRect, out var bestSolidRect))
         {
             return;
         }
@@ -394,6 +497,36 @@ public class CollisionSystem
         var minVertical = Math.Min(overlapTop, overlapBottom);
 
         return minVertical < minHorizontal && overlapTop < overlapBottom;
+    }
+
+    /// <summary>
+    /// Whether <paramref name="body"/> is underneath <paramref name="other"/> - i.e. no part of
+    /// <paramref name="body"/>'s own collision shape extends above <paramref name="other"/>'s top
+    /// edge - the geometric check for "reaching up into a hangable surface from below", and
+    /// (symmetrically) for "having just fallen far enough through it from above". Deliberately
+    /// compares the body's own overall topmost edge (the minimum <see cref="Rect2D.Top"/> across
+    /// *all* of its collision rects) rather than reusing <see cref="TryFindDeepestOverlap"/>'s
+    /// per-pair deepest-penetration pick: for a multi-rect body (e.g. the player, whose feet sit
+    /// well below its head) the deepest-overlapping pair while falling through a thin pipe is
+    /// initially a lower rect (a leg/foot), whose own top edge sits nowhere near the body's actual
+    /// topmost row - checking that sub-rect alone let the body snap while still mid-body or
+    /// feet-level under the surface instead of only once its true top row has cleared it. Using
+    /// the whole body's overall top edge instead makes falling-through-from-above and
+    /// climbing/jumping-up-from-below resolve to the exact same geometric moment: the body's top
+    /// row is (just) below the surface's own top edge. Combined with the caller's
+    /// <see cref="IsWithinSnapSpeed"/> gate, this also rejects a body moving too fast to grab on
+    /// even though it is geometrically underneath (e.g. a jump arc's peak sweeping past on the
+    /// way up).
+    /// </summary>
+    private static bool WouldSnapFromBelow(IPhysicsBody body, Body2D other)
+    {
+        if (!TryFindDeepestOverlap(body.CollisionRects, other.CollisionRects, out _, out var otherRect))
+        {
+            return false;
+        }
+
+        var bodyTop = body.CollisionRects.Min(rect => rect.Top);
+        return bodyTop >= otherRect.Top - EdgeTolerance;
     }
 
     /// <summary>

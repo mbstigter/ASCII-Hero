@@ -2,6 +2,304 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## `Up` becomes a jump trigger again everywhere `Jump` applies, superseding the earlier full separation - but only where Up has no directional meaning to prioritize instead
+
+- **Prompted by user follow-up, reversing part of the "always fully
+  separate" decision below:** the earlier full separation was originally
+  motivated by "Up can no longer jump, or `Clamber` becomes unreachable from
+  `Hang`". Revisiting that: the actual conflict was never Up-vs-Jump in
+  general - it only ever existed for the single case of Up pressed while
+  already `Hang`ing, where Up's directional meaning ("pull into `Clamber`")
+  and a hypothetical jump meaning would collide on the same key press. Every
+  other context (ground, `Climb`) has no such collision, since a directional
+  Up press there already has an unambiguous, higher-priority meaning
+  ("stand up"/"keep climbing") that a jump/let-go action should never
+  override anyway - so Up can safely also be a jump trigger there and simply
+  never actually acts as one while that directional meaning is available.
+- **Fix: `InputState.IsJumpPressed` now includes `IsUpPressed`** (in addition
+  to each key set's own dedicated jump key), restoring the more familiar
+  "Up/W also jumps" convention. To prevent this from reintroducing the
+  original conflict, every `PhysicsSystem` call site that branches on both
+  gives Up's directional/posture meaning priority whenever one applies for
+  the current stance: the `Hang` stance ladder already checked
+  Up-to-`Clamber` before Jump-to-swing-off (no change needed there), and the
+  climbing jump-off check was tightened to require a jump-key press with
+  neither Up nor Down held (i.e. only the dedicated Space/`ControlLeft`
+  keys) so holding Up to climb a ladder can never be misread as "let go and
+  jump". A plain ground jump (`Stance == "Walk"`, no directional meaning of
+  Up applies there beyond the already-separate Crawl->Walk stance toggle,
+  which only fires from `Crawl`) is unaffected by this priority rule and
+  simply jumps from either key, same as before the original separation.
+- **Confirms an assumption the user checked while requesting this:** jumping
+  is still not reachable directly from `Crawl` or `Clamber` - both remain
+  reachable only via their own stance-ladder step (standing up first, or
+  un-clambering back to `Hang` first), exactly as before. This decision only
+  changes which keys can trigger a jump, not from which stances a jump is
+  possible.
+
+## `HangCrawl`/`HangCrawling` renamed to `Clamber`/`Clambering`; hanging gains its own dedicated lateral speed constants
+
+- **Prompted by user request:** `HangCrawl` read as a mash-up of unrelated
+  verbs (hanging + crawling) rather than naming the pose itself. Renamed
+  throughout code, assets, and docs to `Clamber`/`Clambering` - the compact,
+  both-hands-and-feet-on-the-rope grip used to squeeze through narrow gaps
+  alongside a hangable surface. This covers the stance name (`Clamber`),
+  the `IHangerBody`/`Player2D` property (`IsClambering`, was
+  `IsHangingCrawled`), the clip-folder and clip names (`Sprites/Player/Clamber/`,
+  `clamber_idle`/`clamber_left`/`clamber_right`, was `HangCrawl`/`hangcrawl_*`),
+  and every code comment/doc reference to the old name. Purely a rename -
+  no behavior change.
+- **Hanging's lateral movement also gained its own dedicated speed
+  constants instead of reusing a ground speed:** `HangSpeed` (8, shimmying
+  sideways along a pipe/rope while fully stretched) and `ClamberSpeed` (5,
+  slower still while gripping tight in the compact `Clamber` pose) - both
+  slower than `WalkSpeed`/`CrawlSpeed` since arm-only lateral movement is
+  weaker than a full stride, and `ClamberSpeed` slower than `HangSpeed` for
+  the same reason `CrawlSpeed` is slower than `WalkSpeed` (a more
+  compact/braced pose trades speed for stability/fit).
+
+## `Up`/`Jump` are always fully separate inputs (never equivalent, even on the ground); a "Player 2" key set is added; jump-off is added for climbing too, and speed constants gain a three-tier naming scheme
+
+- **Prompted by user follow-up after the previous two entries below:** the
+  first pass kept `IsUpPressed || IsJumpPressed` as the ground jump
+  condition (treating Up and Jump as equivalent there, distinct only for
+  `Hang`). The user asked to never conflate them anywhere, including the
+  ground - jump is always its own dedicated action. That immediately raises
+  a keyboard-ergonomics problem: the arrow-key player already has `Space`
+  right next to their movement keys, but the WASD player has no equivalent
+  key next to WASD once Up (`KeyW`) no longer also jumps.
+- **Fix: `InputState` now documents and treats the keyboard as two full,
+  independent key sets** - "Player 1" (arrow keys + `Space`) and "Player 2"
+  (`WASD` + `ControlLeft`) - rather than one shared set of "movement keys"
+  plus one shared "jump key". `IsJumpPressed` now checks `Space` (Player 1)
+  or `ControlLeft` (Player 2, positioned next to WASD the same way `Space`
+  sits next to the arrow keys), and every call site (ground, `Climb`,
+  `Hang`) uses only `IsJumpPressed` for jumping/letting-go - `IsUpPressed`
+  never contributes to any jump/let-go decision anywhere anymore.
+- **Climbing gained the jump-off it was previously missing entirely:** a
+  `Jump` press while `IsClimbing` now also lets go and launches upward
+  (mirroring `Hang`'s jump-off, added below), rather than climbing being the
+  only suspended/attached stance with no jump-off exit at all.
+- **Speed constants renamed again to a `{Stance}JumpSpeed` scheme for the
+  three launch impulses, ordered by attachment strength:** `WalkJumpSpeed`
+  (18, standing jump, legs planted on solid ground - strongest),
+  `ClimbJumpSpeed` (15, letting go of a ladder rung - a bit weaker, less
+  overall grip/momentum than solid footing), `HangJumpSpeed` (12, swinging
+  off a pipe/rope - weakest, arms alone are weaker than legs). The
+  horizontal climb constant is renamed `ClimbHorizontalSpeed` (was
+  `ClimbLateralSpeed`) and bumped from 6 to 8 - still slower than
+  `WalkSpeed` (12, full leg-driven stride) but now faster than `CrawlSpeed`
+  (6, a deliberately slow compact stance), rather than matching crawl
+  exactly. `ClimbVerticalSpeed` (10) is unchanged.
+
+## `Up` and `Jump` (Space) become distinct inputs for `Hang`; ground jump still treated them as equivalent (superseded by the entry above)
+
+- **Prompted by the jump-off-hang feature below breaking `HangCrawl`
+  reachability:** `InputState.IsUpPressed` previously ORed `Space` in
+  alongside `ArrowUp`/`KeyW`, so once Up became "swing off" for `Hang`, there
+  was no remaining way to press "just Up" to pull into `HangCrawl` - Space
+  and Up were indistinguishable at every call site.
+- **Fix (at the time): `InputState` gained separate `IsUpPressed`
+  (`ArrowUp`/`KeyW`) and `IsJumpPressed` (`Space`) properties**, with the
+  ground jump condition deliberately kept as `IsUpPressed || IsJumpPressed`
+  to preserve old ground behavior. The very next entry above replaced this
+  ground-equivalence choice with full separation everywhere instead.
+
+## Jump/swing-off from `Hang` returns, but only from the fully-stretched pose, not `HangCrawl`
+
+- **Prompted by user feedback after the earlier hang stance ladder cleanup**
+  removed jumping off a hang entirely, leaving only the explicit "second Down
+  to let go" exit. Requested back specifically as a swing-off-a-pipe-or-rope
+  action, deliberately restricted to the fully-stretched `Hang` pose - the
+  compact `HangCrawl` grip (knees pulled up, holding tight) doesn't represent
+  the same "swinging and about to let go" body position, so it keeps its
+  existing behavior (Down un-crawls back to `Hang`; no direct jump-off).
+- **Fix (at the time): an Up press while in plain `Hang` cleared `IsHanging`
+  and gave velocity an upward jump impulse** (originally the same magnitude
+  as the standing jump; later split into its own, weaker `HangJumpSpeed` -
+  see the entry above), reusing the same `_suppressHangUntilClear` debounce
+  as the existing let-go-and-drop exit so the player can't instantly re-grab
+  the surface they just launched off. Horizontal velocity for a diagonal
+  swing (Up held together with Left/Right) falls out of the existing,
+  unchanged horizontal-movement block that runs later in the same `Step` -
+  no separate diagonal-specific code needed, since by the time it runs the
+  player is simply airborne and un-hung like any other jump. The resolved
+  pose naturally becomes `Jump` afterward too, with no special-casing: with
+  `IsHanging` now false and `IsGrounded` already false (set false throughout
+  every hang), the existing `poseStance`/`facing` resolution at the bottom of
+  `Step` falls through to the ordinary airborne case.
+
+## `[Stances]` facing is resolved from each clip name's own suffix, not a fixed slot position/flag
+
+- **Prompted by a follow-up review of the `Up`/`Down` facing axis added just
+  before this:** that design encoded which axis (`Left`/`Right` vs `Up`/`Down`)
+  a stance used via clip *position* in its `[Stances]` line plus a bolted-on
+  literal `Vertical` marker in a fourth slot when the axis wasn't the default
+  horizontal one. Flagged as clunky and, worse, genuinely insufficient: an
+  upcoming `Swim` stance needs *all four* directions (plus idle) at once,
+  which a single "pick one axis" flag can't express at all.
+- **Fix: a stance's clips are no longer positional.** Each clip name's own
+  trailing suffix - `_idle`/`_left`/`_right`/`_up`/`_down` - says which
+  `Facing` it's for (a name with none of these suffixes is treated as
+  `Idle`), parsed by a small `ResolveFacingFromClipName` in
+  `SpriteLoader.ParseStances`. A `[Stances]` line is therefore just an
+  unordered list of clip names, each self-describing its own facing; a stance
+  declares only the facings it actually has art for - two (`_left`/`_right`
+  for Walk), two different ones (`_up`/`_down` for Climb), or all four at
+  once (`_left`/`_right`/`_up`/`_down` for a future Swim) - with no special
+  marker needed for any of these cases, including the four-direction one the
+  previous slot-based design had no room for.
+- **`StanceDefinition` changed shape to match:** `LeftClip`/`RightClip`/
+  `UpClip`/`DownClip` (four fixed optional properties) became a single
+  `DirectionalClips` dictionary keyed by `Facing` (never containing `Idle`,
+  which stays its own required `IdleClip` property) - open-ended over however
+  many directional facings a stance actually declares, rather than a fixed
+  set of slots. `GetClipName(Facing)` still falls back to `IdleClip` for any
+  facing the stance didn't declare, unchanged in spirit from before.
+- **No change to `PhysicsSystem` beyond what the previous entry already
+  introduced** - it still resolves `Facing` from the climb input directly
+  while `IsClimbing` and from `velocity.X` otherwise; only how `[Stances]` is
+  authored and parsed changed. `Climb`'s ini line is now
+  `climb_idle, climb_up, climb_down` (order no longer matters), and the
+  player's climb-moving art was split into two real files/clips
+  (`climb_up`/`climb_down`, currently identical content) instead of one
+  `climb_moving` clip reused via a flag - a pure asset rename with headroom
+  for genuinely distinct up/down art later.
+
+## `Facing` gains a vertical axis (`Up`/`Down`); `Climb`/`ClimbMoving` collapse into one `Climb` stance
+
+- **Prompted by a design review of the `ClimbMoving` stance added earlier:**
+  every other multi-pose stance (`Walk`, `Crawl`, `Jump`, `Hang`, `HangCrawl`)
+  is a single stance whose `Idle`/`Left`/`Right` clips are selected by
+  `Facing`, resolved from horizontal input/velocity. `Climb`, uniquely, was
+  split into two separate top-level stances (`Climb` for idle head-sway,
+  `ClimbMoving` for actually climbing) instead of being one stance with a
+  facing-style choice - an inconsistency, not a deliberate design difference.
+- **On inspection, there is no real conceptual difference to justify the
+  special case.** Walking's `Idle` means "facing the viewer, not moving
+  sideways"; its `Left`/`Right` mean "moving sideways in that direction,"
+  selected from `velocity.X`. Climbing's `Idle` means "facing the ladder, not
+  moving vertically" (already the case - `climb_idle` is literally described
+  as its head-sway-while-holding-still clip); a hypothetical `Up`/`Down` would
+  mean "moving vertically in that direction," selected from the climb input
+  directly. Same shape, different axis. The only actual wart was that
+  `Facing`/`StanceDefinition` had no vertical axis to select through - not
+  that climbing has some fundamentally different relationship between pose
+  and movement.
+- **Fix: `Facing` gained `Up`/`Down` cases alongside `Left`/`Right`.** (The
+  original follow-up implementation encoded which axis a stance used via a
+  positional `Vertical` flag in `[Stances]` - superseded by the very next,
+  newer entry above, which replaced that with per-clip-name suffix parsing;
+  `Facing` itself and `PhysicsSystem`'s axis-resolution rule below are
+  unchanged.) `PhysicsSystem.Step` resolves `Facing` from the climb input
+  directly (not `velocity.Y`, since climbing itself directly sets `velocity.Y`
+  from that same input) only while `IsClimbing`, and from `velocity.X`
+  otherwise - the same "resolve along whichever axis this stance actually
+  moves on" rule applied consistently instead of `Climb` being special-cased.
+- **This removes `ClimbMoving` as a stance entirely** - `Climb` is now one
+  stance with three clips (`Idle`/`Up`/`Down`), symmetric with every other
+  stance, and `IsClimbing` alone still gates all engage/disengage logic (pose
+  selection is the only thing that reads whether up/down is currently held,
+  same as before).
+
+## Hanging gains a structured, symmetric up/down stance ladder; snap-from-above uses the body's overall top edge
+
+
+- **Prompted by two reported quirks after the hang feature and its visuals
+  were otherwise finished:** falling onto a pipe/rope from above snapped far
+  too early (the player could end up hanging from mid-body or even feet
+  level instead of from its actual top row), and toggling `IsHangingCrawled`
+  via the same crawl key used on the ground felt arbitrary/unstructured, with
+  no consistent relationship to how Up/Down already work while standing.
+- **Snap-from-above fix:** `CollisionSystem.WouldSnapFromBelow` previously
+  compared the *deepest-overlapping rect pair's* top edge (from
+  `TryFindDeepestOverlap`) against the hangable surface's top edge. For a
+  multi-rect body like the player (separate head/body/leg rects), the
+  deepest-overlapping pair while falling through a thin pipe is initially a
+  lower rect (e.g. a leg), whose own top edge is nowhere near the player's
+  actual topmost row - so the check passed while the player was still deep
+  under the surface. Fixed by comparing the body's overall top edge (the
+  minimum `Top` across *all* of its collision rects) instead, so falling
+  through from above and climbing/jumping up from below both resolve to the
+  same geometric moment: the body's true top row is (just) below the
+  surface's own top edge.
+- **Hanging stance ladder:** rather than an isolated crawl-key toggle while
+  hanging, Up/Down while suspended now mirror the existing ground Walk/Crawl
+  toggle as its structural inverse - a single mental model instead of two
+  unrelated ones. On the ground, Up always means "more upright" (Crawl ->
+  Walk) and Down always means "more compact" (Walk -> Crawl). While hanging,
+  Up pulls into the compact `HangCrawl` pose (mirroring Crawl) and Down
+  extends to the fully-stretched `Hang` pose (mirroring Walk); since fully
+  stretched is already the least-attached pose, a further Down from there
+  means an explicit "let go" and drop, replacing the old (and arguably
+  backwards) "Up jumps off a hang" behavior. Both the ground and hanging
+  toggles are edge-triggered off dedicated `_wasUpKeyDown`/`_wasDownKeyDown`
+  latches in `PhysicsSystem` (previously only Down had one, shared and reused
+  for both ground crouch and the old hang-crawl toggle).
+- **Debounce on re-grab after letting go:** the instant a player lets go from
+  `Hang`, they are still geometrically touching/underneath the very same
+  surface for that frame (nothing has moved yet), which would otherwise
+  re-engage `IsHanging` immediately and make "let go" unreachable. A small
+  `_suppressHangUntilClear` latch in `PhysicsSystem` blocks re-engagement
+  until `IsTouchingHangable` actually goes false (i.e. the player has fallen
+  clear), then clears itself for a normal future grab.
+
+## `AsciiRenderer.BuildFrame` culls glyph generation to the camera's viewport
+
+- **Prompted by a performance review of the render path:** `BuildFrame`
+  previously iterated the entire world's background grid, and every game
+  object's full sprite frame, unconditionally every frame - relying on the
+  HTML canvas to clip pixels that ended up off-screen. For a world larger
+  than the viewport this did per-cell work (allocating a `Glyph`, resolving
+  colors, sending it through JS interop) proportional to total world size
+  instead of visible viewport size.
+- **Fix: `BuildFrame` now takes the camera's current viewport size (in
+  cells) and derives a visible rect from `camera.Position` +
+  viewport size.** `AddBackgroundGlyphs` only loops the row/column range
+  that intersects this rect (clamped to the world's own bounds), and
+  `BuildFrame` skips calling `AddGameObjectGlyphs` entirely for any body
+  whose bounding box (`Position`/`Size`) doesn't intersect it, before ever
+  touching that body's sprite frame grid.
+- **Scope is render-only; simulation is untouched.** Physics
+  (`PhysicsSystem.Step`) and collision (`CollisionSystem.Resolve`) still run
+  against every body in `world.Objects` regardless of camera position -
+  off-screen bodies keep moving, colliding, and animating exactly as
+  before. Rejected (for now): also culling physics/animation updates for
+  bodies far outside the camera, since that would change simulation
+  behavior (e.g. an off-screen moving platform "freezing" instead of
+  continuing to cycle) rather than being a pure rendering optimization.
+
+## `CollisionSystem` resolves solid collisions per body collision rect, not per globally-deepest-overlapping pair
+
+
+- **Prompted by two related bugs surfaced by testing the new mid-height
+  `MiddleWall` placements and ladder/pipe overlap in `LevelBallTest`:** the
+  player could sometimes walk through a solid wall, and jumping into a wall
+  could leave the player visibly stuck "inside" its lower layers while only
+  the top layer behaved as standable.
+- **Root cause: a multi-rectangle body's collision shape (e.g. the player's
+  narrower "head" rect above its wider "torso" rect, from
+  `CollisionShapeBuilder`) was resolved against a solid by picking a single
+  globally-deepest-overlapping (body rect, solid rect) pair across every
+  combination, then correcting only that one pair.** A shallow/different-axis
+  overlap on one rect (the head clipping a wall's top corner) could "win"
+  over a deeper overlap on another rect (the torso still embedded in the
+  wall's side), so only the head got pushed out while the torso stayed stuck
+  in the solid - explaining both the walk-through and stuck-inside symptoms.
+- **Fix: `ResolveAgainstSolid` now loops over each of the body's own
+  collision rects and resolves each one individually against the solid**
+  (`ResolveRectAgainstSolid`), rather than reducing the whole body to one
+  "best" pair. `TryFindDeepestOverlap`/the push-out math themselves are
+  unchanged and still reused per rect.
+- **Each iteration re-reads `body.CollisionRects` fresh by index rather than
+  enumerating one rect list captured before the loop started.** Resolving one
+  rect can move the body's `Position`; since `CollisionRects` is computed
+  live from `Position`, the next rect must be checked against the
+  already-corrected position, not a stale pre-frame one - otherwise two
+  rects' corrections can fight each other frame to frame, which manifested
+  as the player's pose jittering between standing and jumping while resting
+  still on solid ground.
+
 ## `Passable`/`Climbable`/`Hangable` are plain per-instance bools, not new classes or interfaces
 
 - **Prompted by planning ladders/pipes/ropes and by `EffectInstance2D` being
@@ -437,3 +735,157 @@ Log of significant architecture/design decisions. Newest first.
   physics, collision, camera, rendering) is plain C# under `Game/`.
 - **Game code lives in `ASCII Hero.Client`** (the WebAssembly project),
   since that's where it executes at runtime.
+
+## Climbing/hanging is a generic "snap" mechanism via small capability interfaces
+
+- **Superseding the previous "plain state on `Player2D`" approach** after
+  real gameplay testing surfaced further design flaws beyond the original
+  marker-interface concern: the player couldn't step off a ladder sideways
+  (only jumping off worked), and hanging engaged the instant the player's
+  feet merely brushed a pipe's underside while landing, rather than only
+  when actually reaching up into it. Revisiting both at once produced a more
+  generic mechanism, described here, that also directly answers "why doesn't
+  `IsGrounded` have a touching/engaged pair like climbing/hanging do" (see
+  the last bullet).
+- **Two small, focused capability interfaces - `IClimberBody` and
+  `IHangerBody` (both extending `IPhysicsBody`)** - not one combined
+  interface and not plain `Player2D`-only properties. The former "plain
+  properties" decision assumed only `Player2D` would ever need this and a
+  shared interface bought no polymorphism; that's revisited now because the
+  user confirmed enemies (and later, swimming) are a real future direction,
+  matching the existing convention of small single-purpose capability
+  interfaces (`IGravityAffected`, `ICollectorBody`, `IKillerBody`) rather than
+  reintroducing the previously-rejected single `IClimberBody`-does-everything
+  marker. Splitting climbing and hanging into two interfaces (rather than
+  one covering both) lets a body implement just one - a fish that swims and
+  climbs out onto ladders but never hangs from a rope, for instance.
+- **Each mechanic still keeps its touching/engaged pair** -
+  `IsTouchingClimbable`/`IsClimbing` and `IsTouchingHangable`/`IsHanging` -
+  recomputed fresh every frame by `CollisionSystem` (touching) and
+  engaged/disengaged by `PhysicsSystem` (climbing/hanging), unchanged from
+  the previous design and still the fix for the "walking through a passable
+  ladder froze movement" bug (overlap alone must never lock movement, only a
+  deliberate press while touching does).
+- **A single generic snap-speed gate (`CollisionSystem.MaxSnapSpeed`),
+  applied to both mechanics, replaces bespoke "is this fast enough to be a
+  problem" reasoning per case.** Before setting `IsTouchingClimbable` or
+  `IsTouchingHangable`, the body's overall speed is checked against one
+  shared threshold - a body moving too fast (jumping past a ladder at speed,
+  or genuinely freefalling through a thin pipe in one frame) does not snap
+  on; a body moving at ordinary walk/fall/jump speeds does. This directly
+  answers the user's "some sort of velocity threshold" request in the most
+  reusable way: one gate, one constant, shared by every snap-capable
+  mechanic, rather than a separate ad hoc speed check per surface type.
+- **"From underneath" for hanging is still a direct top-edge comparison
+  (renamed `WouldSnapFromBelow`, was `IsApproachingFromBelow`)** - unchanged
+  reasoning from the previous decision (a penetration-depth/axis heuristic,
+  as used for kill contacts, breaks down once a fast or passable body already
+  deeply engulfs a thin hangable object) - now additionally backed by the
+  snap-speed gate above, so a body plunging through a pipe too fast to
+  plausibly grab on doesn't hang even if it is momentarily geometrically
+  "underneath" for one frame.
+- **Ladders can be grabbed from any side, including mid-jump** -
+  `IsTouchingClimbable` has no directional restriction (unlike hanging),
+  matching the user's request that a ladder be grabbable while airborne, not
+  just while walking into it at ground level. Climbing also now yields to
+  solid ground: if the player is simultaneously grounded on real (non-ladder)
+  terrain, `IsClimbing` is forced off, so landing on a floor at a ladder's
+  base always wins over continuing to "climb" in place.
+- **Ladders can now be exited sideways, not just by jumping off** - while
+  climbing, horizontal input still applies (at a new, slower `ClimbSideSpeed`
+  rather than the ordinary walk speed, since stepping off a rung is more
+  deliberate than free walking), letting the player step onto an adjacent
+  floor or another ladder. This directly fixes the reported "can't leave the
+  ladder other than by jumping" bug.
+- **Crawling cannot climb directly - the player must explicitly stand up
+  first, as a separate deliberate step, before a later up/down press can
+  grab a ladder.** Engaging `IsClimbing` requires `Stance == "Walk"` already;
+  there is no combined "stand up and grab on" shortcut collapsing that into
+  one input, even though `Player2D.Stance` itself has no notion of a
+  "Climb"/"Hang" stance being incompatible with crawling by construction (a
+  plain string) - the two-step requirement is a deliberate gameplay/feel
+  choice enforced by `PhysicsSystem`, the same place all other stance
+  transitions (Walk<->Crawl) already live, not a technical necessity.
+- **Hanging gained a second pose, `IsHangingCrawled`, on `IHangerBody`** -
+  the regular fully-stretched hang (hands only) versus a compact
+  hang-and-shimmy pose (hands and feet both on the rope, vertically shorter
+  to fit through narrow spaces), directly matching the user's requested two
+  hanging flavors. Which pose is used is decided once, at the moment of
+  grabbing on (compact if the player was already crawling, regular
+  otherwise, mirroring whichever silhouette the player already had a moment
+  before), and can be toggled afterward via the same crawl key used for the
+  ordinary ground Walk/Crawl toggle - reusing one input's meaning
+  ("go compact") across both grounded and hanging contexts instead of
+  inventing a separate hang-specific key.
+- **Three new dedicated stances - `Climb`, `Hang`, `HangCrawl` - replace the
+  previous "no dedicated art yet, keep showing Walk/Crawl" placeholder.**
+  Each has its own `Idle`/`Left`/`Right` clip set, mirroring `Walk`/`Crawl`.
+  `Climb`'s idle is a 2-frame `Loop` clip alternating arm-over-arm position;
+  `Hang`/`HangCrawl`'s idle clips are 3-frame `PingPong`, matching the
+  `Walk`/`Crawl` idle head-turn convention (only the face moves); their
+  `Left`/`Right` clips are 2-frame `Loop`, matching the `Walk`/`Crawl`
+  left/right convention. Old `ConsoleGame2D`
+  was checked for reusable art/an approach to marking specific sprite parts
+  (e.g. hands) as hangable, but confirmed to have never actually implemented
+  climb/hang sprites at all (`MovementState.Hanging`/`Climbing` existed as
+  enum values and contact-driven transitions only) - the new stances'
+  character art is original to this implementation, following the same
+  glyph vocabulary as the existing Walk/Crawl clips, not reused old art.
+- **Why `IsGrounded` doesn't get its own touching/engaged pair, and that's
+  fine**: climbing/hanging need the split because there is a genuine
+  *choice* to make while touching (press up/down to climb; anything else and
+  you just walk past) - the touching flag exists specifically to gate that
+  choice one frame later without blocking movement in the meantime. Standing
+  on solid ground has no equivalent alternate action for a body to opt out
+  of - a body resting on a platform's top surface has no "touching but not
+  grounded" state to represent (unlike passable ladders, ordinary solid
+  terrain always blocks/supports on contact), so `IsGrounded` staying a
+  single flag, computed by physical collision push-out rather than a
+  velocity-gated snap check, is a deliberate asymmetry rather than an
+  oversight. The one conceptual parallel worth calling out: a very fast body
+  moving through a platform in a single frame (tunneling) is a separate,
+  pre-existing physics-fidelity concern for `ResolveAgainstSolid`, unrelated
+  to this snap mechanism and out of scope for this change.
+- **Optional per-stance clip subfolders (`[ClipFolders]`) are declared in the
+  asset's own `settings.ini`, not per-level `_objects.ini`.** `Player`'s
+  sprite folder had grown busy enough (six stances' worth of clips, each with
+  several facing/layer files) to be worth organizing into subfolders. Where
+  that mapping lives had two options: alongside the asset (`settings.ini`) or
+  alongside each placement (`_objects.ini`). `settings.ini` won because the
+  subfolder layout is a property of *how this one asset's files happen to be
+  organized on disk*, identical for every level that ever places a `Player`
+  object - putting it in `_objects.ini` would mean repeating (and keeping in
+  sync) the same mapping in every level file that uses the asset, for a
+  concern that has nothing to do with a specific placement. A simple asset
+  like `Pipe` just omits `[ClipFolders]` entirely and keeps its flat
+  single-folder layout, with zero extra ceremony - the loader falls back to
+  reading straight from the asset's root folder for any clip with no
+  matching entry, so adopting subfolders is fully opt-in per asset (and even
+  per clip within an asset, via prefix matching) rather than a structural
+  change forced onto every sprite.
+- **Climbing gained a second, visual-only pose split - `Climb` (idle) vs.
+  `ClimbMoving` (actually climbing) - the same way `Jump` already is a
+  visual-only variant layered on top of `Walk`/`Crawl`, not a new engagement
+  state.** The original single `climb_idle` clip animated its arm-over-arm
+  loop even while the player held still on a ladder (not pressing up/down),
+  which reads wrong - the old clip is kept, renamed to `climb_moving`, and
+  used only while up/down is actually held; a new `climb_idle` clip (3-frame
+  head-sway `PingPong`, matching the `walk_idle`/`hang_idle` idle-head-turn
+  convention) is shown the rest of the time while still `IsClimbing`.
+  `PhysicsSystem` computes this purely as a local `isActivelyClimbing`
+  bool (`IsClimbing && (IsUpPressed || IsDownPressed)`) feeding pose
+  selection alongside the existing `Jump`/`Hang`/`HangCrawl` pose logic -
+  `IsClimbing` itself, and every engage/disengage/gravity-suspension rule
+  gated on it, is entirely unchanged; nothing about *whether* the player is
+  climbing depends on whether up/down happens to be held on a given frame,
+  only *which clip* is shown. This was considered and rejected as "similar to
+  `walk_left`/`walk_right`, just up/down" (i.e. as two more facings on the
+  same `Climb` stance) - facings are a lateral (`Left`/`Right`)/no-direction
+  (`Idle`) concept tied to horizontal movement direction throughout the
+  rest of the format (see §2.6), and climbing's up-vs-down movement has no
+  visible difference worth separate art anyway; modeling this instead as a
+  second whole stance keeps `Facing` meaning one consistent thing everywhere
+  and reuses the pre-existing "extra automatic pose over a stance" pattern
+  `Jump` already established, rather than overloading `Facing` with a new,
+  inconsistent meaning just for this one stance.
+

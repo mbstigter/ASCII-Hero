@@ -38,6 +38,24 @@ const FONT_PRESETS = {
 let currentFontMode = 'authentic';
 let currentHorizontalScale = 1;
 
+// Repeatedly (re-)focuses the canvas for a short window after startup. A single
+// focus() call during initialize() can still lose the race against the browser
+// itself (or the WebAssembly runtime) settling focus onto the address bar/page
+// chrome moments later, so this keeps retrying briefly rather than relying on
+// one attempt.
+function focusCanvasWithRetries(canvas) {
+    let attempts = 0;
+    const tryFocus = () => {
+        canvas.focus();
+        attempts++;
+        if (attempts < 10) {
+            window.setTimeout(tryFocus, 100);
+        }
+    };
+    tryFocus();
+    window.addEventListener('load', () => canvas.focus());
+}
+
 export async function initialize(canvasElementId, dotNetObjectRef, fontMode) {
     const canvas = document.getElementById(canvasElementId);
     ctx = canvas.getContext('2d');
@@ -50,6 +68,18 @@ export async function initialize(canvasElementId, dotNetObjectRef, fontMode) {
     keyupHandler = (e) => dotNetRef.invokeMethodAsync('OnKeyUp', e.code);
     window.addEventListener('keydown', keydownHandler);
     window.addEventListener('keyup', keyupHandler);
+
+    // The keyboard listeners above are on window, which only receives key events once
+    // the browser window/document itself has focus. Right after the page first loads,
+    // focus can still be sitting on browser chrome (e.g. the address bar) rather than
+    // the document, so key presses would otherwise be silently dropped until the
+    // player clicks the page once. A single focus() call here loses the race against
+    // the browser/WASM runtime still settling focus during startup, so it's retried a
+    // few times over the first second; a click/keydown anywhere on the page also
+    // re-focuses the canvas as a permanent fallback in case every retry still loses.
+    canvas.tabIndex = -1;
+    focusCanvasWithRetries(canvas);
+    window.addEventListener('pointerdown', () => canvas.focus());
 
     lastTimestamp = null;
     rafHandle = window.requestAnimationFrame(onAnimationFrame);

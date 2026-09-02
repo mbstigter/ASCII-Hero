@@ -31,6 +31,14 @@ Check [docs/Design.md](../ASCII%20Hero/docs/Design.md) and [docs/Decisions.md](.
 
 Check [docs/AssetFormat.md](../ASCII%20Hero/docs/AssetFormat.md).
 
+### Keeping docs/Structure.md Up To Date
+
+[docs/Structure.md](../ASCII%20Hero/docs/Structure.md) describes the program's components and
+key flows. Whenever a change adds, removes, renames, or moves a class/subsystem, or changes an
+existing flow it describes (e.g. startup order, per-frame tick order, asset loading/fallback
+rules), update the corresponding section of docs/Structure.md as part of that same change -
+treat it the same way as docs/Decisions.md, not as a separate follow-up task.
+
 ### Validation
 
 After code changes, build the solution and address build errors before considering the task complete.

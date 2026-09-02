@@ -41,3 +41,22 @@ not like a pixel-art game with ASCII characters placed on top.
 - Clear visual hierarchy.
 - Strong sense of movement despite the text-based rendering.
 - Consistent ASCII aesthetic throughout the game.
+
+## Planned / Future Work
+
+- **Swim stance.** The stance/facing system (see
+  [AssetFormat.md §2.6](AssetFormat.md) and
+  [Decisions.md](Decisions.md#-stances-facing-is-resolved-from-each-clip-names-own-suffix-not-a-fixed-slot-positionflag))
+  already supports a stance declaring all four directions plus idle via clip
+  suffixes (`swim_idle`, `swim_left`, `swim_right`, `swim_up`, `swim_down`) -
+  no further rendering/asset-format plumbing is needed for that part. Still
+  to design/implement when this is picked up:
+  - A water volume/trigger concept in the level format (or reuse of an
+    existing object type) so `CollisionSystem`/`World2D` can detect the
+    player entering/leaving water.
+  - A swim capability on the player (an `ISwimmerBody`-style interface,
+    following the existing `IClimberBody`/`IHangerBody` pattern) plus
+    `PhysicsSystem` logic for buoyancy/four-directional swim movement,
+    analogous to how climbing resolves `Facing` from input directly.
+  - The `Swim` stance's `[Stances]` line and its five `swim_*` clip assets
+    (art + `Player_settings.ini` entries), once the above physics exists.

@@ -3,7 +3,7 @@ using ASCII_Hero.Client.Game.Assets;
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>The player-controlled character, backed by the loaded "Player" sprite asset.</summary>
-public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody, IKillerBody, IEffectTrigger
+public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody, IKillerBody, IEffectTrigger, IClimberBody, IHangerBody
 {
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }
@@ -11,12 +11,27 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody, 
     /// <summary>Whether the player is currently standing on a platform or the world's floor.</summary>
     public bool IsGrounded { get; set; }
 
+    /// <inheritdoc/>
+    public bool IsTouchingClimbable { get; set; }
+
+    /// <inheritdoc/>
+    public bool IsTouchingHangable { get; set; }
+
+    /// <inheritdoc/>
+    public bool IsClimbing { get; set; }
+
+    /// <inheritdoc/>
+    public bool IsHanging { get; set; }
+
+    /// <inheritdoc/>
+    public bool IsClambering { get; set; }
+
     /// <summary>
-    /// The player is always subject to normal world gravity - unlike <see cref="DynamicObject2D"/>/
-    /// <see cref="MovingEnemy2D"/> there is no per-instance toggle, so this is a fixed <c>true</c>
-    /// rather than a settable property.
+    /// The player is subject to normal world gravity except while <see cref="IsClimbing"/> or
+    /// <see cref="IsHanging"/>, during which it is suspended so <see cref="Physics.PhysicsSystem"/>
+    /// can drive vertical/lateral movement directly instead of fighting gravity's pull.
     /// </summary>
-    public bool GravityAffected => true;
+    public bool GravityAffected => !(IsClimbing || IsHanging);
 
     /// <summary>
     /// Current stance (e.g. "Walk", "Crawl"). Plain string rather than an enum so this
