@@ -127,6 +127,19 @@ public class SpriteAsset
     public TileAxis TileAxis { get; init; } = TileAxis.None;
 
     /// <summary>
+    /// Color code (see <c>Global/Colors.ini</c>) used for a cell whose own <c>_foregroundcolors.txt</c>
+    /// (or <c>_backgroundcolors.txt</c>) is absent/empty at that position, from this asset's own
+    /// <c>[Colors] DefaultForegroundColor</c>/<c>DefaultBackgroundColor</c> settings.ini keys. Null
+    /// when not set, in which case rendering falls back further to the level's own default (see
+    /// <see cref="World.World2D.DefaultForeColor"/>/<see cref="World.World2D.DefaultBackColor"/>) and
+    /// finally to the hardcoded renderer default. See docs/AssetFormat.md §2.5/§4.
+    /// </summary>
+    public char? DefaultForeColor { get; init; }
+
+    /// <summary>See <see cref="DefaultForeColor"/>.</summary>
+    public char? DefaultBackColor { get; init; }
+
+    /// <summary>
     /// Optional stance/facing metadata (see docs/AssetFormat.md §2.6) mapping each stance name
     /// (e.g. "Walk", "Crawl") to the clips shown for its Idle/Left/Right facings. Null for assets
     /// that don't declare a <c>[Stances]</c> section - such assets only ever show whichever single

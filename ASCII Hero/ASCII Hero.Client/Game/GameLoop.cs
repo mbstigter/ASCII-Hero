@@ -40,7 +40,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     {
         // Assets are loaded once, up front, over HTTP (see IAssetFileProvider) so gameplay never
         // stalls mid-frame waiting on a fetch; the loop itself only starts once this completes.
-        _world = await World2D.LoadAsync(assetFileProvider, "LevelBallTest");
+        _world = await World2D.LoadAsync(assetFileProvider, "TestPhysics");
 
         var cellMetrics = await canvasBridge.InitializeAsync(canvasElementId, this, fontMode);
         ApplyCellMetrics(cellMetrics);

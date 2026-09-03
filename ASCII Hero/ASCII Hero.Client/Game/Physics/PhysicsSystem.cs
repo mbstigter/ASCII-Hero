@@ -8,7 +8,9 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// Applies horizontal movement input to the player, gravity to any <see cref="IGravityAffected"/>
 /// body, and integrates position from velocity for every <see cref="IPhysicsBody"/> in
 /// <see cref="World2D.Objects"/> each frame. Kinematic bodies move at a constant, predefined
-/// velocity and never receive gravity or input.
+/// velocity and never receive gravity or input. The player still moves via direct velocity
+/// assignment (see the TODO in <see cref="Step"/>); every other moving body integrates via a
+/// per-frame mass-scaled force accumulator instead (see <see cref="StepMovingBodyWithForces"/>).
 /// </summary>
 public class PhysicsSystem
 {
@@ -196,9 +198,11 @@ public class PhysicsSystem
         var moveSpeed = player.Stance == "Walk" ? WalkSpeed : CrawlSpeed;
 
         // TODO: Player movement is currently driven directly by velocity assignment from input,
-        // unlike every other body (DynamicObject2D/MovingEnemy2D), which move via force/velocity
-        // integration. Revisit this to apply movement as a force causing acceleration instead,
-        // consistent with the rest of the physics model, as part of the physics engine refinement.
+        // unlike every other body (DynamicObject2D/MovingEnemy2D), which now move via a mass-scaled
+        // force accumulator (see StepMovingBodyWithForces). Revisit this to apply player movement
+        // as a force causing acceleration instead, consistent with the rest of the physics model,
+        // as part of a future physics engine refinement - deliberately deferred/out of scope for
+        // now (see docs/Decisions.md).
 
         // Horizontal movement is directly driven by input (no acceleration/friction for milestone 1).
         // While climbing a ladder, horizontal input still applies (at a slower, deliberate side
@@ -292,12 +296,21 @@ public class PhysicsSystem
                         kinematicObject.Position.Y + kinematicObject.Velocity.Y * deltaSeconds);
                     break;
 
+                // The player keeps its existing direct velocity-assignment model (see the TODO
+                // above and docs/Decisions.md) rather than the force accumulator below - it is
+                // deliberately excluded from this round of force-based movement, so it is matched
+                // first, ahead of the generic IGravityAffected/IPhysicsBody cases every other body
+                // falls into.
+                case Player2D playerBody:
+                    StepMovingBody(world, playerBody, playerBody.GravityAffected, deltaSeconds);
+                    break;
+
                 case IGravityAffected gravityAffected:
-                    StepMovingBody(world, gravityAffected, gravityAffected.GravityAffected, deltaSeconds);
+                    StepMovingBodyWithForces(world, gravityAffected, gravityAffected.GravityAffected, deltaSeconds);
                     break;
 
                 case IPhysicsBody physicsBody:
-                    StepMovingBody(world, physicsBody, gravityAffected: false, deltaSeconds);
+                    StepMovingBodyWithForces(world, physicsBody, gravityAffected: false, deltaSeconds);
                     break;
             }
         }
@@ -312,6 +325,59 @@ public class PhysicsSystem
             velocity.Y += world.Gravity * deltaSeconds;
         }
 
+        body.Velocity = velocity;
+
+        body.Position = new Vector2D(
+            body.Position.X + velocity.X * deltaSeconds,
+            body.Position.Y + velocity.Y * deltaSeconds);
+    }
+
+    /// <summary>
+    /// Force-based counterpart to <see cref="StepMovingBody"/>, used for every non-player moving
+    /// body (see the dispatch loop in <see cref="Step"/>): rather than adding a fixed velocity
+    /// delta for gravity directly, this accumulates forces acting on the body this frame (today,
+    /// just gravity as a mass-scaled force - <c>F = mass * gravity</c>, matching how a real
+    /// falling object's weight scales with its mass) into a net force, converts that to an
+    /// acceleration via <c>a = F / mass</c>, and integrates that into velocity. For a single
+    /// gravity-only force this reduces to the exact same <c>velocity.Y += gravity * dt</c> as
+    /// before (mass cancels out of <c>F / mass = mass * gravity / mass = gravity</c>) - the
+    /// accumulator's value is that any future force source (wind, thrust, a spring, etc.) can be
+    /// summed in here alongside gravity before the single acceleration/integration step, rather
+    /// than every force needing its own bespoke velocity-mutation code path. A body with no
+    /// resolved material (<see cref="Body2D.Mass"/> of 0) is treated as mass 1 for this
+    /// conversion, same rationale as <see cref="CollisionSystem"/>'s impulse math, so an
+    /// unconfigured body still falls at the ordinary rate instead of the force/0 blowing up.
+    ///
+    /// There is deliberately no separate "normal force" term counteracting gravity here: rather
+    /// than a full constraint solver that computes and applies an opposing normal force every
+    /// frame a body rests on something, the existing grounded-contact response in
+    /// <see cref="CollisionSystem"/> already achieves the same net effect pragmatically - each
+    /// frame a resting body's downward velocity is zeroed/reduced by its resolved restitution
+    /// right at the point of contact (see <c>ResolveRectAgainstSolid</c>/<c>ResolveBodyPair</c>),
+    /// which is what actually stops gravity from accumulating unbounded downward velocity while
+    /// grounded. <see cref="IPhysicsBody.IsGrounded"/> is that same contact signal surfaced for
+    /// other systems (animation, jump gating) to read, not an input this method itself needs.
+    /// </summary>
+    private static void StepMovingBodyWithForces(World2D world, IPhysicsBody body, bool gravityAffected, double deltaSeconds)
+    {
+        var mass = body.Mass > 0 ? body.Mass : 1.0;
+
+        var netForce = new Vector2D(0, 0);
+        if (gravityAffected)
+        {
+            netForce.Y += mass * world.Gravity;
+        }
+
+        // Extension point: a future force source (e.g. a hypothetical IThrustBody capability for
+        // a moving enemy that flies/hovers via its own upward force) would sum its contribution
+        // into netForce here, alongside gravity, before the single acceleration/integration step
+        // below - not add a separate bespoke velocity mutation. No such capability exists yet.
+
+        var acceleration = new Vector2D(netForce.X / mass, netForce.Y / mass);
+
+        var velocity = body.Velocity;
+        velocity.X += acceleration.X * deltaSeconds;
+        velocity.Y += acceleration.Y * deltaSeconds;
         body.Velocity = velocity;
 
         body.Position = new Vector2D(

@@ -19,24 +19,17 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected
     /// <summary>Whether this object is subject to normal world gravity.</summary>
     public bool GravityAffected { get; set; } = true;
 
-    /// <summary>
-    /// Bounciness applied when this object hits world bounds or a platform: 1.0 reflects
-    /// velocity fully (perfectly elastic), 0.0 removes it entirely on the affected axis.
-    /// </summary>
-    public double Restitution { get; set; } = 1.0;
-
     public DynamicObject2D()
     {
         IsStatic = false;
     }
 
     /// <summary>Assigns the loaded sprite asset/clip/frame, initial position and velocity.</summary>
-    public void Spawn(SpriteAsset sprite, string clipName, int frameIndex, Vector2D position, Vector2D velocity, bool gravityAffected, double restitution, int repeatCount = 1)
+    public void Spawn(SpriteAsset sprite, string clipName, int frameIndex, Vector2D position, Vector2D velocity, bool gravityAffected, int repeatCount = 1)
     {
         SetFrame(sprite, clipName, frameIndex, repeatCount);
         Position = position;
         Velocity = velocity;
         GravityAffected = gravityAffected;
-        Restitution = restitution;
     }
 }

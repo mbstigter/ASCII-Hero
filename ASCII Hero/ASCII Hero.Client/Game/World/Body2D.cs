@@ -61,6 +61,62 @@ public abstract class Body2D
     /// <summary>The sprite asset this object was spawned from.</summary>
     public SpriteAsset Sprite { get; private set; } = null!;
 
+    /// <summary>
+    /// The dominant material name found among the active frame's non-empty cells (see
+    /// <see cref="Assets.SpriteFrame.Materials"/>) - the single most common resolved material
+    /// name across the frame's cells, or null if the frame has no material data at all. Recomputed
+    /// whenever <see cref="ApplyFrame"/> runs (spawn, or a later frame/clip switch). A frame
+    /// authored from a mix of materials (e.g. a composite sprite) is deliberately reduced to one
+    /// representative name rather than tracked per-cell for collision purposes - simplest rule
+    /// that still lets every existing single-material asset resolve exactly as authored; revisit
+    /// only if a concrete asset genuinely needs per-cell-granular collision response.
+    /// </summary>
+    public string? MaterialName { get; private set; }
+
+    /// <summary>
+    /// Per-instance color code (see <c>Global/Colors.ini</c>) overriding this body's sprite's own
+    /// <see cref="Assets.SpriteAsset.DefaultForeColor"/>/<see cref="Assets.SpriteAsset.DefaultBackColor"/>,
+    /// set from this placement's <c>ForegroundColor</c>/<c>BackgroundColor</c> ini key (see
+    /// <see cref="World.World2D.LoadAsync"/>). Null if the placement didn't specify one, in which
+    /// case the sprite/level/hardcoded fallback chain applies unchanged (see
+    /// <see cref="Rendering.AsciiRenderer"/>). Mirrors <see cref="MaterialName"/>'s per-instance
+    /// <c>Material</c> override - lets one sprite asset (e.g. the one shared <c>Ball</c>) be
+    /// placed multiple times with a different color each time, without needing a separate asset
+    /// per color.
+    /// </summary>
+    public char? ForeColorOverride { get; set; }
+
+    /// <summary>See <see cref="ForeColorOverride"/>.</summary>
+    public char? BackColorOverride { get; set; }
+
+    /// <summary>
+    /// Relative mass per world-cell "volume", resolved from <see cref="MaterialName"/> via
+    /// <see cref="World.World2D.Materials"/> once this body is placed into a level (see
+    /// <see cref="World.World2D.LoadAsync"/>). Defaults to 0 until resolved.
+    /// </summary>
+    public double Density { get; set; }
+
+    /// <summary>Sliding resistance (0 = frictionless, 1 = very grippy), resolved the same way as <see cref="Density"/>.</summary>
+    public double Friction { get; set; }
+
+    /// <summary>
+    /// Bounciness applied on collision (0 = no bounce, 1 = perfectly elastic), resolved the same
+    /// way as <see cref="Density"/> unless a placement explicitly overrides it via the
+    /// <c>Restitution</c> ini key (see <see cref="World.World2D.LoadAsync"/>).
+    /// </summary>
+    public double Restitution { get; set; }
+
+    /// <summary>
+    /// This body's mass, used by <see cref="Physics.CollisionSystem"/>'s impulse resolution and
+    /// (for non-player bodies) <see cref="Physics.PhysicsSystem"/>'s force integration:
+    /// <see cref="Density"/> times the body's current footprint area (<see cref="Size"/>'s width
+    /// times height) - the simplest reasonable 2D proxy for volume, per docs/Decisions.md. Static
+    /// bodies are always treated as effectively immovable regardless of this value (gated by
+    /// <see cref="IsStatic"/>, not by mass), so a static placement's mass is never actually used
+    /// in collision math.
+    /// </summary>
+    public double Mass => Density * Size.X * Size.Y;
+
     /// <summary>The clip currently being displayed/collided against (e.g. "idle").</summary>
     public SpriteClip Clip { get; private set; } = null!;
 
@@ -213,5 +269,51 @@ public abstract class Body2D
         Frame = SpriteFrameTiler.Tile(sourceFrame, Sprite.TileAxis, _repeatCount);
         Size = new Vector2D(Frame.Width, Frame.Height);
         _localCollisionRects = CollisionShapeBuilder.DeriveRectangles(Frame.Chars, Sprite.EmptyChar);
+        MaterialName = ResolveDominantMaterial(Frame.Materials);
+    }
+
+    /// <summary>
+    /// Reduces a frame's per-cell material grid to one representative name: the most common
+    /// non-null value among its cells, ties broken by first-encountered (row-major) order for a
+    /// stable, deterministic result. Returns null if every cell is null (no material data at all,
+    /// e.g. an asset with neither <c>DefaultMaterial</c> nor a per-cell <c>_materials.txt</c>).
+    /// </summary>
+    private static string? ResolveDominantMaterial(string?[,] materials)
+    {
+        var counts = new Dictionary<string, int>();
+        var height = materials.GetLength(0);
+        var width = materials.GetLength(1);
+
+        for (var row = 0; row < height; row++)
+        {
+            for (var col = 0; col < width; col++)
+            {
+                var name = materials[row, col];
+                if (name is null)
+                {
+                    continue;
+                }
+
+                counts[name] = counts.GetValueOrDefault(name) + 1;
+            }
+        }
+
+        if (counts.Count == 0)
+        {
+            return null;
+        }
+
+        var best = default(KeyValuePair<string, int>);
+        var bestCount = -1;
+        foreach (var entry in counts)
+        {
+            if (entry.Value > bestCount)
+            {
+                best = entry;
+                bestCount = entry.Value;
+            }
+        }
+
+        return best.Key;
     }
 }

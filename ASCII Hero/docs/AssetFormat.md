@@ -206,6 +206,10 @@ few cells overridden (e.g. a glass ball with a rubber-lined rim).
 [Layout]
 EmptyChar = ' '
 
+[Colors]
+DefaultForegroundColor = F
+DefaultBackgroundColor = D
+
 [Physics]
 DefaultMaterial = Flesh
 
@@ -222,6 +226,21 @@ B = Bone
 **`[Layout]`** — controls visual interpretation of layer files:
 - `EmptyChar` (default `' '`) — which character in layer files means "no cell here."
 - `TileAxis` (default `None`) — whether this asset is a tileable unit (see §2.5).
+
+**`[Colors]`** (optional) — whole-asset default color codes (see `Global/Colors.ini`),
+the color analog of `[Physics] DefaultMaterial`'s whole-object shorthand (§2.3):
+- `DefaultForegroundColor`/`DefaultBackgroundColor` — the color code used for any
+  cell whose own `_foregroundcolors.txt`/`_backgroundcolors.txt` position is
+  absent/empty. Resolution precedence for a given cell, checked in order,
+  falling through whenever a step doesn't apply (code absent) or doesn't resolve
+  (code not found in the palette): the cell's own per-cell code (from
+  `_foregroundcolors.txt`/`_backgroundcolors.txt`) &gt; this asset's
+  `[Colors]` default &gt; the level's own `[Colors]` default (see §3, `Level1_settings.ini`) &gt; a
+  hardcoded engine fallback (green foreground, no/transparent background fill).
+  This lets an asset be authored with no color layer files at all (e.g. a
+  single-color platform or ball) while still overriding the hardcoded fallback,
+  or with color layer files that only mark a few special cells and leave
+  everything else to fall through to this default.
 
 **`[Physics]`** — controls material assignment:
 - `DefaultMaterial` — the material code used for every non-empty cell when no
@@ -482,6 +501,35 @@ Level1_objects.ini
   establish the world's width/height, then reads `Level1_objects.txt` against
   those same dimensions, padding any missing rows/columns with `EmptyChar`.
 
+`Level1_settings.ini` mirrors an asset's `settings.ini` (§2.4), but at level
+scope:
+
+```ini
+[Layout]
+EmptyChar = ' '
+
+[Colors]
+DefaultForegroundColor = G
+
+[Physics]
+Gravity = 40
+```
+
+**`[Layout]`** — `EmptyChar` (default `' '`), same meaning as for a sprite asset,
+applied to this level's own background/object-placement grids.
+
+**`[Colors]`** (optional) — `DefaultForegroundColor`/`DefaultBackgroundColor`,
+the level-scoped fallback in the same color-resolution precedence chain
+described in §2.4: checked after a cell's own per-cell code and after the
+sprite's own `[Colors]` default (for object cells; background cells have no
+owning sprite so skip straight to this level default), before finally falling
+back to the hardcoded engine default. Lets an entire level nudge its default
+palette (e.g. a colder/warmer background tint) without touching every asset's
+own settings.ini.
+
+**`[Physics]`** — `Gravity` (default `40`), this level's gravity acceleration
+in world cells per second squared.
+
 ### 3.1 Object placement codes
 
 - A **single digit `0`-`9`** is the default, simplest code and unambiguously
@@ -630,6 +678,42 @@ Clip = default
 Kind = DynamicObject
 CameraTarget = true
 ```
+
+Any placement may also override its spawned body's material and/or color away
+from what its sprite asset would otherwise resolve to on its own (its
+`DefaultMaterial`/per-cell `_materials.txt`, and `DefaultForegroundColor`/
+`DefaultBackgroundColor`/per-cell `_foregroundcolors.txt`/`_backgroundcolors.txt`
+respectively — see §2.3-§2.4). This lets one sprite asset be placed multiple
+times with different physical/visual identities, without authoring a separate
+near-duplicate asset per variant:
+
+```ini
+[BallRubberOnConcrete]
+Asset = Ball
+Clip = default
+Kind = DynamicObject
+Material = Rubber
+ForegroundColor = N
+
+[BallPlasticOnConcrete]
+Asset = Ball
+Clip = default
+Kind = DynamicObject
+Material = Plastic
+ForegroundColor = Y
+```
+
+- **`Material`** — the material name (see `Global/Materials.ini`) this
+  placement's Density/Friction resolve from, in place of the spawned body's
+  own resolved `MaterialName`. `Restitution` is a separate, independently
+  overridable key (see above) rather than being tied to `Material`.
+- **`ForegroundColor`**/**`BackgroundColor`** — a single-character color code
+  (see `Global/Colors.ini`), the highest-precedence tier in
+  `AsciiRenderer`'s color-resolution chain after the cell's own per-cell code:
+  per-cell layer file &gt; this placement's override &gt; the sprite asset's own
+  `[Colors]` default &gt; the level's own `[Colors]` default (§3, above) &gt; a
+  hardcoded engine fallback. Absent means this placement has no per-instance
+  override and the chain continues to the asset default unchanged.
 
 Any non-`Player` placement may also set `Passable`, `Climbable`, and/or
 `Hangable` (each default `false`, except `Passable` which defaults to `true`

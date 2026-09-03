@@ -49,6 +49,11 @@ palettes, materials) from disk/HTTP into in-memory game objects.
   settings file is itself the override signal, no explicit flag needed.
 - **`ColorPalette`** - the resolved single-character color code -> CSS color
   lookup, merging a level's own optional `Colors.ini` over `Global/Colors.ini`.
+- **`MaterialLibrary`** - the resolved material-name -> `Material` (`Density`,
+  `Friction`, `Restitution`) lookup, merging a level's own optional
+  `Materials.ini` over `Global/Materials.ini`, mirroring `ColorPalette`'s
+  Global+Level fallback pattern. An unknown/absent material name resolves to
+  a zeroed `Material.Undefined` fallback rather than throwing.
 - **`SpriteLoader`** - loads one sprite asset's settings and requested clips
   into a `SpriteAsset`, combining `AssetPathResolver` (folder resolution) and
   `AssetTextReader` (grid parsing) into the one loading path reused by every
@@ -73,11 +78,15 @@ The live game state and the entity types that make it up.
 
 - **`World2D`** - holds everything that makes up the current game state: the
   player, every other body in one generic `Objects` list, the background
-  layer, the resolved color palette, gravity, world dimensions, and which
-  body the camera should follow. `World2D.LoadAsync` is the level loader: it
-  reads a level's settings, background, and object-placement files, resolves
-  each placement's sprite and concrete body type, and assembles the finished
-  world. Also owns deferred removal (`QueueRemoval`/`ApplyPendingRemovals`),
+  layer, the resolved color palette, the resolved material library
+  (`Materials`), gravity, world dimensions, and which body the camera should
+  follow. `World2D.LoadAsync` is the level loader: it reads a level's
+  settings, background, and object-placement files, resolves each
+  placement's sprite and concrete body type, resolves each spawned body's
+  `Density`/`Friction`/`Restitution`/`Mass` from its material (a placement's
+  ini section may override the resolved material name via `Material`, or
+  just the resulting `Restitution` via `Restitution`), and assembles the
+  finished world. Also owns deferred removal (`QueueRemoval`/`ApplyPendingRemovals`),
   so nothing mutates the `Objects` list mid-iteration.
 - **`Body2D`** - the base class for anything living in the world at a
   floating-point position, backed by a loaded sprite frame. Derives its size
@@ -152,7 +161,14 @@ The live game state and the entity types that make it up.
 
 - **`PhysicsSystem`** - applies player input to horizontal velocity and
   jumping, applies gravity to any `IGravityAffected` body, and integrates
-  position from velocity for every `IPhysicsBody` each frame. Also resolves
+  position from velocity for every `IPhysicsBody` each frame. The player
+  still moves via direct velocity assignment from input; every other moving
+  body integrates instead via a per-frame mass-scaled force accumulator
+  (`StepMovingBodyWithForces` - gravity as `mass * world.Gravity`, converted
+  to acceleration via `a = F / mass`, then integrated into velocity), which
+  is numerically identical to a direct gravity-velocity add for a
+  gravity-only body but is the extension point for any future non-gravity
+  force source. Also resolves
   the player's stance (Walk/Crawl, toggled by input) and pose (which swaps to
   a visual-only "Jump" pose while airborne, independent of the underlying
   stance). Also engages/disengages `IsClimbing`/`IsHanging` (on any
@@ -200,7 +216,15 @@ The live game state and the entity types that make it up.
   generic physical surface, bouncing dynamic bodies per their restitution),
   hazard/collectable overlap, and any `IClimberBody`/`IHangerBody`'s
   `IsTouchingClimbable`/`IsTouchingHangable` overlap against
-  `IsClimbable`/`IsHangable` terrain. Both climbing and hanging touch checks
+  `IsClimbable`/`IsHangable` terrain. Restitution/friction used in any given
+  collision response are the combined (simple-average, see `Combine`) values
+  of both contacting bodies' own resolved material properties (see
+  `Body2D.Restitution`/`Friction` below), not a single one-sided or
+  type-based value. Moving-body-vs-moving-body resolution
+  (`ResolveBodyPair`) splits position correction by relative mass and
+  resolves the along-normal velocity response via a standard 1D
+  mass-weighted impulse, rather than each body independently reflecting its
+  own velocity. Both climbing and hanging touch checks
   share one generic snap-speed gate (a body moving too fast does not snap on,
   matching a jump arc's peak still needing to finish naturally rather than
   instantly catching on a passing platform/pipe/ladder); hanging additionally

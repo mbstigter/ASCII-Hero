@@ -19,6 +19,10 @@ AsciiHero is a browser-based retro ASCII platform game built with C# and .NET 10
 
 - Use generic examples in documentation (e.g., AssetFormat.md) rather than referencing specific concrete game assets, as those are spec/reference docs, not historical records.
 
+### Asset File Comments
+
+- When writing or editing comments in .txt and .ini asset files (level/sprite/settings files, e.g. under wwwroot/Assets), write them in language appropriate for a level designer: describe what the setting/placement does and any relevant in-game/design intent, but avoid referencing internal implementation details, class/method names, development history, or test/validation framing.
+
 ### Before Changing Architecture
 
 Check [docs/Architecture.md](../ASCII%20Hero/docs/Architecture.md) and [docs/Decisions.md](../ASCII%20Hero/docs/Decisions.md).
@@ -33,11 +37,7 @@ Check [docs/AssetFormat.md](../ASCII%20Hero/docs/AssetFormat.md).
 
 ### Keeping docs/Structure.md Up To Date
 
-[docs/Structure.md](../ASCII%20Hero/docs/Structure.md) describes the program's components and
-key flows. Whenever a change adds, removes, renames, or moves a class/subsystem, or changes an
-existing flow it describes (e.g. startup order, per-frame tick order, asset loading/fallback
-rules), update the corresponding section of docs/Structure.md as part of that same change -
-treat it the same way as docs/Decisions.md, not as a separate follow-up task.
+[docs/Structure.md](../ASCII%20Hero/docs/Structure.md) describes the program's components and key flows. Whenever a change adds, removes, renames, or moves a class/subsystem, or changes an existing flow it describes (e.g. startup order, per-frame tick order, asset loading/fallback rules), update the corresponding section of docs/Structure.md as part of that same change - treat it the same way as docs/Decisions.md, not as a separate follow-up task.
 
 ### Validation
 

@@ -2,6 +2,103 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## Material-driven collision response (Density/Friction/Restitution/Mass) and force-based movement for non-player bodies
+
+- **Prompted by user request:** significantly enhance the physics system
+  with material-dependent collisions, gravity/normal-force concepts, and
+  force-based movement - explicitly scoped down to exclude the player from
+  the force-based movement change for this round, and to add a `TestPhysics`
+  validation level.
+- **Material resolution:** a new `MaterialLibrary` (mirroring `ColorPalette`'s
+  Global+Level merge pattern) parses `Global/Materials.ini` plus an optional
+  level-local `Materials.ini`, exposing a `Material` record
+  (`Density`/`Friction`/`Restitution`) per name, with a zeroed
+  `Material.Undefined` fallback for an unknown/absent name. `Body2D` gained
+  `MaterialName` (resolved from the dominant non-empty material of the
+  active sprite frame's per-cell material layer/`DefaultMaterial` - see
+  `SpriteLoader`, which already existed), plus `Density`/`Friction`/
+  `Restitution` and a computed `Mass = Density * Size.X * Size.Y`. These are
+  all resolved once, centrally, in `World2D.LoadAsync` right after a body is
+  spawned, rather than scattered across each concrete body type - removing
+  the ad hoc per-class `Restitution` field that `DynamicObject2D`/
+  `MovingEnemy2D` used to each own individually.
+- **Per-placement overrides, deliberately supported (not deferred):** a
+  level placement's ini section can override the resolved material name via
+  a new `Material` key (e.g. re-using the one `Ball` sprite asset with a
+  different material per placement in `TestPhysics`, rather than needing a
+  distinct, otherwise-identical sprite asset per material), or override just
+  the resulting `Restitution` via the existing `Restitution` key (e.g.
+  `TestMovement`'s intentionally "weightless, perfectly elastic" ball).
+  This was implemented rather than deferred because `TestPhysics` requires
+  it to reuse a single ball shape across four material combinations.
+- **Restitution/friction combination rule:** `CollisionSystem.Combine(a, b)`
+  is a plain average of both contacting bodies' own values, not
+  `Math.Min`/`Math.Max` or a geometric mean - chosen so either side can
+  meaningfully pull the result toward its own value (a rubber ball on
+  concrete bounces less than rubber-on-rubber but more than
+  concrete-on-concrete) rather than one material always dominating
+  outright. Applied uniformly for both moving-vs-static
+  (`ResolveAgainstSolid`/`ResolveRectAgainstSolid`) and moving-vs-moving
+  (`ResolveBodyPair`) collision response, replacing the old
+  `CollisionSystem.GetRestitution` type-switch entirely.
+- **Mass-weighted moving-body-pair resolution:** `ResolveBodyPair` now
+  splits position correction by relative mass (a heavier body yields less
+  ground than a lighter one) instead of always 50/50, and resolves the
+  along-normal velocity response via a standard 1D mass-weighted impulse
+  (`j = -(1+e) * relativeVelocity / (1/mA + 1/mB)`, then
+  `v' = v +/- j/mass`) instead of each body independently reflecting its own
+  velocity via its own restitution. A body with no resolved mass (0) is
+  treated as mass 1 purely to keep the impulse formula well-defined; this
+  does not affect that body's own position-correction share, which already
+  falls back to an even split independently when total mass is 0.
+- **Friction as a flat per-frame damping factor**, not a continuous
+  force/impulse model: `ApplyFriction(velocityComponent, friction)` damps
+  the tangential (along-surface) velocity component by the pair's combined
+  friction each frame contact is resolved - simple and enough to make a
+  grippy material (e.g. `Concrete`) visibly settle sliding motion faster
+  than a slick one, without needing normal-force-dependent friction-force
+  integration. Rejected: a true friction force scaled by the normal force
+  and integrated like gravity - unnecessary complexity for a 2D ASCII
+  platformer with no meaningful sliding gameplay yet.
+- **No separate constraint-solver "normal force" term:** rather than
+  computing and applying an opposing normal force every frame a body rests
+  on something, the existing grounded-contact response (a resting body's
+  downward velocity is zeroed/reduced by its resolved restitution right at
+  the point of contact) already achieves the same net effect pragmatically.
+  `IPhysicsBody.IsGrounded` remains just that same contact signal surfaced
+  for other systems (animation, jump gating) to read.
+- **Force-based movement, non-player only:** every non-player
+  `IGravityAffected`/`IPhysicsBody` in `World2D.Objects` now integrates via
+  `PhysicsSystem.StepMovingBodyWithForces` - a per-frame net-force
+  accumulator (today, just gravity as `mass * world.Gravity`) converted to
+  acceleration via `a = F / mass` and integrated into velocity, rather than
+  a direct `velocity.Y += gravity * dt`. For a gravity-only body this is
+  numerically identical (mass cancels out of `F / mass`), but the
+  accumulator is the deliberate extension point for any future non-gravity
+  force source (e.g. a hypothetical `IThrustBody`). A body with no resolved
+  mass (0) is treated as mass 1 for this conversion, same rationale as the
+  collision-impulse math above.
+- **Player explicitly excluded from force-based movement this round** - per
+  explicit user scoping ("limit that to all objects except Player for
+  now"). `Player2D` is matched first in `PhysicsSystem.Step`'s per-body
+  dispatch switch and continues to use the original direct
+  velocity-assignment `StepMovingBody` path, ahead of the generic
+  `IGravityAffected`/`IPhysicsBody` cases every other body now falls into.
+  Converting player movement to the same force model is left for a future,
+  separate round (see the TODO comment above the player movement block in
+  `PhysicsSystem.Step`).
+- **New `TestPhysics` level** added purely to visually validate this
+  material system end-to-end: two static floor segments side by side
+  (`Concrete` and `Wood`, both reusing the `SteelPlatform` sprite shape via
+  the new `Material` override), each with a `Rubber` and a `Plastic` ball
+  (both reusing the one `Ball` sprite asset, likewise via `Material`)
+  dropped from rest at identical height - so any difference in
+  bounce-height/settle-time visible between the four drop zones can only be
+  coming from each ball/floor material pairing's own combined
+  restitution/friction, not from any other varying factor. Two new global
+  materials, `Plastic` and `Concrete`, were added to `Global/Materials.ini`
+  to support this.
+
 ## Hang jump/swing-off debounce promoted to `IHangerBody.SuppressHangUntilClear`, and overlap detection split from the snap/stop itself
 
 - **Prompted by user follow-up (regression #1):** after the hang snap
@@ -476,7 +573,7 @@ Log of significant architecture/design decisions. Newest first.
 
 
 - **Prompted by two related bugs surfaced by testing the new mid-height
-  `MiddleWall` placements and ladder/pipe overlap in `LevelBallTest`:** the
+  `MiddleWall` placements and ladder/pipe overlap in `TestMovement`:** the
   player could sometimes walk through a solid wall, and jumping into a wall
   could leave the player visibly stuck "inside" its lower layers while only
   the top layer behaved as standable.
@@ -601,7 +698,7 @@ Log of significant architecture/design decisions. Newest first.
   below) let `Kind` be omitted and fall back to a `Static`/`GravityAffected`
   boolean-based guess (`Static` unless `Static = false`). This silently
   produced the wrong concrete class whenever a section forgot to set `Kind`
-  — caught in practice when a `ToxicPlant` placement in `LevelBallTest`
+  — caught in practice when a `ToxicPlant` placement in `TestMovement`
   omitted `Kind` and spawned as a plain `StaticObject2D` instead of
   `StaticEnemy2D`, making it walkable instead of hazardous. `World2D.LoadAsync`
   now throws a `FormatException` naming the offending section if `Kind`
@@ -618,7 +715,7 @@ Log of significant architecture/design decisions. Newest first.
   (`Static`, `Dynamic`, `MovingEnemy`, ...), not an event like "spawn," even
   though every kind's placement position is, in the same sense, a spawn/start
   location. Renamed to plain `Player` to match. All player placements
-  (`Level1`, `LevelBallTest`) were updated accordingly.
+  (`Level1`, `TestMovement`) were updated accordingly.
 - **Every `Kind` value now corresponds exactly to a concrete body class name
   with the `2D` suffix dropped** (`Player` → `Player2D`, `StaticObject` →
   `StaticObject2D`, `StaticEnemy` → `StaticEnemy2D`, etc.), so the
@@ -797,7 +894,7 @@ Log of significant architecture/design decisions. Newest first.
   implemented by `Player2D`, rather than any moving body.** Without this, the
   bouncing ball (or any future dynamic object/enemy) would also consume
   collectables purely by physically overlapping them, which was confirmed as
-  an actual bug while testing `LevelBallTest`. `ICollectorBody` is deliberately
+  an actual bug while testing `TestMovement`. `ICollectorBody` is deliberately
   a capability interface rather than a `Player2D` type-check, so a future
   second player (multiplayer) automatically qualifies without
   `CollisionSystem` needing to know how many player types or instances exist —
@@ -882,7 +979,7 @@ Log of significant architecture/design decisions. Newest first.
   hardcoded reference to the player.** `World2D.CameraTarget` (an
   `IPhysicsBody`) defaults to the player, but any placement in a level's
   `_objects.ini` can claim it via `CameraTarget = true` on its section (e.g.
-  the ball in `LevelBallTest`). Rejected: leaving the camera hardwired to
+  the ball in `TestMovement`). Rejected: leaving the camera hardwired to
   `world.Player` — this made it impossible to build isolated test levels
   (like the ball-bounce reproduction level) where the interesting motion
   belongs to a non-player object.

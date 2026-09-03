@@ -76,6 +76,37 @@ DOM keyboard events.
   `Restitution`, and any body resting against the floor is considered
   grounded (`IPhysicsBody.IsGrounded`), exactly as if it were resting on a
   platform.
+- Every body's physical properties — `Density`, `Friction`, `Restitution`,
+  and computed `Mass` (`Density * Size.X * Size.Y`) — are resolved once at
+  spawn time from a named material (`Body2D.MaterialName`, derived from the
+  dominant non-empty material of the active sprite frame's per-cell
+  `_materials.txt`/`DefaultMaterial` layer) looked up in `World2D.Materials`
+  (a `MaterialLibrary` that merges `Global/Materials.ini` with an optional
+  level-local override, mirroring `ColorPalette`'s Global+Level pattern). A
+  level placement's ini section can override the resolved material name via
+  `Material`, or just the resulting `Restitution` via `Restitution`, without
+  needing a distinct sprite asset. `CollisionSystem` combines two contacting
+  bodies' `Restitution`/`Friction` via a simple average (`Combine`, see
+  docs/Decisions.md) rather than one side dominating outright.
+- Player movement remains driven by direct velocity assignment from input
+  (`PhysicsSystem.StepMovingBody`) — deliberately excluded from the
+  force-based model below for now (see docs/Decisions.md). Every other
+  moving body (`IGravityAffected`/`IPhysicsBody`) integrates via a per-frame
+  force accumulator instead (`PhysicsSystem.StepMovingBodyWithForces`):
+  forces (today, just gravity as `mass * world.Gravity`) are summed into a
+  net force, converted to acceleration via `a = F / mass`, and integrated
+  into velocity — for a gravity-only body this is numerically identical to a
+  direct `velocity.Y += gravity * dt`, but it is the extension point for any
+  future non-gravity force source. There is no separate constraint-solver
+  "normal force" term; a resting body's downward velocity is instead damped
+  to zero/near-zero pragmatically by the existing grounded-contact
+  restitution response in `CollisionSystem` each frame it remains in contact.
+- Collision resolution between two finite-mass moving bodies
+  (`CollisionSystem.ResolveBodyPair`) splits position correction by relative
+  mass (a heavier body yields less ground than a lighter one) and resolves
+  the along-normal velocity response via a standard 1D mass-weighted impulse
+  (`j = -(1+e) * relativeVelocity / (1/mA + 1/mB)`), rather than each body
+  independently reflecting its own velocity.
 - Platform collision and moving-body-vs-moving-body collision (e.g. the
   player and a dynamic object) are both resolved against `IPhysicsBody`
   generically — there is no per-concrete-type collision method. The player

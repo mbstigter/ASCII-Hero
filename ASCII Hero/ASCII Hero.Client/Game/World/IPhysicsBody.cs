@@ -23,4 +23,19 @@ public interface IPhysicsBody
 
     /// <summary>The body's collision shape, as one or more rectangles in world space.</summary>
     IReadOnlyList<Physics.Rect2D> CollisionRects { get; }
+
+    /// <summary>
+    /// This body's mass (see <see cref="Body2D.Mass"/>), used by
+    /// <see cref="Physics.CollisionSystem"/>'s mass-weighted impulse/position-correction math.
+    /// Every concrete <see cref="IPhysicsBody"/> is a <see cref="Body2D"/>, so this simply
+    /// exposes that computed property through the capability interface instead of requiring
+    /// collision code to downcast.
+    /// </summary>
+    double Mass { get; }
+
+    /// <summary>This body's material-derived friction (see <see cref="Body2D.Friction"/>).</summary>
+    double Friction { get; }
+
+    /// <summary>This body's material-derived (or ini-overridden) restitution (see <see cref="Body2D.Restitution"/>).</summary>
+    double Restitution { get; }
 }

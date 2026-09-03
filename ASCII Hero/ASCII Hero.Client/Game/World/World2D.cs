@@ -10,7 +10,7 @@ public class World2D
 
     /// <summary>
     /// The body the camera should follow. Defaults to <see cref="Player"/>, but a level can
-    /// designate a different body instead (e.g. the bouncing ball in LevelBallTest) by setting
+    /// designate a different body instead (e.g. the bouncing ball in TestMovement) by setting
     /// <c>CameraTarget = true</c> on that object's section in the level's objects.ini.
     /// </summary>
     public IPhysicsBody CameraTarget { get; set; } = null!;
@@ -72,6 +72,25 @@ public class World2D
     /// <summary>The resolved Global+Level color palette, used to render every fore/back color code.</summary>
     public ColorPalette Palette { get; private set; } = null!;
 
+    /// <summary>
+    /// Color code (see <c>Global/Colors.ini</c>) this level's own <c>[Colors]
+    /// DefaultForegroundColor</c> settings.ini key resolves to, used by <see cref="Rendering.AsciiRenderer"/>
+    /// as the fallback for any cell (background or object) whose own color code is absent/empty
+    /// and whose sprite has no own default either. Null when not set, in which case the
+    /// hardcoded renderer default applies. See docs/AssetFormat.md §3.
+    /// </summary>
+    public char? DefaultForeColor { get; private set; }
+
+    /// <summary>See <see cref="DefaultForeColor"/>.</summary>
+    public char? DefaultBackColor { get; private set; }
+
+    /// <summary>
+
+    /// <see cref="Body2D.Density"/>/<see cref="Body2D.Friction"/>/<see cref="Body2D.Restitution"/>
+    /// from the material name(s) resolved onto its active <see cref="SpriteFrame.Materials"/>.
+    /// </summary>
+    public MaterialLibrary Materials { get; private set; } = null!;
+
     /// <summary>Gravity acceleration, in world cells per second squared.</summary>
     public double Gravity { get; private set; } = 40;
 
@@ -96,6 +115,8 @@ public class World2D
         var settings = IniDocument.Parse(settingsContent ?? string.Empty);
         var emptyChar = ParseEmptyChar(settings.TryGetValue("Layout", "EmptyChar"));
         world.EmptyChar = emptyChar;
+        world.DefaultForeColor = ParseColorCode(settings.TryGetValue("Colors", "DefaultForegroundColor"));
+        world.DefaultBackColor = ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
 
         var globalSettingsContent = await fileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/Settings.ini");
         var globalSettings = IniDocument.Parse(globalSettingsContent ?? string.Empty);
@@ -105,6 +126,7 @@ public class World2D
         }
 
         world.Palette = await ColorPalette.LoadAsync(fileProvider, levelName);
+        world.Materials = await MaterialLibrary.LoadAsync(fileProvider, levelName);
 
         var backgroundContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_background_characters.txt")
             ?? throw new FileNotFoundException($"Missing required background layer for level '{levelName}'.");
@@ -177,9 +199,23 @@ public class World2D
                 var frameIndex = sprite.GetClip(clipName).DefaultFrame;
 
                 var gravityAffected = !objectSection.TryGetValue("GravityAffected", out var gravityText) || !bool.TryParse(gravityText, out var parsedGravity) || parsedGravity;
-                var restitution = objectSection.TryGetValue("Restitution", out var restitutionText) && TryParseDouble(restitutionText, out var parsedRestitution)
-                    ? parsedRestitution
-                    : 1.0;
+                // Restitution is no longer defaulted here - absent means "use whatever the
+                // spawned body's resolved material provides" (see the post-spawn material
+                // resolution below), only an explicit ini value overrides that.
+                var restitutionOverride = objectSection.TryGetValue("Restitution", out var restitutionText) && TryParseDouble(restitutionText, out var parsedRestitution)
+                    ? (double?)parsedRestitution
+                    : null;
+                // Lets a placement spawn its asset with a different material than the asset's own
+                // DefaultMaterial/per-cell material layer (e.g. re-using the one Ball asset to
+                // test Rubber vs. Steel-ball behavior in TestPhysics) without needing a second,
+                // otherwise-identical sprite asset just to carry a different DefaultMaterial.
+                var materialOverride = objectSection.TryGetValue("Material", out var materialOverrideText) ? materialOverrideText : null;
+                // Lets a placement give its own instance a distinct color from its sprite's own
+                // default (e.g. TestPhysics distinguishing its four Ball placements by material)
+                // without needing a separate sprite asset per color - mirrors materialOverride
+                // above, and is inserted into AsciiRenderer's fallback chain the same way.
+                var foreColorOverride = ParseColorCode(objectSection.TryGetValue("ForegroundColor", out var foreColorText) ? foreColorText : null);
+                var backColorOverride = ParseColorCode(objectSection.TryGetValue("BackgroundColor", out var backColorText) ? backColorText : null);
                 var initialVelocityX = objectSection.TryGetValue("InitialVelocityX", out var velocityXText) && TryParseDouble(velocityXText, out var parsedVelocityX)
                     ? parsedVelocityX
                     : 0.0;
@@ -212,6 +248,10 @@ public class World2D
                         world.Player.Spawn(sprite);
                         world.Player.Position = position;
                         world.Player.EffectClipName = effectClipName;
+                        var playerMaterial = world.Materials.Get(materialOverride ?? world.Player.MaterialName);
+                        world.Player.Density = playerMaterial.Density;
+                        world.Player.Friction = playerMaterial.Friction;
+                        world.Player.Restitution = restitutionOverride ?? playerMaterial.Restitution;
                         if (IsCameraTarget(objectSection))
                         {
                             world.CameraTarget = world.Player;
@@ -227,7 +267,7 @@ public class World2D
 
                     case "DynamicObject":
                         var dynamicObject = new DynamicObject2D();
-                        dynamicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, restitution, repeatCount);
+                        dynamicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, repeatCount);
                         world.Objects.Add(dynamicObject);
                         movingBody = dynamicObject;
                         spawnedBody = dynamicObject;
@@ -243,7 +283,7 @@ public class World2D
 
                     case "MovingEnemy":
                         var movingEnemy = new MovingEnemy2D();
-                        movingEnemy.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, restitution, repeatCount);
+                        movingEnemy.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, repeatCount);
                         movingEnemy.EffectClipName = effectClipName;
                         movingEnemy.IsKillable = killable;
                         movingEnemy.EffectPersists = effectPersists;
@@ -277,6 +317,19 @@ public class World2D
                 spawnedBody.IsPassable = passable;
                 spawnedBody.IsClimbable = climbable;
                 spawnedBody.IsHangable = hangable;
+                spawnedBody.ForeColorOverride = foreColorOverride;
+                spawnedBody.BackColorOverride = backColorOverride;
+
+                // Density/Friction always come from the spawned body's own resolved material
+                // (see Body2D.MaterialName/ApplyFrame) unless this placement's ini section
+                // overrides it via Material (e.g. TestPhysics re-using the Ball asset with
+                // different materials); Restitution does too, unless separately overridden via
+                // Restitution (e.g. TestMovement's "weightless, perfectly elastic" placeholder
+                // ball tuning).
+                var material = world.Materials.Get(materialOverride ?? spawnedBody.MaterialName);
+                spawnedBody.Density = material.Density;
+                spawnedBody.Friction = material.Friction;
+                spawnedBody.Restitution = restitutionOverride ?? material.Restitution;
 
                 if (movingBody is not null && IsCameraTarget(objectSection))
                 {
@@ -313,6 +366,14 @@ public class World2D
 
     private static char ParseEmptyChar(string? rawValue) =>
         string.IsNullOrEmpty(rawValue) ? ' ' : rawValue[0];
+
+    /// <summary>
+    /// Parses a single-character color code (see <c>Global/Colors.ini</c>) from a level's own
+    /// <c>DefaultForegroundColor</c>/<c>DefaultBackgroundColor</c> settings.ini value. Null if
+    /// absent/empty - mirrors <see cref="Assets.SpriteLoader"/>'s identical per-asset parsing.
+    /// </summary>
+    private static char? ParseColorCode(string? rawValue) =>
+        string.IsNullOrEmpty(rawValue) ? null : rawValue[0];
 
     /// <summary>
     /// Whether an object's ini section explicitly opts in as the body the camera should follow

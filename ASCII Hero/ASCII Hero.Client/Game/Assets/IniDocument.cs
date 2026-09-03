@@ -59,6 +59,13 @@ public class IniDocument
     public IReadOnlyDictionary<string, string> Section(string sectionName) =>
         _sections.TryGetValue(sectionName, out var section) ? section : new Dictionary<string, string>();
 
+    /// <summary>
+    /// Every section name defined in this document (e.g. every material name in a
+    /// <c>Materials.ini</c>), in the order first encountered. Used by <see cref="MaterialLibrary"/>
+    /// to enumerate all materials without needing to know their names up front.
+    /// </summary>
+    public IReadOnlyCollection<string> SectionNames => _sections.Keys;
+
     public string? TryGetValue(string sectionName, string key) =>
         _sections.TryGetValue(sectionName, out var section) && section.TryGetValue(key, out var value)
             ? value

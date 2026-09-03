@@ -38,7 +38,7 @@ public class CollisionSystem
     private const double HangOverlapEpsilon = 0.01;
 
     /// <summary>Reused across frames to avoid an allocation every call for what is normally a tiny list.</summary>
-    private readonly List<(IPhysicsBody Body, double Restitution)> _movingBodies = [];
+    private readonly List<IPhysicsBody> _movingBodies = [];
 
     /// <summary>
     /// Hazard/body contact pairs still overlapping as of the frame just resolved. Used so an
@@ -61,7 +61,7 @@ public class CollisionSystem
             }
 
             movingBody.IsGrounded = false;
-            _movingBodies.Add((movingBody, GetRestitution(movingBody)));
+            _movingBodies.Add(movingBody);
         }
 
         ResolveClimbingAndHanging(world);
@@ -74,11 +74,11 @@ public class CollisionSystem
         // none of that is special-cased here, it all flows through this one flag.
         var solids = world.Objects.Where(body => body.IsStatic && !body.IsPassable).ToList();
 
-        foreach (var (body, restitution) in _movingBodies)
+        foreach (var body in _movingBodies)
         {
             foreach (var solid in solids)
             {
-                ResolveAgainstSolid(body, restitution, solid);
+                ResolveAgainstSolid(body, solid);
             }
         }
 
@@ -92,10 +92,11 @@ public class CollisionSystem
             }
         }
 
-        foreach (var (body, restitution) in _movingBodies)
+        foreach (var body in _movingBodies)
         {
-            ResolveWorldBounds(world, body, restitution);
+            ResolveWorldBounds(world, body);
         }
+
 
         ResolveHazardsAndCollectables(world);
     }
@@ -221,16 +222,13 @@ public class CollisionSystem
         Math.Sqrt(velocity.X * velocity.X + velocity.Y * velocity.Y) <= MaxSnapSpeed;
 
     /// <summary>
-    /// Bounciness used for collision response, generic over any concrete moving body: bodies that
-    /// expose their own <c>Restitution</c> (<see cref="DynamicObject2D"/>, <see cref="MovingEnemy2D"/>)
-    /// use it, everything else (the player, kinematic objects) stops dead (0.0).
+    /// Combines two materials' restitution/friction values for a single collision response, per
+    /// docs/Decisions.md: a plain average of both sides. Chosen over e.g. <c>Math.Min</c> because
+    /// it lets either side meaningfully pull the result toward its own value (a rubber ball on
+    /// concrete bounces less than rubber-on-rubber but more than concrete-on-concrete), rather
+    /// than one material always dominating outright regardless of the other.
     /// </summary>
-    private static double GetRestitution(IPhysicsBody body) => body switch
-    {
-        DynamicObject2D dynamicObject => dynamicObject.Restitution,
-        MovingEnemy2D movingEnemy => movingEnemy.Restitution,
-        _ => 0.0,
-    };
+    private static double Combine(double a, double b) => (a + b) / 2.0;
 
     /// <summary>
     /// Any <see cref="IPhysicsBody"/> overlapping any <see cref="IHazardBody"/> is a hazard hit,
@@ -361,8 +359,9 @@ public class CollisionSystem
     /// treated the same as a platform's top surface for grounding purposes, so any body resting
     /// against it (not just the player) is considered grounded - no special-casing by type.
     /// </summary>
-    private static void ResolveWorldBounds(World2D world, IPhysicsBody body, double restitution)
+    private static void ResolveWorldBounds(World2D world, IPhysicsBody body)
     {
+        var restitution = body.Restitution;
         var position = body.Position;
         var velocity = body.Velocity;
         var width = body.Size.X;
@@ -403,14 +402,16 @@ public class CollisionSystem
 
     /// <summary>
     /// Resolves <paramref name="body"/> against <paramref name="solid"/>, one body collision
-    /// rectangle at a time (see <see cref="ResolveRectAgainstSolid"/> for why). <paramref
-    /// name="restitution"/> drives the velocity response uniformly: 0 stops the body dead (the
-    /// player's case), while anything above 0 reflects velocity to varying degrees of bounce
-    /// (dynamic objects). Despite the name, <paramref name="solid"/> is any immovable body from
+    /// rectangle at a time (see <see cref="ResolveRectAgainstSolid"/> for why). The velocity
+    /// response uses <paramref name="body"/> and <paramref name="solid"/>'s combined restitution
+    /// (see <see cref="Combine"/>) - 0 stops the body dead (e.g. the player's rubber-free flesh
+    /// against most terrain), while anything above 0 reflects velocity to varying degrees of
+    /// bounce - and applies a friction damping to the tangential velocity component from their
+    /// combined friction. Despite the name, <paramref name="solid"/> is any immovable body from
     /// the <c>solids</c> list, not specifically a platform - a wall, crate, or any other static
     /// terrain resolves the same way.
     /// </summary>
-    private static void ResolveAgainstSolid(IPhysicsBody body, double restitution, Body2D solid)
+    private static void ResolveAgainstSolid(IPhysicsBody body, Body2D solid)
     {
         // A body's collision shape can be made up of several rectangles that don't all have the
         // same width/offset (e.g. the player's narrower "head" rect above its wider "torso"
@@ -427,10 +428,12 @@ public class CollisionSystem
         // body, and rect 1 must then be checked/pushed out from that already-corrected position,
         // not the stale pre-frame one, otherwise the two rects' corrections fight each other and
         // the body jitters between resolved positions frame to frame.
+        var restitution = Combine(body.Restitution, solid.Restitution);
+        var friction = Combine(body.Friction, solid.Friction);
         var rectCount = body.CollisionRects.Count;
         for (var rectIndex = 0; rectIndex < rectCount; rectIndex++)
         {
-            ResolveRectAgainstSolid(body, restitution, solid, body.CollisionRects[rectIndex]);
+            ResolveRectAgainstSolid(body, restitution, friction, solid, body.CollisionRects[rectIndex]);
         }
     }
 
@@ -441,7 +444,7 @@ public class CollisionSystem
     /// rect by <see cref="ResolveAgainstSolid"/> so a multi-rect body (e.g. the player's
     /// head+torso shape) gets every part of itself pushed fully clear of the solid.
     /// </summary>
-    private static void ResolveRectAgainstSolid(IPhysicsBody body, double restitution, Body2D solid, Rect2D bodyRect)
+    private static void ResolveRectAgainstSolid(IPhysicsBody body, double restitution, double friction, Body2D solid, Rect2D bodyRect)
     {
         if (!TryFindDeepestOverlap([bodyRect], solid.CollisionRects, out var deepestBodyRect, out var bestSolidRect))
         {
@@ -466,12 +469,14 @@ public class CollisionSystem
         {
             if (overlapTopBest < overlapBottomBest)
             {
-                // Landing on top of the solid.
+                // Landing on top of the solid. Friction damps the tangential (horizontal)
+                // velocity component every frame the body rests here - see ApplyFriction - so a
+                // grippy surface (e.g. Concrete) settles sliding motion faster than a slick one.
                 var newRectBottom = bestSolidRect.Top;
                 body.Position = new Vector2D(
                     body.Position.X,
                     newRectBottom - deepestBodyRect.Height - rectOffsetY);
-                body.Velocity = new Vector2D(body.Velocity.X, -body.Velocity.Y * restitution);
+                body.Velocity = new Vector2D(ApplyFriction(body.Velocity.X, friction), -body.Velocity.Y * restitution);
                 body.IsGrounded = true;
             }
             else
@@ -499,9 +504,22 @@ public class CollisionSystem
                     bestSolidRect.Right - rectOffsetX,
                     body.Position.Y);
             }
-            body.Velocity = new Vector2D(-body.Velocity.X * restitution, body.Velocity.Y);
+            body.Velocity = new Vector2D(-body.Velocity.X * restitution, ApplyFriction(body.Velocity.Y, friction));
         }
     }
+
+    /// <summary>
+    /// Damps a tangential (along-surface) velocity component by the combined friction of the two
+    /// contacting materials - 0 leaves it untouched (frictionless), 1 stops it dead instantly.
+    /// Applied once per contacting frame rather than as a continuous force, which is a
+    /// deliberately simple per-docs/Decisions.md approximation: real friction depends on normal
+    /// force and time, but a flat per-frame damping factor is enough to make grippy materials
+    /// (e.g. Concrete) visibly settle sliding motion faster than a slick one (e.g. Ice) without
+    /// needing a full friction-force integration model.
+    /// </summary>
+    private static double ApplyFriction(double velocityComponent, double friction) =>
+        velocityComponent * (1.0 - Math.Clamp(friction, 0.0, 1.0));
+
 
     /// <summary>
     /// Finds the deepest-overlapping rectangle pair between two bodies' (possibly multi-rect)
@@ -608,14 +626,17 @@ public class CollisionSystem
     /// Resolves a collision between two moving bodies (e.g. the player and the bouncing ball) -
     /// the one pairing that previously fell through the cracks entirely, since each body was
     /// only ever checked against solids/world bounds, never against each other. Uses the same
-    /// deepest-penetration approach as <see cref="ResolveAgainstSolid"/>, but since neither
-    /// side here is immovable, the position correction is split evenly between both bodies and
-    /// each body's velocity is reflected using its own restitution - consistent with how that
-    /// same body already bounces off platforms and world bounds.
+    /// deepest-penetration approach as <see cref="ResolveAgainstSolid"/>, but since neither side
+    /// here is immovable, the position correction is split by relative mass (a heavier body
+    /// yields less ground than a lighter one - see <see cref="Body2D.Mass"/>) and the along-normal
+    /// velocity response is a proper mass-weighted impulse (see <see cref="ResolveNormalImpulse"/>)
+    /// using the pair's combined restitution (see <see cref="Combine"/>), rather than each body
+    /// independently reflecting its own velocity. The tangential velocity component gets the same
+    /// friction damping used against solids.
     /// </summary>
-    private static void ResolveBodyPair((IPhysicsBody Body, double Restitution) a, (IPhysicsBody Body, double Restitution) b)
+    private static void ResolveBodyPair(IPhysicsBody a, IPhysicsBody b)
     {
-        if (!TryFindDeepestOverlap(a.Body.CollisionRects, b.Body.CollisionRects, out var deepestRectA, out var bestRectB))
+        if (!TryFindDeepestOverlap(a.CollisionRects, b.CollisionRects, out var deepestRectA, out var bestRectB))
         {
             return;
         }
@@ -628,44 +649,79 @@ public class CollisionSystem
         var minHorizontal = Math.Min(overlapLeftBest, overlapRightBest);
         var minVertical = Math.Min(overlapTopBest, overlapBottomBest);
 
+        // Split the position correction by relative mass rather than always 50/50: the heavier
+        // body moves less, the lighter one moves more. Falls back to an even split if both masses
+        // are zero (e.g. neither body resolved a material) so a degenerate 0/0 divide never
+        // happens.
+        var totalMass = a.Mass + b.Mass;
+        var aShare = totalMass > 0 ? b.Mass / totalMass : 0.5;
+        var bShare = totalMass > 0 ? a.Mass / totalMass : 0.5;
+
+        var restitution = Combine(a.Restitution, b.Restitution);
+        var friction = Combine(a.Friction, b.Friction);
+
         if (minVertical < minHorizontal)
         {
-            var half = minVertical / 2;
             if (overlapTopBest < overlapBottomBest)
             {
-                // A's bottom rests on B's top - push A up and B down by half the overlap each.
-                a.Body.Position = new Vector2D(a.Body.Position.X, a.Body.Position.Y - half);
-                b.Body.Position = new Vector2D(b.Body.Position.X, b.Body.Position.Y + half);
-                a.Body.IsGrounded = true;
+                // A's bottom rests on B's top - push A up and B down, split by relative mass.
+                a.Position = new Vector2D(a.Position.X, a.Position.Y - minVertical * aShare);
+                b.Position = new Vector2D(b.Position.X, b.Position.Y + minVertical * bShare);
+                a.IsGrounded = true;
             }
             else
             {
                 // B's bottom rests on A's top.
-                b.Body.Position = new Vector2D(b.Body.Position.X, b.Body.Position.Y - half);
-                a.Body.Position = new Vector2D(a.Body.Position.X, a.Body.Position.Y + half);
-                b.Body.IsGrounded = true;
+                b.Position = new Vector2D(b.Position.X, b.Position.Y - minVertical * bShare);
+                a.Position = new Vector2D(a.Position.X, a.Position.Y + minVertical * aShare);
+                b.IsGrounded = true;
             }
 
-            a.Body.Velocity = new Vector2D(a.Body.Velocity.X, -a.Body.Velocity.Y * a.Restitution);
-            b.Body.Velocity = new Vector2D(b.Body.Velocity.X, -b.Body.Velocity.Y * b.Restitution);
+            var (newAY, newBY) = ResolveNormalImpulse(a.Velocity.Y, b.Velocity.Y, a.Mass, b.Mass, restitution);
+            a.Velocity = new Vector2D(ApplyFriction(a.Velocity.X, friction), newAY);
+            b.Velocity = new Vector2D(ApplyFriction(b.Velocity.X, friction), newBY);
         }
         else
         {
-            var half = minHorizontal / 2;
             if (overlapLeftBest < overlapRightBest)
             {
-                // A's right edge overlaps B's left edge - push them apart horizontally.
-                a.Body.Position = new Vector2D(a.Body.Position.X - half, a.Body.Position.Y);
-                b.Body.Position = new Vector2D(b.Body.Position.X + half, b.Body.Position.Y);
+                // A's right edge overlaps B's left edge - push them apart horizontally, split by relative mass.
+                a.Position = new Vector2D(a.Position.X - minHorizontal * aShare, a.Position.Y);
+                b.Position = new Vector2D(b.Position.X + minHorizontal * bShare, b.Position.Y);
             }
             else
             {
-                b.Body.Position = new Vector2D(b.Body.Position.X - half, b.Body.Position.Y);
-                a.Body.Position = new Vector2D(a.Body.Position.X + half, a.Body.Position.Y);
+                b.Position = new Vector2D(b.Position.X - minHorizontal * bShare, b.Position.Y);
+                a.Position = new Vector2D(a.Position.X + minHorizontal * aShare, a.Position.Y);
             }
 
-            a.Body.Velocity = new Vector2D(-a.Body.Velocity.X * a.Restitution, a.Body.Velocity.Y);
-            b.Body.Velocity = new Vector2D(-b.Body.Velocity.X * b.Restitution, b.Body.Velocity.Y);
+            var (newAX, newBX) = ResolveNormalImpulse(a.Velocity.X, b.Velocity.X, a.Mass, b.Mass, restitution);
+            a.Velocity = new Vector2D(newAX, ApplyFriction(a.Velocity.Y, friction));
+            b.Velocity = new Vector2D(newBX, ApplyFriction(b.Velocity.Y, friction));
         }
     }
+
+    /// <summary>
+    /// Standard 1D mass-weighted impulse resolution along a single collision-normal axis, for two
+    /// finite-mass bodies (used only by <see cref="ResolveBodyPair"/> - a static <see
+    /// cref="Body2D.IsStatic"/> solid is never one of these two bodies, it's handled by <see
+    /// cref="ResolveAgainstSolid"/> instead, so "infinite mass" is not a case this needs to
+    /// handle): <c>j = -(1+e) * relativeVelocity / (1/mA + 1/mB)</c>, then <c>vA' = vA + j/mA</c>,
+    /// <c>vB' = vB - j/mB</c>. A body with no resolved material (<see cref="Body2D.Mass"/> of 0,
+    /// e.g. <see cref="MaterialLibrary.Undefined"/>) is treated as mass 1 here purely to keep the
+    /// impulse formula well-defined - it does not affect that body's own position-correction share
+    /// above, which already falls back to an even split independently.
+    /// </summary>
+    private static (double NewA, double NewB) ResolveNormalImpulse(double velocityA, double velocityB, double massA, double massB, double restitution)
+    {
+        var effectiveMassA = massA > 0 ? massA : 1.0;
+        var effectiveMassB = massB > 0 ? massB : 1.0;
+        var relativeVelocity = velocityA - velocityB;
+        var impulse = -(1.0 + restitution) * relativeVelocity / (1.0 / effectiveMassA + 1.0 / effectiveMassB);
+        var newA = velocityA + impulse / effectiveMassA;
+        var newB = velocityB - impulse / effectiveMassB;
+        return (newA, newB);
+    }
 }
+
+
