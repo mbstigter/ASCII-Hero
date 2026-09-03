@@ -138,8 +138,12 @@ The live game state and the entity types that make it up.
 	`IHangerBody` - a body can implement either, both, or neither.
   - `IHangerBody` - can hang and shimmy laterally from an `IsHangable`
 	surface (e.g. a pipe/rope); carries `IsTouchingHangable`, `IsHanging`,
-	and `IsClambering` (regular fully-stretched hang vs. a compact clamber/
-	shimmy pose that fits through narrower spaces).
+	`IsClambering` (regular fully-stretched hang vs. a compact clamber/
+	shimmy pose that fits through narrower spaces), and
+	`SuppressHangUntilClear` (debounce set by `PhysicsSystem` the instant the
+	player jumps/swings off or lets go, consulted by `CollisionSystem` so it
+	doesn't immediately re-snap the body while still overlapping the same
+	surface).
 
   positions and velocities. World coordinates are continuous cells, not
   pixels or integer grid indices - see Coordinate System below.

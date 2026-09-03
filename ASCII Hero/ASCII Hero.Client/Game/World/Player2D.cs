@@ -26,6 +26,9 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody, 
     /// <inheritdoc/>
     public bool IsClambering { get; set; }
 
+    /// <inheritdoc/>
+    public bool SuppressHangUntilClear { get; set; }
+
     /// <summary>
     /// The player is subject to normal world gravity except while <see cref="IsClimbing"/> or
     /// <see cref="IsHanging"/>, during which it is suspended so <see cref="Physics.PhysicsSystem"/>

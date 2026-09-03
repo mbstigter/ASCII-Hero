@@ -27,22 +27,12 @@ public class PhysicsSystem
     private bool _wasJumpKeyDown;
 
     /// <summary>
-    /// Set the instant the player deliberately lets go of a hangable surface (a second Down press
-    /// while already fully stretched - see the hang stance ladder in <see cref="Step"/>), and held
-    /// until <see cref="IHangerBody.IsTouchingHangable"/> goes false again. Without this, the
-    /// player would still be geometrically touching/underneath the same surface on the very next
-    /// frame (nothing has moved yet) and immediately re-engage <see cref="IHangerBody.IsHanging"/>,
-    /// making "let go" impossible to actually achieve while held in place under a pipe/rope.
-    /// </summary>
-    private bool _suppressHangUntilClear;
-
-    /// <summary>
     /// Set the instant the player jumps off a ladder (see the stance ladder in <see cref="Step"/>),
     /// and held until <see cref="IClimberBody.IsTouchingClimbable"/> goes false again. Without
     /// this, <see cref="ClimbJumpSpeed"/> is slow enough that the player is still both overlapping
     /// the same ladder and holding Up/Down on the very next frame or two, which would otherwise
     /// immediately re-engage <see cref="IClimberBody.IsClimbing"/> before the jump is even visible
-    /// - mirroring <see cref="_suppressHangUntilClear"/> for the same underlying reason.
+    /// - mirroring <see cref="IHangerBody.SuppressHangUntilClear"/> for the same underlying reason.
     /// </summary>
     private bool _suppressClimbUntilClear;
 
@@ -77,10 +67,14 @@ public class PhysicsSystem
             player.IsClimbing = true;
         }
 
-        // Once the player is no longer touching the climbable surface at all (having actually
-        // jumped clear of it after the jump-off below), the debounce lock is released so a later
-        // approach can grab on again normally - mirroring the equivalent hang debounce below.
-        if (!player.IsTouchingClimbable)
+        // The debounce lock is released either once the player is no longer touching the
+        // climbable surface at all (having actually jumped clear of it after the jump-off below -
+        // mirroring the equivalent hang debounce below), or once they land on solid ground -
+        // landing is already an unconditional "reset" moment for climbing (see the disengage
+        // check above), and a jump arc that lands back on/through the same ladder rect without
+        // ever fully clearing its overlap (a short hop rather than a big leap) would otherwise
+        // leave the debounce stuck forever, since IsTouchingClimbable never actually goes false.
+        if (!player.IsTouchingClimbable || player.IsGrounded)
         {
             _suppressClimbUntilClear = false;
         }
@@ -90,7 +84,7 @@ public class PhysicsSystem
         {
             player.IsHanging = false;
         }
-        else if (!player.IsHanging && !player.IsClimbing && player.IsTouchingHangable && !_suppressHangUntilClear)
+        else if (!player.IsHanging && !player.IsClimbing && player.IsTouchingHangable && !player.SuppressHangUntilClear)
         {
             player.IsHanging = true;
             // Reaching a pipe/rope while already crawling grabs on in the compact clamber
@@ -105,7 +99,7 @@ public class PhysicsSystem
         // a later approach can grab on again normally.
         if (!player.IsTouchingHangable)
         {
-            _suppressHangUntilClear = false;
+            player.SuppressHangUntilClear = false;
         }
 
         // A single, structured up/down stance ladder, deliberately mirroring floor and hanging
@@ -184,7 +178,7 @@ public class PhysicsSystem
                 // re-grab the exact surface they just launched off.
                 player.IsHanging = false;
                 velocity.Y = -HangJumpSpeed;
-                _suppressHangUntilClear = true;
+                player.SuppressHangUntilClear = true;
             }
             else if (!player.IsClambering && downPressedThisFrame)
             {
@@ -192,7 +186,7 @@ public class PhysicsSystem
                 // debounce lock above prevents an instant re-grab while still overlapping the
                 // same surface on the way down.
                 player.IsHanging = false;
-                _suppressHangUntilClear = true;
+                player.SuppressHangUntilClear = true;
             }
         }
         _wasUpKeyDown = upKeyDown;

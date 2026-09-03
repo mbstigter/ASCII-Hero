@@ -40,4 +40,15 @@ public interface IHangerBody : IPhysicsBody
     /// transition logic.
     /// </summary>
     bool IsClambering { get; set; }
+
+    /// <summary>
+    /// Debounce set by <see cref="Physics.PhysicsSystem"/> the instant the body deliberately
+    /// jumps/swings off or lets go of a hangable surface, held until it actually clears the
+    /// surface's overlap entirely. Consulted by <see cref="Physics.CollisionSystem"/> so it
+    /// doesn't immediately re-catch/re-snap the body the very same frame it let go - overlap with
+    /// the pipe/rope typically still exists for a frame or two after the jump/release, since the
+    /// body has only just started moving away from it (mirroring the equivalent climb debounce
+    /// for ladders, for the same underlying reason).
+    /// </summary>
+    bool SuppressHangUntilClear { get; set; }
 }

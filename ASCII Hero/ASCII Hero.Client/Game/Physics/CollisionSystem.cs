@@ -13,15 +13,6 @@ namespace ASCII_Hero.Client.Game.Physics;
 public class CollisionSystem
 {
     /// <summary>
-    /// Small positional slack used by the generic edge-approach checks in
-    /// <see cref="WouldSnapFromBelow"/>/<see cref="WouldSnapFromAbove"/>, so a body whose edge
-    /// sits a fraction of a cell past the surface's own edge (as can happen after a rect is
-    /// pushed into rounding by float integration) still counts as a valid approach rather than
-    /// falsely failing the check on an otherwise valid grab/landing.
-    /// </summary>
-    private const double EdgeTolerance = 0.05;
-
-    /// <summary>
     /// Speed (in cells/second, on the axis relevant to the surface) above which a body is moving
     /// too fast to snap onto a climbable/hangable surface on first touch - it should instead keep
     /// falling/moving through, exactly like a body still rising past the peak of a jump shouldn't
@@ -31,6 +22,20 @@ public class CollisionSystem
     /// a single frame is not mistakenly caught mid-flight.
     /// </summary>
     private const double MaxSnapSpeed = 24.0;
+
+    /// <summary>
+    /// Tiny amount <see cref="SnapOntoHangable"/> pulls the hanger's top edge *above* (i.e. a
+    /// smaller Y than) the hangable surface's bottom edge, so the two rectangles remain genuinely
+    /// overlapping - not merely touching - on the very next frame. <see cref="Rect2D.Overlaps"/>
+    /// uses strict inequalities (<c>bodyRect.Top &lt; otherRect.Bottom</c>), so a body snapped to
+    /// land exactly flush (top == other's bottom), or worse, pushed slightly past it, has zero (or
+    /// negative) actual overlap and <see cref="IHangerBody.IsTouchingHangable"/> would immediately
+    /// flip back to false one frame after grabbing on, dropping the player right after the snap
+    /// ever became visible. Small enough to be visually imperceptible, just like the old
+    /// <c>EdgeTolerance</c> it replaces here, but used to guarantee persistence instead of to gate
+    /// an approximate edge comparison.
+    /// </summary>
+    private const double HangOverlapEpsilon = 0.01;
 
     /// <summary>Reused across frames to avoid an allocation every call for what is normally a tiny list.</summary>
     private readonly List<(IPhysicsBody Body, double Restitution)> _movingBodies = [];
@@ -129,10 +134,80 @@ public class CollisionSystem
 
             if (body is IHangerBody hanger)
             {
-                hanger.IsTouchingHangable = IsWithinSnapSpeed(hanger.Velocity) &&
-                    hangables.Any(hangable => Overlaps(hanger, hangable) && WouldSnapFromBelow(hanger, hangable));
+                hanger.IsTouchingHangable = false;
+                if (IsWithinSnapSpeed(hanger.Velocity))
+                {
+                    foreach (var hangable in hangables)
+                    {
+                        if (!Overlaps(hanger, hangable) || !WouldSnapFromBelow(hanger, hangable))
+                        {
+                            continue;
+                        }
+
+                        // IsTouchingHangable itself must still be reported here even while
+                        // SuppressHangUntilClear is set below - exactly like IsTouchingClimbable
+                        // above, which is never gated by _suppressClimbUntilClear - so that
+                        // PhysicsSystem's debounce-release check ("once no longer touching at
+                        // all") only fires once the body has genuinely cleared the surface's
+                        // overlap, not the instant a jump/swing begins while still overlapping it.
+                        hanger.IsTouchingHangable = true;
+
+                        // While IHangerBody.SuppressHangUntilClear is set (PhysicsSystem just made
+                        // the player jump/swing off or explicitly let go this same frame), skip
+                        // the actual snap/stop below even though overlap is still detected above -
+                        // otherwise the jump-off velocity set moments ago in PhysicsSystem would
+                        // be immediately zeroed and the body re-snapped right back, making it look
+                        // like the jump/swing never happened. The overlap keeps being reported
+                        // above regardless, so the debounce is only released once truly clear.
+                        if (hanger.SuppressHangUntilClear)
+                        {
+                            break;
+                        }
+
+                        // Detect and correct synchronously, in this same call, exactly like
+                        // ResolveRectAgainstSolid does for solid terrain - it never waits for a
+                        // flag set on a previous frame (e.g. IsGrounded) before stopping/snapping
+                        // a body, it reacts to the overlap the instant it sees it. An earlier
+                        // version of this deferred SnapOntoHangable until hanger.IsHanging was
+                        // already true (only set the *following* frame by PhysicsSystem, since
+                        // physics runs before collision each tick), intending to let a jump
+                        // continue rising past first contact - but a thin, one-cell-tall pipe
+                        // often only overlaps for a single frame, so by the time IsHanging
+                        // finally engaged next frame the body had already moved fully clear of it
+                        // (uncorrected), and the overlap was gone again before the catch could
+                        // ever apply - the body would merely freeze for one stray frame (feeling
+                        // like hitting an invisible ceiling) and then fall/jump straight through
+                        // with no actual grab, both from below and from above. Stopping and
+                        // snapping immediately here, the same frame overlap is first found, is
+                        // what makes solid landings reliable and must work the same way here.
+                        hanger.Velocity = new Vector2D(hanger.Velocity.X, 0);
+                        SnapOntoHangable(hanger, hangable);
+                        break;
+                    }
+                }
             }
         }
+    }
+
+    /// <summary>
+    /// Corrects <paramref name="hanger"/>'s position so its own overall topmost collision edge
+    /// (see <see cref="WouldSnapFromBelow"/>) lands exactly on <paramref name="hangable"/>'s
+    /// bottom edge - i.e. hanging just underneath the surface, not overlapping into/through it -
+    /// mirroring how <see cref="ResolveRectAgainstSolid"/> snaps a body exactly onto a solid's
+    /// surface rather than merely detecting it is "close enough". Only the vertical axis is
+    /// corrected - hanging/shimmying is a deliberate lateral action (see
+    /// <see cref="Physics.PhysicsSystem"/>'s hang movement), so horizontal position is left alone.
+    /// </summary>
+    private static void SnapOntoHangable(IHangerBody hanger, Body2D hangable)
+    {
+        if (!TryFindDeepestOverlap(hanger.CollisionRects, hangable.CollisionRects, out _, out var otherRect))
+        {
+            return;
+        }
+
+        var bodyTop = hanger.CollisionRects.Min(rect => rect.Top);
+        var topOffset = bodyTop - hanger.Position.Y;
+        hanger.Position = new Vector2D(hanger.Position.X, otherRect.Bottom - topOffset - HangOverlapEpsilon);
     }
 
     /// <summary>
@@ -526,7 +601,7 @@ public class CollisionSystem
         }
 
         var bodyTop = body.CollisionRects.Min(rect => rect.Top);
-        return bodyTop >= otherRect.Top - EdgeTolerance;
+        return bodyTop >= otherRect.Top;
     }
 
     /// <summary>

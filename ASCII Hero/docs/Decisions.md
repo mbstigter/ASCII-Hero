@@ -2,6 +2,167 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## Hang jump/swing-off debounce promoted to `IHangerBody.SuppressHangUntilClear`, and overlap detection split from the snap/stop itself
+
+- **Prompted by user follow-up (regression #1):** after the hang snap
+  accuracy fixes above, the user reported "jumping/swing from pipe/rope has
+  disappeared" - pressing Jump while hanging appeared to do nothing.
+- **Root cause:** `PhysicsSystem`'s hang stance ladder clears `IsHanging`
+  and sets an upward `velocity.Y` the instant Jump is pressed from the
+  fully-stretched hang, but the player's collision rect is still
+  overlapping the pipe/rope that same frame (nothing has moved yet).
+  `CollisionSystem.ResolveClimbingAndHanging` ran unconditionally and,
+  seeing that same overlap plus a qualifying approach direction, zeroed
+  `hanger.Velocity.Y` and re-snapped the body right back - the same frame
+  the jump-off velocity was set, cancelling it before it was ever visible.
+  The existing `_suppressHangUntilClear` debounce lived only in
+  `PhysicsSystem` and was invisible to `CollisionSystem`, so it had no
+  effect on the re-catch.
+- **Fix:** `_suppressHangUntilClear` was promoted from a private
+  `PhysicsSystem` field to a shared `IHangerBody.SuppressHangUntilClear`
+  auto-property (implemented on `Player2D`), so `CollisionSystem` can also
+  observe it. `ResolveClimbingAndHanging` now skips the actual
+  snap/velocity-zero step while `SuppressHangUntilClear` is set.
+- **Prompted by user follow-up (regression #2):** after the above fix, the
+  user reported the jump/swing was visible but far too short - "player
+  doesn't get high enough before getting snapped again" - and asked
+  whether the ladder's jump-off (which already worked well) used a
+  different mechanism worth mirroring.
+- **Root cause:** the first fix's implementation gated the *entire* overlap
+  loop (including `hanger.IsTouchingHangable = true`) on
+  `!hanger.SuppressHangUntilClear`, so while suppressed,
+  `IsTouchingHangable` was forced straight to `false` on the very first
+  frame after jumping - even though the body was still genuinely
+  overlapping the pipe. `PhysicsSystem` releases `SuppressHangUntilClear`
+  as soon as `!IsTouchingHangable`, so the debounce cleared almost
+  instantly (one frame) instead of lasting the whole jump arc, letting the
+  very next frame re-catch and re-snap the player. This is exactly what
+  ladders get right: `IClimberBody.IsTouchingClimbable` is always computed
+  from genuine overlap regardless of `_suppressClimbUntilClear` - that
+  debounce only blocks `PhysicsSystem` from re-engaging `IsClimbing`, it
+  never hides the overlap fact from itself - so `_suppressClimbUntilClear`
+  naturally stays held for the ladder jump's whole arc, until the player
+  truly clears the ladder or lands.
+- **Fix:** `IsTouchingHangable` is now always set from genuine overlap
+  (mirroring `IsTouchingClimbable`), regardless of
+  `SuppressHangUntilClear`; only the velocity-zero + `SnapOntoHangable`
+  step itself is skipped while suppressed. The debounce now stays engaged
+  for the player's whole jump/swing arc, matching ladder behavior.
+- **Known remaining limitation (tracked in
+  [Design.md](Design.md#planned--future-work)):** because the debounce is
+  now only released once the body fully clears the hangable surface's
+  overlap (same as ladders), a modest jump - e.g. swinging up to a pipe one
+  character above, or sideways onto an adjacent platform/wall - can still
+  reach a new hangable/solid surface mid-arc before the debounce clears,
+  so it can't yet snap onto that new surface as readily as intended. A
+  ladder-style "release on landing too" doesn't directly translate to hang,
+  since landing isn't the relevant condition for re-grabbing a hangable
+  surface - a different release condition still needs designing.
+
+## Hang snap now corrects position exactly on overlap, instead of a fudge-tolerance edge check - `EdgeTolerance` removed
+
+- **Prompted by user follow-up:** after an initial attempt just shrank
+  `EdgeTolerance` (0.05 -> 0.01), the user correctly pointed out two
+  things: (1) shrinking a symmetric tolerance doesn't make the check
+  directional, it just narrows the same early-snap window on both the
+  reach-up-from-below and fall-through-from-above cases; and (2) solid
+  terrain doesn't use a tolerance at all - `ResolveRectAgainstSolid`
+  detects genuine rectangle overlap, then corrects the body's position
+  exactly onto the solid's surface (e.g. `newRectBottom =
+  bestSolidRect.Top`). Hanging should work the same way: overlap is
+  overlap, and gets corrected, rather than merely tested against a
+  fractional-cell slack window.
+- **Root cause (unchanged from the previous entry):** `WouldSnapFromBelow`
+  compared the body's top edge to the hangable surface's top edge with a
+  tolerance slack, so the grab could fire while the body's top was still a
+  fraction of a cell away from true alignment in either direction - this
+  read as the hang engaging early/late even though the ASCII row shown
+  looked correct, since world positions and rendering are both continuous.
+- **Fix:** `ResolveClimbingAndHanging` now snaps a hanger's position
+  (`SnapOntoHangable`) so its own overall topmost collision edge lands
+  exactly on the hangable surface's bottom edge (hanging just underneath
+  it, not overlapping into it) the instant genuine overlap plus the
+  qualifying approach direction (`WouldSnapFromBelow`, now a plain
+  `bodyTop >= otherRect.Top` check with no tolerance) plus the existing
+  snap-speed gate are all satisfied - mirroring `ResolveRectAgainstSolid`'s
+  "detect overlap, correct exactly" pattern. An initial version of this
+  snapped to the surface's *top* edge instead, which visibly overlapped
+  the player into the hangable surface rather than hanging underneath it;
+  corrected to the surface's bottom edge, the one that actually sits just
+  below the player's own top row once grabbed. Only the vertical axis is
+  corrected; hanging still shimmies laterally under ordinary player input
+  afterward. `EdgeTolerance` itself has been removed from `CollisionSystem`
+  entirely, since nothing needs it anymore.
+- **Follow-up fix (snap-then-immediately-drop):** landing the hanger's top
+  edge exactly flush with the hangable surface's bottom edge (zero actual
+  overlap) meant `Rect2D.Overlaps`'s strict inequalities (`Bottom >
+  other.Top`) returned false again the very next frame, so
+  `IsTouchingHangable` flipped back to false and the player dropped right
+  after the grab became visible - not a gravity-suspension timing issue
+  (`Player2D.GravityAffected` already excludes `IsHanging` the same frame
+  it's set). Fixed by adding a tiny `HangOverlapEpsilon` (0.01 cells) that
+  `SnapOntoHangable` pulls the hanger's top edge past the surface's bottom
+  edge by, guaranteeing genuine (if visually imperceptible) overlap
+  persists so the grab holds.
+- **Second follow-up fix (jump upward motion cut off dead on first
+  touch) - reverted, wrong direction:** the user reported that jumping up
+  into a hangable surface from below now stopped the upward motion
+  immediately on first contact instead of continuing to rise. The initial
+  attempt deferred `SnapOntoHangable` until `hanger.IsHanging` was already
+  true (only set the *following* frame by `PhysicsSystem`, since physics
+  runs before collision each tick), reasoning the snap fired a frame too
+  early. This made things worse: a thin, one-cell-tall pipe often only
+  overlaps for a single frame, so by the time `IsHanging` finally engaged
+  next frame the body had already moved fully clear of it uncorrected,
+  and the overlap was gone again before the deferred catch could ever
+  apply - reported by the user as the pipe becoming "no longer passable"
+  (hitting it like a solid ceiling from below with no snap) and falling
+  straight through with no snap from above either.
+- **Third follow-up fix (restored synchronous catch, matching solid
+  terrain):** the user correctly pointed out that solid-surface landing
+  (`ResolveRectAgainstSolid`) never waits on a flag set on a previous
+  frame (e.g. `IsGrounded`) before stopping/snapping a body - it reacts
+  the instant it detects overlap, in the same `CollisionSystem.Resolve`
+  call, and that reliability should be mirrored here rather than
+  reinvented. Reverted the frame-deferral: `ResolveClimbingAndHanging` now
+  zeroes the hanger's vertical velocity and calls `SnapOntoHangable`
+  synchronously the instant genuine overlap plus the qualifying approach
+  direction plus the snap-speed gate are satisfied - the same frame
+  `IsTouchingHangable` first becomes true, exactly mirroring how a solid
+  landing stops/snaps a body immediately rather than waiting a frame.
+  This still lets an ordinary jump arc rise most of the way up first (the
+  velocity/position are untouched every frame the body isn't yet
+  overlapping the surface), but once the collision rects do overlap the
+  grab now catches immediately and reliably instead of racing a one-frame
+  overlap window against a flag from the previous tick.
+- **Fourth follow-up fix (actual root cause: `HangOverlapEpsilon` had the
+  wrong sign) - fixes both remaining symptoms in one line:** even after
+  restoring the synchronous catch, the user reported the grab still
+  didn't hold - falling through a pipe snapped only for an instant then
+  immediately let go again, and jumping up into a pipe stopped dead
+  ("hit its head") without ever actually catching, as if the pipe were
+  suddenly solid instead of passable. Root cause: `SnapOntoHangable`
+  computed `otherRect.Bottom - topOffset + HangOverlapEpsilon` - adding
+  the epsilon pushes the hanger's resulting top edge *below* (Y increases
+  downward) the surface's bottom edge, i.e. `bodyTop > otherRect.Bottom`,
+  which is the opposite of overlap under `Rect2D.Overlaps`'s strict
+  `bodyRect.Top < otherRect.Bottom` check. So the very "correction"
+  meant to guarantee persistent overlap was instead placing the body just
+  clear of the surface: `IsTouchingHangable` immediately evaluated false
+  on the following frame regardless of how the snap/velocity-zero was
+  sequenced, which is why every previous timing-focused fix (deferred
+  catch, synchronous catch) still failed to hold - the snap position
+  itself was never actually inside the pipe to begin with. Fixed by
+  flipping the sign to `otherRect.Bottom - topOffset - HangOverlapEpsilon`,
+  which pulls the hanger's top edge slightly *above* the surface's bottom
+  edge (into genuine overlap) instead of past it.
+- **Deferred:** a similar exact-alignment correction for climbing
+  (snapping the player horizontally onto a ladder's own horizontal
+  center/rect once grabbed) was raised as a related idea, but ladders can
+  vary in width unlike a hangable surface's single top edge, making the
+  "correct to what" question less obvious - left for a later, separate
+  pass focused specifically on climbing alignment.
+
 ## Climbing's jump-off moved into the same stance-ladder chain as the other transitions, and gains a debounce fixing a real re-grab bug
 
 - **Prompted by user follow-up asking for a "trivial" cleanup for

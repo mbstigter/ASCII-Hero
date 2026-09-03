@@ -60,3 +60,38 @@ not like a pixel-art game with ASCII characters placed on top.
     analogous to how climbing resolves `Facing` from input directly.
   - The `Swim` stance's `[Stances]` line and its five `swim_*` clip assets
     (art + `Player_settings.ini` entries), once the above physics exists.
+
+- **Hang jump/swing debounce clears too late.** `IHangerBody.SuppressHangUntilClear`
+  (see [Decisions.md](Decisions.md)) now correctly keeps a jump/swing off a
+  pipe/rope from being instantly cancelled, but it isn't released again until
+  the player fully clears the hangable surface's overlap - for a modest jump
+  arc (e.g. swinging up to a pipe one character above, or sideways onto an
+  adjacent platform/wall) that point in the arc comes later than intended, so
+  the player can't yet snap onto a new hangable/solid surface reached mid-arc
+  as readily as ladder jump-off allows. Needs a mechanism closer to ladder's
+  (where the debounce is released on landing as well as loss of overlap) -
+  still to be designed.
+- **Material-Based Collision Response.** Move surface-dependent collision
+  behavior (bounciness, friction, etc.) onto a per-material concept (see
+  `Materials.ini`) instead of ad-hoc per-body-type checks in `CollisionSystem`.
+- **Force-Based Movement (non-player first).** Move `DynamicObject2D`/
+  `MovingEnemy2D` movement onto a force/acceleration model rather than direct
+  velocity assignment, ahead of doing the same for the player (see the
+  existing `TODO` in `PhysicsSystem.Step`).
+- **Force-Based Movement for the player.** Once the non-player groundwork
+  above exists, revisit player movement (currently driven directly by
+  velocity assignment from input - see the existing `TODO` in
+  `PhysicsSystem.Step`) to apply movement as a force causing acceleration
+  instead, consistent with the rest of the physics model.
+- **`MovingEnemy` behavior.** Patrol/chase movement is not yet implemented
+  (see `MovingEnemy2D`'s doc comment) - still to design/implement:
+  - Animated sprites.
+  - Movement paths.
+  - Grounded and flying varieties.
+- **`KinematicObject` behavior.** Beyond constant-velocity motion, still to
+  design/implement:
+  - Sprites no different from `StaticObject`.
+  - Movement paths.
+- **Enhance sprites**, especially Crawl and Clamber, which currently feel
+  underdeveloped compared to Walk/Hang - consider adding a third animation
+  frame for these (and other) animated clips.
