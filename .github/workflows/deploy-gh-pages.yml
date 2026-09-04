@@ -27,7 +27,7 @@ jobs:
           dotnet-version: '10.0.x'
 
       - name: Publish ASCII Hero.Client (standalone)
-        run: dotnet publish "ASCII Hero/ASCII Hero.Client/ASCII Hero.Client.csproj" -c Release -o publish
+        run: dotnet publish "ASCII Hero/ASCII Hero.Client/ASCII Hero.Client.csproj" -c Release -o publish -p:StandaloneBuild=true
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3

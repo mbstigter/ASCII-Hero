@@ -9,6 +9,13 @@
     <RootNamespace>ASCII_Hero.Client</RootNamespace>
     <AssemblyName>$(AssemblyName.Replace(' ', '_'))</AssemblyName>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
+    <!--
+      Set to true only by the GitHub Pages publish workflow (see
+      .github/workflows/deploy-gh-pages.yml), which publishes this project
+      standalone rather than hosted inside the ASCII Hero server project.
+      Gates the RootComponents registration in Program.cs - see comment there.
+    -->
+    <DefineConstants Condition="'$(StandaloneBuild)' == 'true'">$(DefineConstants);STANDALONE_BUILD</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
