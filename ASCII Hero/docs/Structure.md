@@ -22,6 +22,18 @@ All gameplay code lives under `ASCII Hero.Client/Game/`, organized into one
 folder per subsystem, described below in roughly the order data flows through
 them at startup and each frame.
 
+### Deployment
+
+The `ASCII Hero` host project is used for local development only (F5
+debugging, server-side prerendering, the Edge app-mode launch helper in its
+`Program.cs`). For public distribution, `ASCII Hero.Client` is published
+standalone as a pure static Blazor WebAssembly site - no server, no
+prerendering - using its own `wwwroot/index.html` (separate from the host's
+`App.razor`, with a `base href` matching the GitHub Pages sub-path) and a
+`RootComponents` registration added to the client's `Program.cs`. A GitHub
+Actions workflow (`.github/workflows/deploy-gh-pages.yml`) publishes this
+standalone build and deploys it to GitHub Pages on every push to `master`.
+
 ## Subsystems
 
 ### Assets
