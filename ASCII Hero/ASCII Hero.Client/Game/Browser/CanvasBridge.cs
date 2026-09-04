@@ -9,18 +9,6 @@ namespace ASCII_Hero.Client.Game.Browser;
 public readonly record struct CellMetrics(double CellWidthPixels, double CellHeightPixels);
 
 /// <summary>
-/// The two selectable rendering fonts, matching the presets defined in game-interop.js.
-/// </summary>
-public enum FontMode
-{
-    /// <summary>The bundled CP437 bitmap font (Web437 IBM VGA 8x14).</summary>
-    Authentic,
-
-    /// <summary>A conventional anti-aliased coding font (JetBrains Mono).</summary>
-    Modern,
-}
-
-/// <summary>
 /// Thin, isolated interop boundary between C# and the browser Canvas/keyboard APIs.
 /// This is the only place in the game that talks to JavaScript.
 /// </summary>
@@ -31,32 +19,12 @@ public class CanvasBridge(IJSRuntime jsRuntime) : IAsyncDisposable
     private IJSObjectReference? _module;
     private DotNetObjectReference<GameLoop>? _dotNetRef;
 
-    public async Task<CellMetrics> InitializeAsync(string canvasElementId, GameLoop gameLoop, FontMode fontMode)
+    public async Task<CellMetrics> InitializeAsync(string canvasElementId, GameLoop gameLoop)
     {
         _module = await jsRuntime.InvokeAsync<IJSObjectReference>("import", ModulePath);
         _dotNetRef = DotNetObjectReference.Create(gameLoop);
-        return await _module.InvokeAsync<CellMetrics>("initialize", canvasElementId, _dotNetRef, ToJsFontMode(fontMode));
+        return await _module.InvokeAsync<CellMetrics>("initialize", canvasElementId, _dotNetRef);
     }
-
-    /// <summary>
-    /// Switches the active rendering font at runtime (used by the Authentic/Modern toggle in
-    /// Home.razor) and returns the newly measured cell size for the switched-to font.
-    /// </summary>
-    public async Task<CellMetrics> SetFontAsync(FontMode fontMode)
-    {
-        if (_module is null)
-        {
-            return default;
-        }
-
-        return await _module.InvokeAsync<CellMetrics>("setFont", ToJsFontMode(fontMode));
-    }
-
-    private static string ToJsFontMode(FontMode fontMode) => fontMode switch
-    {
-        FontMode.Modern => "modern",
-        _ => "authentic",
-    };
 
     public async Task DrawFrameAsync(int width, int height, IReadOnlyList<Rendering.Glyph> glyphs)
     {

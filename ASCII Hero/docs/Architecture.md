@@ -39,11 +39,9 @@ into C# once per frame.
 - The renderer converts game state into ASCII glyphs and draws them on
   Canvas at pixel positions derived from the camera transform, so glyphs can
   move smoothly even though the visual language is grid-based.
-- Two selectable monospaced fonts are supported at runtime (an authentic
-  bitmap CP437 font and a modern anti-aliased font). Both are scaled to an
-  identical fixed pixel cell size, which the browser measures and reports
-  back to C# (`CellMetrics`), so the world grid stays consistent regardless
-  of the active font.
+- The game renders using a single bundled bitmap CP437 font, scaled to a
+  fixed pixel cell size that the browser measures and reports back to C#
+  (`CellMetrics`), so the world grid stays consistent.
 
 ## JavaScript Interop
 

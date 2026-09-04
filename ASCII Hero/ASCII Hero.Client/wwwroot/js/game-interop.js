@@ -9,24 +9,17 @@ let lastTimestamp = null;
 let keydownHandler = null;
 let keyupHandler = null;
 
-// Fixed on-screen cell size used by both rendering fonts, so the world grid
-// (column/row count) stays identical regardless of which font is active.
+// Fixed on-screen cell size the bundled bitmap font is scaled to fit.
 const TARGET_CELL_WIDTH_PX = 16;
 const TARGET_CELL_HEIGHT_PX = 28;
 
-// Selectable rendering fonts (see the Authentic/Modern toggle in Home.razor).
-// setFont() computes a font-size and horizontal scale for whichever font is
-// active so both always render into identical TARGET_CELL_WIDTH_PX x
-// TARGET_CELL_HEIGHT_PX cells.
-const FONT_PRESETS = {
-    authentic: { family: '"Web437IbmVga8x14", monospace' },
-    modern: { family: '"JetBrains Mono", monospace' },
-};
+// The bundled retro CP437 bitmap font (see wwwroot/fonts and its @font-face
+// declaration in app.css/standalone.css).
+const FONT_FAMILY = '"Web437IbmVga8x14", monospace';
 
-let currentFontMode = 'authentic';
 let currentHorizontalScale = 1;
 
-export async function initialize(canvasElementId, dotNetObjectRef, fontMode) {
+export async function initialize(canvasElementId, dotNetObjectRef) {
     const canvas = document.getElementById(canvasElementId);
     ctx = canvas.getContext('2d');
     ctx.textBaseline = 'top';
@@ -53,23 +46,20 @@ export async function initialize(canvasElementId, dotNetObjectRef, fontMode) {
     // Report the measured cell size back to C# (camelCase property names match
     // System.Text.Json's default naming policy, mapping onto
     // CellMetrics.CellWidthPixels/CellHeightPixels).
-    return await setFont(fontMode);
+    return await loadFont();
 }
 
-// Switches the active rendering font, computes the font-size and horizontal scale
-// needed to make it fill exactly TARGET_CELL_WIDTH_PX x TARGET_CELL_HEIGHT_PX
-// pixel cells, and returns those fixed target dimensions.
-export async function setFont(fontMode) {
-    const preset = FONT_PRESETS[fontMode] ?? FONT_PRESETS.authentic;
-    currentFontMode = FONT_PRESETS[fontMode] ? fontMode : 'authentic';
-
+// Computes the font-size and horizontal scale needed to make the bundled bitmap
+// font fill exactly TARGET_CELL_WIDTH_PX x TARGET_CELL_HEIGHT_PX pixel cells,
+// and returns those fixed target dimensions.
+async function loadFont() {
     // Ensure the font is loaded before measuring it, otherwise the measurement
     // could use a fallback system font with different metrics.
-    await document.fonts.load(`16px ${preset.family}`);
+    await document.fonts.load(`16px ${FONT_FAMILY}`);
 
     // Probe the font's aspect ratio at a large size to minimize rounding error.
     const probeSizePx = 100;
-    ctx.font = `${probeSizePx}px ${preset.family}`;
+    ctx.font = `${probeSizePx}px ${FONT_FAMILY}`;
     const probeMetrics = ctx.measureText('#');
     const probeAscent = probeMetrics.fontBoundingBoxAscent ?? probeMetrics.actualBoundingBoxAscent;
     const probeDescent = probeMetrics.fontBoundingBoxDescent ?? probeMetrics.actualBoundingBoxDescent;
@@ -78,7 +68,7 @@ export async function setFont(fontMode) {
     // Scale the font-size so the measured cell height matches the fixed target,
     // then re-measure at that size to get the resulting cell width.
     const sizePx = TARGET_CELL_HEIGHT_PX * (probeSizePx / probeHeight);
-    ctx.font = `${sizePx}px ${preset.family}`;
+    ctx.font = `${sizePx}px ${FONT_FAMILY}`;
     ctx.textBaseline = 'top';
     ctx.fillStyle = '#00ff00';
 

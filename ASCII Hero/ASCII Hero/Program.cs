@@ -75,7 +75,7 @@ static void LaunchEdgeAppMode(string url)
     // Sized to fit the 1280x700 game canvas (see Home.razor) plus room for the
     // font-toggle buttons above it and Edge's app-mode window chrome.
     const int windowWidth = 1320;
-    const int windowHeight = 800;
+    const int windowHeight = 760;
 
     // A dedicated user-data-dir forces Edge to start a genuinely new, isolated browser
     // process instead of just handing the URL off to any already-running Edge instance -

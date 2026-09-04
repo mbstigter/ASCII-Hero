@@ -88,13 +88,13 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private double _viewportWidthCells;
     private double _viewportHeightCells;
 
-    public async Task StartAsync(string canvasElementId, FontMode fontMode = FontMode.Authentic)
+    public async Task StartAsync(string canvasElementId)
     {
         // The world catalog's titles/thumbnails are cheap to load - unlike a full World2D - so
         // they're loaded up front alongside everything else the selection screen needs.
         var worlds = await WorldCatalog.LoadAllAsync(assetFileProvider);
 
-        var cellMetrics = await canvasBridge.InitializeAsync(canvasElementId, this, fontMode);
+        var cellMetrics = await canvasBridge.InitializeAsync(canvasElementId, this);
         ApplyCellMetrics(cellMetrics);
 
         var visibleSlotCount = WorldSelectRenderer.ComputeVisibleSlotCount(_viewportWidthCells, worlds.Count);
@@ -123,16 +123,6 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             _viewportHeightCells);
     }
 
-
-    /// <summary>
-    /// Switches the rendering font at runtime (used by the Authentic/Modern toggle) and
-    /// re-applies the newly measured cell metrics so the world keeps rendering correctly.
-    /// </summary>
-    public async Task SetFontModeAsync(FontMode fontMode)
-    {
-        var cellMetrics = await canvasBridge.SetFontAsync(fontMode);
-        ApplyCellMetrics(cellMetrics);
-    }
 
     private void ApplyCellMetrics(CellMetrics cellMetrics)
     {
