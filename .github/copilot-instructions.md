@@ -39,6 +39,10 @@ Check [docs/AssetFormat.md](../ASCII%20Hero/docs/AssetFormat.md).
 
 [docs/Structure.md](../ASCII%20Hero/docs/Structure.md) describes the program's components and key flows. Whenever a change adds, removes, renames, or moves a class/subsystem, or changes an existing flow it describes (e.g. startup order, per-frame tick order, asset loading/fallback rules), update the corresponding section of docs/Structure.md as part of that same change - treat it the same way as docs/Decisions.md, not as a separate follow-up task.
 
+### Local Development and Debugging
+
+- For local dev/debug launches of AsciiHero, launch the browser in app mode (msedge.exe --app=<url>, chromeless window) via launchSettings.json rather than a normal browser tab, so the canvas has focus immediately without an address bar competing for it.
+
 ### Validation
 
 After code changes, build the solution and address build errors before considering the task complete.

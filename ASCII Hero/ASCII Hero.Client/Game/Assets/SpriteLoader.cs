@@ -315,7 +315,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
     private static TileAxis ParseTileAxis(string? rawValue) =>
         Enum.TryParse<TileAxis>(rawValue, ignoreCase: true, out var parsed) ? parsed : TileAxis.None;
 
-    private static double? ParseFrameDurationSeconds(string? rawValue)
+    internal static double? ParseFrameDurationSeconds(string? rawValue)
     {
         if (string.IsNullOrWhiteSpace(rawValue))
         {
@@ -327,10 +327,10 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             : null;
     }
 
-    private static AnimationMode ParseAnimationMode(string? rawValue) =>
+    internal static AnimationMode ParseAnimationMode(string? rawValue) =>
         Enum.TryParse<AnimationMode>(rawValue, ignoreCase: true, out var parsed) ? parsed : AnimationMode.Loop;
 
-    private static int? ParseDefaultFrame(string? rawValue)
+    internal static int? ParseDefaultFrame(string? rawValue)
     {
         if (string.IsNullOrWhiteSpace(rawValue))
         {

@@ -71,6 +71,15 @@ palettes, materials) from disk/HTTP into in-memory game objects.
 - **`SpriteFrameTiler`** - repeats a tileable frame's authored unit along its
   declared axis (horizontal or vertical) to build an arbitrary-length
   platform or wall from one small authored unit, at spawn time.
+- **`LevelSummary` / `LevelCatalog`** - lightweight, non-gameplay metadata for
+  the level-selection screen: a level's `Title` and its fixed 16x8, optionally
+  animated thumbnail art (see docs/AssetFormat.md §3.1/§3.2), loaded without
+  loading the rest of that level's playable `World2D`.
+  `LevelCatalog.LoadLevelNamesAsync` reads the explicit, authored list of
+  every playable level from `Global/Levels.ini` (§4.4) - Blazor WebAssembly
+  has no way to list `wwwroot`'s directory contents at runtime, so (like
+  `[Stances]`) this is an authored list rather than one inferred from the
+  filesystem.
 
 ### World
 
@@ -272,6 +281,10 @@ The live game state and the entity types that make it up.
   regardless of visibility.
 - **`Glyph`** - a single ASCII character to draw at a pixel position, with
   resolved foreground/background colors.
+- **`LevelSelectRenderer`** - builds the level-selection screen's glyph list
+  (thumbnails, titles, selector box). Unlike `AsciiRenderer` it has no camera
+  and no `World2D` - it lays out directly in viewport cell coordinates, since
+  the selection screen exists before any level is loaded.
 
 ### Animation
 
@@ -299,13 +312,42 @@ The live game state and the entity types that make it up.
   (`Hang`/`Climb` both need to tell "pull in"/"climb" apart from "let go and
   launch").
 
+### Menu
+
+- **`LevelSelectScreen`** - state and input handling for the pre-game
+  level-selection screen (see docs/AssetFormat.md §3.2): which level is
+  currently selected, how many thumbnail slots are visible, and the scrolled
+  window (`ScrollOffset`) that keeps the selection centered in the middle
+  slot once there are enough levels on both sides. Edge-triggers Left/Right
+  (so holding the key doesn't repeat every frame) and exposes `Confirmed`
+  once the jump/action key is pressed.
+
 ### Game Loop
 
 - **`GameLoop`** - ties every subsystem above together and drives them once
   per animation frame. Owns one instance of each system (input, physics,
-  collision, camera, renderer, animation) and one loaded `World2D`. Driven
-  entirely by JavaScript's `requestAnimationFrame` calling back into C# -
-  never by Blazor's `StateHasChanged`.
+  collision, camera, renderer, animation) and, once past the level-selection
+  screen, one loaded `World2D`. Driven entirely by JavaScript's
+  `requestAnimationFrame` calling back into C# - never by Blazor's
+  `StateHasChanged`.
+  - Internally a strict three-state `GameMode` (`LevelSelecting` ->
+    `LoadingLevel` -> `Playing`) - never more than one is active, and
+    `OnFrame` switches on it to decide whether to drive
+    `LevelSelectScreen`/`LevelSelectRenderer`, do nothing (a level's
+    `World2D.LoadAsync` is in flight), or run the normal gameplay tick.
+  - `OnFrame` is invoked by JS in a fire-and-forget fashion - the next
+    `requestAnimationFrame` call is scheduled without waiting for the
+    previous call's `Task` to finish (see game-interop.js) - so a frame that
+    spans a genuine async gap (in particular, `World2D.LoadAsync`'s real
+    HTTP fetches while confirming a level) could otherwise be re-entered by
+    an overlapping `OnFrame` call before it finishes, which previously
+    manifested as a level's assets being loaded more than once / the
+    selection screen and gameplay both appearing to render at once. Two
+    guards prevent this: a blanket `_isProcessingFrame` flag drops any
+    `OnFrame` call that overlaps one still in progress, and `GameMode` is
+    flipped to `LoadingLevel` synchronously - before the `await
+    World2D.LoadAsync(...)` gap - so the transition itself can never be
+    entered twice even if that blanket guard were ever loosened.
 
 ## Key Flows
 
@@ -318,14 +360,24 @@ The live game state and the entity types that make it up.
    project's `Program.cs` registers its own `HttpClient` (used by
    `HttpAssetFileProvider` to fetch asset files as static web content).
 3. The hosting page creates a `GameLoop` and calls `StartAsync`, which:
-   - Loads the level's `World2D` up front via `World2D.LoadAsync` (reading
-	 settings, background, palette, and every object placement, resolving
-	 each placement's sprite through `SpriteLoader`) - so gameplay never
-	 stalls mid-frame waiting on a network fetch.
+   - Loads every level's lightweight `LevelSummary` up front via
+	 `LevelCatalog.LoadAllAsync` (reading `Global/Levels.ini` for the level
+	 list, then each level's title + thumbnail only, not a full `World2D`).
    - Initializes `CanvasBridge`, which sets up the canvas and reports back
 	 the real measured pixel size of one glyph cell for the active font.
-   - Snaps the camera immediately onto the level's designated camera target
-	 (the player by default, or another body if a level opts one in).
+   - Builds the initial `LevelSelectScreen` (how many thumbnail slots fit the
+	 measured viewport width, defaulting the selection to the first level)
+	 and puts `GameLoop` into its `LevelSelecting` `GameMode`.
+4. From here, `OnFrame` drives the level-selection screen (see below) until
+   the player confirms a level, at which point `GameLoop` switches to its
+   `LoadingLevel` `GameMode` and loads that level's `World2D` via
+   `World2D.LoadAsync` (reading settings, background, palette, and every
+   object placement, resolving each placement's sprite through
+   `SpriteLoader`) - so gameplay never stalls mid-frame waiting on a network
+   fetch - snaps the camera immediately onto the level's designated camera
+   target (the player by default, or another body if a level opts one in),
+   and finally switches to its `Playing` `GameMode`, running the normal
+   per-frame gameplay tick from the next frame on.
 
 ### Per-Frame Tick
 

@@ -106,6 +106,62 @@ public static class AssetTextReader
         return grid;
     }
 
+    /// <summary>
+    /// Pads/truncates every frame of a fixed-size, multi-frame layer file (e.g. a level's
+    /// thumbnail characters layer) to exactly <paramref name="width"/> x <paramref name="height"/>,
+    /// splitting on <c>//end</c> exactly like <see cref="ParseCharsLayer"/> - unlike that method,
+    /// though, dimensions are a fixed contract rather than inferred from content, since every
+    /// frame (and every level's thumbnail) must agree on one size. See docs/AssetFormat.md §3.1.
+    /// </summary>
+    public static IReadOnlyList<char[,]> ParseFixedSizeFrames(string content, int width, int height, char emptyChar)
+    {
+        var frames = new List<char[,]>();
+
+        foreach (var block in SplitIntoFrameBlocks(content))
+        {
+            frames.Add(PadBlock(block, width, height, emptyChar));
+        }
+
+        return frames;
+    }
+
+    /// <summary>
+    /// Fixed-size counterpart to <see cref="ParseSecondaryLayer"/>: pads/truncates an optional
+    /// secondary layer's frames (e.g. a thumbnail's foregroundcolors) to
+    /// <paramref name="width"/> x <paramref name="height"/>, padding any frame missing entirely
+    /// (including every frame, when <paramref name="content"/> itself is null) with
+    /// <paramref name="emptyChar"/> so it lines up 1:1 with <see cref="ParseFixedSizeFrames"/>'s result.
+    /// </summary>
+    public static IReadOnlyList<char[,]> ParseFixedSizeSecondaryFrames(
+        string? content, int frameCount, int width, int height, char emptyChar)
+    {
+        var blocks = content is null ? [] : SplitIntoFrameBlocks(content);
+        var frames = new List<char[,]>(frameCount);
+
+        for (var frameIndex = 0; frameIndex < frameCount; frameIndex++)
+        {
+            var block = frameIndex < blocks.Count ? blocks[frameIndex] : [];
+            frames.Add(PadBlock(block, width, height, emptyChar));
+        }
+
+        return frames;
+    }
+
+    private static char[,] PadBlock(List<string> block, int width, int height, char emptyChar)
+    {
+        var grid = new char[height, width];
+        for (var row = 0; row < height; row++)
+        {
+            var line = row < block.Count ? block[row] : string.Empty;
+            for (var col = 0; col < width; col++)
+            {
+                grid[row, col] = col < line.Length ? line[col] : emptyChar;
+            }
+        }
+
+        return grid;
+    }
+
     private static List<List<string>> SplitIntoFrameBlocks(string content)
     {
         var blocks = new List<List<string>>();

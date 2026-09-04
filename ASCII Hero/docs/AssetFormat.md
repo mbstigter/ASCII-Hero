@@ -13,6 +13,7 @@ Assets/
 		Settings.ini
 		Colors.ini
 		Materials.ini
+		Levels.ini
 		Sprites/
 			Player/
 				Player_settings.ini
@@ -40,6 +41,8 @@ Assets/
 			Level1_background_backgroundcolors.txt
 			Level1_objects.txt
 			Level1_objects.ini
+			Level1_thumb_characters.txt        (optional, level-selection screen preview)
+			Level1_thumb_foregroundcolors.txt  (optional)
 			Colors.ini            (optional, level-specific overrides/additions)
 			Materials.ini          (optional, level-specific overrides/additions)
 			Sprites/
@@ -318,7 +321,7 @@ TileAxis = Horizontal
 
 - **`TileAxis = Horizontal`** — the asset's `_characters.txt` (and matching
   `_foregroundcolors.txt`/`_backgroundcolors.txt`/`_materials.txt`) is authored
-  **one cell wide** (any height). A placement's `Repeat` count (see §3.2)
+  **one cell wide** (any height). A placement's `Repeat` count (see §3.4)
   repeats that single column side-by-side to build up the actual platform
   length at spawn time.
 - **`TileAxis = Vertical`** — the mirror case: the asset is authored **one
@@ -396,9 +399,18 @@ Swim = swim_idle, swim_left, swim_right, swim_up, swim_down
   across stances.
 - Switching stance/facing at runtime re-derives the object's size and
   collision shape from whichever clip's frame is now active, the same way any
-  other clip/frame switch already does - a stance with a different silhouette
-  (e.g. a shorter `Crawl` pose) is picked up automatically, with no special
-  pre-transition validation needed anywhere in the format or the loader.
+  other clip/frame switch already does - with no special pre-transition
+  validation needed anywhere in the format or the loader.
+- **Every clip's frame(s) across an entire stance set (every stance, every
+  facing) should share the same width and height.** `Position` is a body's
+  top-left corner and is *not* adjusted when a clip switch changes frame
+  size - only `Size`/collision shape are re-derived. A stance authored with a
+  genuinely smaller/larger box than the rest (e.g. a shorter `Crawl` pose)
+  will visibly float above the ground (shrink) or sink into it (grow) instead
+  of keeping its feet planted, since the top-left corner staying fixed moves
+  the *bottom* edge. Convey a "shorter"/"crouched" pose by leaving authored
+  rows blank (as `Player_crawl_*` does - a full-height box with an empty top
+  row) rather than by actually authoring a smaller grid.
 - For an asset whose stance set is dictated by code rather than purely by
   level design (the player being the main example - `PhysicsSystem`/its
   capability interfaces can put it into any stance it supports, e.g.
@@ -530,7 +542,68 @@ own settings.ini.
 **`[Physics]`** — `Gravity` (default `40`), this level's gravity acceleration
 in world cells per second squared.
 
-### 3.1 Object placement codes
+**`[Level]`** (optional) — `Title`, a short human-readable name shown above
+this level's thumbnail on the level-selection screen (see §3.2). Falls back
+to the level's own folder/asset name (e.g. `Level1`) if omitted.
+
+### 3.1 Level thumbnail (`{Name}_thumb_*`)
+
+```
+Level1_thumb_characters.txt
+Level1_thumb_foregroundcolors.txt   (optional)
+```
+
+- An ordinary clip grid (§2.1-§2.3's rules apply as-is: `EmptyChar`-is-blank,
+  optional color layer, `//end`-separated frames) with one difference: every
+  frame's size is **fixed at exactly 16 wide x 8 tall**, not derived from its
+  own content or any other file. This is what the level-selection screen
+  (§3.2) renders for every level in its row, so every level's thumbnail needs
+  to agree on one fixed size for that row to line up.
+- Animates exactly like a sprite clip if given more than one `//end`-separated
+  frame and an `[Animation]` section in that level's own `settings.ini` (same
+  `FrameDurationSeconds`/`Mode`/`DefaultFrame` keys as a sprite's own
+  `[Animation]`/`[Animation.{clipName}]` - see §2.4). Absent `[Animation]`,
+  a multi-frame thumbnail simply holds on its first (or `DefaultFrame`)
+  frame forever, same as an un-configured sprite clip.
+- No `_backgroundcolors.txt` or `_materials.txt` — a thumbnail is a small
+  decorative preview, not a physical/collidable object, so neither concept
+  applies.
+- Entirely optional per level; a level with no `_thumb_characters.txt` simply
+  has no preview art (the selection screen falls back to a blank/placeholder
+  box - see §3.2), the same "missing file = absent, not an error" rule as
+  every other optional layer in this format.
+
+### 3.2 Level-selection screen
+
+Before any level loads and plays, the game shows a single row of level
+thumbnails (§3.1) with each one's `Title` (see `[Level]` above) displayed
+above it, styled the same way as in-game ASCII rendering (same font/cell
+grid, same `Global/Colors.ini` palette, plain CP437 box-drawing glyphs for
+the selector box) rather than ordinary Blazor HTML/CSS.
+
+- The row shows either 5 or 3 thumbnails at once (whichever largest odd
+  count fits the viewport's width - odd so one slot is always exactly in
+  the middle), further capped to however many levels actually exist.
+- The default selection is the first level listed in `Global/Levels.ini`
+  (§4.4). The selector box always sits around the same, fixed middle slot;
+  what scrolls is which levels occupy the row, not the box itself. With
+  fewer levels than slots (e.g. exactly 3 levels shown in a 3-wide row), the
+  row never needs to scroll at all - moving the selection just moves which
+  of the already-visible slots is boxed.
+- Left/Right (or A/D) moves the selection one level at a time
+  (edge-triggered - holding the key down does not repeat); the row only
+  scrolls once the selection would otherwise land outside the visible
+  slots, at which point it shifts by one thumbnail so the selection stays
+  centered again. Confirming (the jump/action key) starts `GameLoop` with
+  the selected level.
+
+Since this is a Blazor WebAssembly app with no server-side directory listing,
+the set of available levels cannot be discovered by scanning
+`wwwroot/Assets/Levels/` at runtime - it is an explicit, authored manifest
+(`Global/Levels.ini`, §4.4), the same "authored list, not inferred from the
+filesystem" approach `[Stances]` already uses for a sprite's clips.
+
+### 3.3 Object placement codes
 
 - A **single digit `0`-`9`** is the default, simplest code and unambiguously
   occupies one grid cell (solves the "adjacent 1x1 objects" case, since no
@@ -551,7 +624,7 @@ in world cells per second squared.
 - Empty cells in `Level1_objects.txt` use the same space-is-empty convention as
   every other layer.
 
-### 3.2 `Level1_objects.ini`
+### 3.4 `Level1_objects.ini`
 
 ```ini
 [ObjectCodes]
@@ -803,6 +876,26 @@ Fields:
 Game-wide defaults that apply unless overridden by a more specific per-asset
 `settings.ini` (e.g. default gravity, default empty-char). Extended as new
 game-wide concepts emerge.
+
+### 4.4 `Global/Levels.ini`
+
+The explicit, authored manifest of every level available to play, shown in
+that order on the level-selection screen (§3.2):
+
+```ini
+[Levels]
+Order = Level1, TestMovement, TestPhysics
+```
+
+- **`Order`** — a comma-separated list of level folder names (each one a
+  `Levels/{LevelName}/` folder), in the order shown left-to-right on the
+  level-selection screen. Add a new level's folder name here to make it
+  selectable; removing a name here hides that level from selection without
+  needing to delete its files.
+- This is the same "authored list, not inferred from the filesystem"
+  approach `[Stances]` uses for a sprite's clips — Blazor WebAssembly has no
+  way to list `wwwroot`'s directory contents at runtime, so the set of
+  levels can't simply be discovered by scanning `Assets/Levels/`.
 
 ## 5. Design rationale summary
 

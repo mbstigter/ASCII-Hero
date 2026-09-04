@@ -9,27 +9,15 @@ let lastTimestamp = null;
 let keydownHandler = null;
 let keyupHandler = null;
 
-// Fixed on-screen cell size that BOTH rendering fonts are made to match, so the
-// world grid (column/row count) is identical no matter which font is active. This
-// is exactly 2x the bundled bitmap font's native 8x14 pixel glyph size, which keeps
-// that font pixel-perfect (see the horizontal-scale note below for how the
-// "Modern" font is forced to the same cell size even though it has no native
-// pixel grid of its own).
+// Fixed on-screen cell size used by both rendering fonts, so the world grid
+// (column/row count) stays identical regardless of which font is active.
 const TARGET_CELL_WIDTH_PX = 16;
 const TARGET_CELL_HEIGHT_PX = 28;
 
-// Two selectable rendering fonts (see the Authentic/Modern toggle in Home.razor).
-// Neither preset hardcodes a font-size anymore: setFont() below computes, for
-// whichever font is active, the exact font-size that makes its real (measured)
-// cell height equal TARGET_CELL_HEIGHT_PX, then computes a small horizontal
-// scale factor so its real cell width also equals TARGET_CELL_WIDTH_PX. This
-// means both fonts always render into identical 16x28 pixel cells:
-//  - "authentic": the bundled CP437 bitmap font (Web437 IBM VGA 8x14). Its
-//    natural aspect ratio already matches 16x28 almost exactly, so the computed
-//    horizontal scale ends up very close to 1.
-//  - "modern": a conventional anti-aliased coding font (JetBrains Mono, loaded
-//    via Google Fonts in App.razor). Its natural aspect ratio differs from the
-//    bitmap font, so the horizontal scale correction does more work here.
+// Selectable rendering fonts (see the Authentic/Modern toggle in Home.razor).
+// setFont() computes a font-size and horizontal scale for whichever font is
+// active so both always render into identical TARGET_CELL_WIDTH_PX x
+// TARGET_CELL_HEIGHT_PX cells.
 const FONT_PRESETS = {
     authentic: { family: '"Web437IbmVga8x14", monospace' },
     modern: { family: '"JetBrains Mono", monospace' },
@@ -37,24 +25,6 @@ const FONT_PRESETS = {
 
 let currentFontMode = 'authentic';
 let currentHorizontalScale = 1;
-
-// Repeatedly (re-)focuses the canvas for a short window after startup. A single
-// focus() call during initialize() can still lose the race against the browser
-// itself (or the WebAssembly runtime) settling focus onto the address bar/page
-// chrome moments later, so this keeps retrying briefly rather than relying on
-// one attempt.
-function focusCanvasWithRetries(canvas) {
-    let attempts = 0;
-    const tryFocus = () => {
-        canvas.focus();
-        attempts++;
-        if (attempts < 10) {
-            window.setTimeout(tryFocus, 100);
-        }
-    };
-    tryFocus();
-    window.addEventListener('load', () => canvas.focus());
-}
 
 export async function initialize(canvasElementId, dotNetObjectRef, fontMode) {
     const canvas = document.getElementById(canvasElementId);
@@ -69,45 +39,35 @@ export async function initialize(canvasElementId, dotNetObjectRef, fontMode) {
     window.addEventListener('keydown', keydownHandler);
     window.addEventListener('keyup', keyupHandler);
 
-    // The keyboard listeners above are on window, which only receives key events once
-    // the browser window/document itself has focus. Right after the page first loads,
-    // focus can still be sitting on browser chrome (e.g. the address bar) rather than
-    // the document, so key presses would otherwise be silently dropped until the
-    // player clicks the page once. A single focus() call here loses the race against
-    // the browser/WASM runtime still settling focus during startup, so it's retried a
-    // few times over the first second; a click/keydown anywhere on the page also
-    // re-focuses the canvas as a permanent fallback in case every retry still loses.
+    // The keyboard listeners above are on window, which only receives key events
+    // once the window/document has focus. The canvas is focusable (tabIndex = -1
+    // keeps it out of normal tab order) and the pointerdown listener re-focuses it
+    // whenever the player clicks anywhere on the page.
     canvas.tabIndex = -1;
-    focusCanvasWithRetries(canvas);
+    canvas.focus();
     window.addEventListener('pointerdown', () => canvas.focus());
 
     lastTimestamp = null;
     rafHandle = window.requestAnimationFrame(onAnimationFrame);
 
-    // Report the measured cell size back to C# so AsciiRenderer/GameLoop can use
-    // real, font-accurate dimensions instead of a hardcoded guess. Property names
-    // are camelCase to match System.Text.Json's default JS interop naming policy,
-    // which maps them onto CellMetrics.CellWidthPixels/CellHeightPixels in C#.
+    // Report the measured cell size back to C# (camelCase property names match
+    // System.Text.Json's default naming policy, mapping onto
+    // CellMetrics.CellWidthPixels/CellHeightPixels).
     return await setFont(fontMode);
 }
 
 // Switches the active rendering font, computes the font-size and horizontal scale
 // needed to make it fill exactly TARGET_CELL_WIDTH_PX x TARGET_CELL_HEIGHT_PX
-// pixel cells, and returns those fixed target dimensions. Called both from
-// initialize() and whenever the user flips the Authentic/Modern toggle in
-// Home.razor.
+// pixel cells, and returns those fixed target dimensions.
 export async function setFont(fontMode) {
     const preset = FONT_PRESETS[fontMode] ?? FONT_PRESETS.authentic;
     currentFontMode = FONT_PRESETS[fontMode] ? fontMode : 'authentic';
 
-    // Ensure the font is actually loaded before measuring it; any size triggers
-    // the load/parse of the whole font file. Without this, the very first
-    // measurement could silently use a fallback system font instead (different
-    // metrics), which would throw off every calculation below.
+    // Ensure the font is loaded before measuring it, otherwise the measurement
+    // could use a fallback system font with different metrics.
     await document.fonts.load(`16px ${preset.family}`);
 
-    // Probe the font's real aspect ratio at a large reference size, so rounding
-    // error from measuring at small pixel sizes doesn't skew the result.
+    // Probe the font's aspect ratio at a large size to minimize rounding error.
     const probeSizePx = 100;
     ctx.font = `${probeSizePx}px ${preset.family}`;
     const probeMetrics = ctx.measureText('#');
@@ -115,10 +75,8 @@ export async function setFont(fontMode) {
     const probeDescent = probeMetrics.fontBoundingBoxDescent ?? probeMetrics.actualBoundingBoxDescent;
     const probeHeight = probeAscent + probeDescent;
 
-    // Scale the font-size so this font's real cell height lands exactly on our
-    // fixed target, then re-measure at that final size to get the real cell
-    // width, and compute the horizontal stretch/squeeze factor (applied at draw
-    // time, see drawFrame) needed to also hit the fixed target width.
+    // Scale the font-size so the measured cell height matches the fixed target,
+    // then re-measure at that size to get the resulting cell width.
     const sizePx = TARGET_CELL_HEIGHT_PX * (probeSizePx / probeHeight);
     ctx.font = `${sizePx}px ${preset.family}`;
     ctx.textBaseline = 'top';
@@ -126,11 +84,8 @@ export async function setFont(fontMode) {
 
     const measuredCellWidth = ctx.measureText('#').width;
 
-    // Guard against a zero (or otherwise invalid) measurement, which can happen if the
-    // font hasn't actually finished loading/laying out yet (e.g. right after a page
-    // layout change). Falling through with measuredCellWidth === 0 would produce an
-    // Infinity scale factor that eventually crashes the .NET side (OverflowException
-    // when casting Infinity/NaN to int in AsciiRenderer). Default to a scale of 1 instead.
+    // Guard against a zero/invalid measurement (would otherwise produce an
+    // Infinity scale factor) by defaulting to a scale of 1.
     currentHorizontalScale = measuredCellWidth > 0
         ? TARGET_CELL_WIDTH_PX / measuredCellWidth
         : 1;
@@ -157,20 +112,17 @@ export function drawFrame(width, height, characters, xs, ys, foreColors, backCol
 
     ctx.clearRect(0, 0, width, height);
 
-    // Apply the horizontal scale correction computed in setFont() so this font's
-    // glyphs land exactly within TARGET_CELL_WIDTH_PX, regardless of its natural
-    // aspect ratio. ctx.scale affects all subsequent drawing (including x
-    // coordinates), so we counter-scale each x position by the inverse factor to
-    // keep every glyph's cell position correct on screen.
+    // Apply the horizontal scale computed in setFont() so glyphs fill
+    // TARGET_CELL_WIDTH_PX cells. ctx.scale affects x coordinates too, so each x
+    // position is counter-scaled to keep glyph positions correct on screen.
     ctx.save();
     ctx.scale(currentHorizontalScale, 1);
     for (let i = 0; i < characters.length; i++) {
         const x = xs[i] / currentHorizontalScale;
         const y = ys[i];
 
-        // Background fill (if any) is drawn as a plain rect behind the glyph, sized
-        // to the fixed target cell dimensions so it lines up with the glyph grid
-        // regardless of the active font's own natural metrics.
+        // Background fill (if any) is drawn as a rect sized to the fixed target
+        // cell dimensions, behind the glyph.
         if (backColors[i]) {
             ctx.fillStyle = backColors[i];
             ctx.fillRect(x, y, TARGET_CELL_WIDTH_PX / currentHorizontalScale, TARGET_CELL_HEIGHT_PX);

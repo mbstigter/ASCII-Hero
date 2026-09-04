@@ -2,6 +2,39 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## Level-selection screen: strict `GameMode` state machine and `Global/Levels.ini` catalog
+
+- **Prompted by user report:** after confirming a level on the new
+  level-selection screen, the game sometimes appeared to load/redraw
+  multiple times or even switch levels mid-load.
+- **Root cause:** `GameLoop.OnFrame` is invoked by JS in a fire-and-forget
+  fashion - `requestAnimationFrame` schedules the next call without waiting
+  for the previous call's `Task` to complete (see game-interop.js). Ordinary
+  gameplay frames never do genuine async I/O after their first `await`
+  (canvas draw calls resolve fast enough in practice not to matter), but
+  confirming a level starts `World2D.LoadAsync`, which does real,
+  multi-file HTTP fetches spanning many milliseconds - a large enough window
+  for an overlapping `OnFrame` call to land while the first was still
+  awaiting, re-enter the level-selection branch (the boolean flag guarding
+  it hadn't flipped yet), see the confirm state still set, and kick off a
+  second, concurrent `World2D.LoadAsync` for a possibly-different selected
+  level.
+- **Fix:** replaced the single `_isSelectingLevel` boolean with an explicit
+  three-state `GameMode` enum (`LevelSelecting` -> `LoadingLevel` ->
+  `Playing`), flipped to `LoadingLevel` **synchronously**, before the
+  `await World2D.LoadAsync(...)` gap, so no re-entrant call can ever observe
+  `LevelSelecting` again during the load. Added a second, blanket
+  `_isProcessingFrame` guard around all of `OnFrame` (drops any literally-
+  overlapping call outright) as defense in depth, independent of which
+  `GameMode` is active.
+- **Also while touching this area:** `LevelCatalog`'s level list moved from
+  a hardcoded C# array to an authored `Global/Levels.ini` manifest (`[Levels]
+  Order = ...`), and level thumbnails gained real frame-based animation
+  (`//end`-separated frames + an `[Animation]` section in the level's own
+  `settings.ini`, reusing `SpriteLoader`'s existing animation-timing parsing)
+  instead of only ever rendering their first frame - see docs/AssetFormat.md
+  §3.1/§4.4.
+
 ## Material-driven collision response (Density/Friction/Restitution/Mass) and force-based movement for non-player bodies
 
 - **Prompted by user request:** significantly enhance the physics system

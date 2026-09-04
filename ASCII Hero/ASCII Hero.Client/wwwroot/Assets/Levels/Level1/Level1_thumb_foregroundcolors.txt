@@ -1,0 +1,26 @@
+                
+      CC        
+     C  C    CC 
+ RRRC    C  C  C
+   C      CC    
+     RRR     RRR
+                
+  G  G  G  G  G 
+  //end
+                  
+      CC        
+     C  C    CC 
+ RRRC    C  C  C
+   C      CC    
+     RRR     RRR
+                
+  G  G  G  G  G 
+    //end
+                  
+      CC        
+     C  C    CC 
+ RRRC    C  C  C
+   C      CC    
+     RRR     RRR
+                
+  G  G  G  G  G 
