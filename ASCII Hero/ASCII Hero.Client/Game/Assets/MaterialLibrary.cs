@@ -1,5 +1,3 @@
-using System.Globalization;
-
 namespace ASCII_Hero.Client.Game.Assets;
 
 /// <summary>
@@ -17,8 +15,9 @@ public readonly record struct Material(double Density, double Friction, double R
 /// sections, sections only defined globally still apply). Maps a material name (as found in a
 /// sprite's <c>DefaultMaterial</c>/<c>MaterialCodes</c> settings or a level's own
 /// <c>_materials.txt</c> per-cell layer, resolved by <see cref="SpriteLoader"/> into
-/// <see cref="SpriteFrame.Materials"/>) to its physical properties. Mirrors <see cref="ColorPalette"/>'s
-/// loading/merge shape exactly, since both follow the identical Global-then-Level rule.
+/// <see cref="SpriteFrame.Materials"/>) to its physical properties. Loading/merging itself is
+/// handled by the shared <see cref="IniOverrideLoader"/>, which <see cref="ColorPalette"/> also
+/// uses for its identical Global-then-Level fallback rule.
 /// </summary>
 public class MaterialLibrary
 {
@@ -34,19 +33,10 @@ public class MaterialLibrary
 
     private MaterialLibrary(Dictionary<string, Material> materials) => _materials = materials;
 
-    public static async Task<MaterialLibrary> LoadAsync(IAssetFileProvider fileProvider, string? levelName)
+    public static async Task<MaterialLibrary> LoadAsync(IAssetFileProvider fileProvider, string? worldName)
     {
-        var materials = new Dictionary<string, Material>(StringComparer.OrdinalIgnoreCase);
-
-        var globalContent = await fileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/Materials.ini");
-        Merge(materials, globalContent);
-
-        if (levelName is not null)
-        {
-            var levelContent = await fileProvider.TryReadTextAsync($"{AssetPathResolver.LevelsRoot}/{levelName}/Materials.ini");
-            Merge(materials, levelContent);
-        }
-
+        var materials = await IniOverrideLoader.LoadAsync<string, Material>(
+            fileProvider, worldName, "Materials.ini", Merge, StringComparer.OrdinalIgnoreCase);
         return new MaterialLibrary(materials);
     }
 
@@ -60,26 +50,15 @@ public class MaterialLibrary
             ? material
             : Undefined;
 
-    private static void Merge(Dictionary<string, Material> materials, string? content)
+    private static void Merge(Dictionary<string, Material> materials, IniDocument ini)
     {
-        if (content is null)
-        {
-            return;
-        }
-
-        var ini = IniDocument.Parse(content);
         foreach (var sectionName in ini.SectionNames)
         {
             var section = ini.Section(sectionName);
-            var density = TryParseDouble(section.GetValueOrDefault("Density"));
-            var friction = TryParseDouble(section.GetValueOrDefault("Friction"));
-            var restitution = TryParseDouble(section.GetValueOrDefault("Restitution"));
+            var density = IniValueParser.ParseDouble(section.GetValueOrDefault("Density"));
+            var friction = IniValueParser.ParseDouble(section.GetValueOrDefault("Friction"));
+            var restitution = IniValueParser.ParseDouble(section.GetValueOrDefault("Restitution"));
             materials[sectionName] = new Material(density, friction, restitution);
         }
     }
-
-    private static double TryParseDouble(string? rawValue) =>
-        rawValue is not null && double.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
-            ? value
-            : 0.0;
 }

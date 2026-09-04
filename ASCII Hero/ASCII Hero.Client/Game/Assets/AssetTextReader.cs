@@ -84,7 +84,7 @@ public static class AssetTextReader
     }
 
     /// <summary>
-    /// Pads or truncates raw grid content (e.g. Level1_objects.txt) to the given fixed
+    /// Pads or truncates raw grid content (e.g. TheMountains_objects.txt) to the given fixed
     /// dimensions, per AssetFormat.md section 3: an object-placement grid's dimensions are not
     /// inferred from its own content but instead fixed to match the world background's
     /// dimensions, with missing rows/columns padded with <paramref name="emptyChar"/>.

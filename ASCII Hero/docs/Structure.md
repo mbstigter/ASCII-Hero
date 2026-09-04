@@ -14,7 +14,7 @@ The solution has two projects:
   server-side prerendering, and hosts the WebAssembly runtime. Contains almost
   no game logic itself.
 - **ASCII Hero.Client** - the Blazor WebAssembly client project. Contains all
-  game code, static assets (sprites, levels, fonts), and the small amount of
+  game code, static assets (sprites, worlds, fonts), and the small amount of
   JavaScript interop the game needs. The entire game runs client-side inside
   this project once the page loads.
 
@@ -26,7 +26,7 @@ them at startup and each frame.
 
 ### Assets
 
-Everything to do with reading the plain-text asset format (sprites, levels,
+Everything to do with reading the plain-text asset format (sprites, worlds,
 palettes, materials) from disk/HTTP into in-memory game objects.
 
 - **`IAssetFileProvider`** - fetches raw file text by relative path, returning
@@ -42,18 +42,28 @@ palettes, materials) from disk/HTTP into in-memory game objects.
   (`_characters.txt`, `_foregroundcolors.txt`, etc.): splits multi-frame
   content on `//end` separators, infers frame dimensions from content, and
   pads missing/short rows and columns with the asset's empty-char marker.
-  Knows nothing about folders or the Global/Level fallback rule.
-- **`AssetPathResolver`** - resolves which folder (`Levels/{LevelName}/Sprites/{Asset}`
+  Knows nothing about folders or the Global/World fallback rule.
+- **`AssetPathResolver`** - resolves which folder (`Worlds/{WorldName}/Sprites/{Asset}`
   or `Global/Sprites/{Asset}`) a sprite's files should be read from, applying
-  the "level-local folder overrides global" rule: presence of a level-local
+  the "world-local folder overrides global" rule: presence of a world-local
   settings file is itself the override signal, no explicit flag needed.
 - **`ColorPalette`** - the resolved single-character color code -> CSS color
-  lookup, merging a level's own optional `Colors.ini` over `Global/Colors.ini`.
+  lookup, merging a world's own optional `Colors.ini` over `Global/Colors.ini`.
 - **`MaterialLibrary`** - the resolved material-name -> `Material` (`Density`,
-  `Friction`, `Restitution`) lookup, merging a level's own optional
-  `Materials.ini` over `Global/Materials.ini`, mirroring `ColorPalette`'s
-  Global+Level fallback pattern. An unknown/absent material name resolves to
-  a zeroed `Material.Undefined` fallback rather than throwing.
+  `Friction`, `Restitution`) lookup, merging a world's own optional
+  `Materials.ini` over `Global/Materials.ini`. An unknown/absent material name
+  resolves to a zeroed `Material.Undefined` fallback rather than throwing.
+- **`IniOverrideLoader`** - the shared Global-then-World ini load/merge
+  routine used by both `ColorPalette` and `MaterialLibrary` (and any future
+  asset needing the same fallback rule): reads `Global/{file}`, then merges an
+  optional `Worlds/{WorldName}/{file}` over it via a caller-supplied
+  projection, so both classes differ only in how they turn a parsed
+  `IniDocument` into their own dictionary entries.
+- **`IniValueParser`** - shared parsing helpers (`ParseEmptyChar`,
+  `ParseColorCode`, `ParseDouble`/`TryParseDouble`, `TryParseInt`) for the
+  small ini value shapes repeated across `SpriteLoader`, `WorldCatalog`, and
+  `World2D`'s settings.ini/objects.ini parsing, keeping a single
+  culture-invariant, consistently-named implementation of each.
 - **`SpriteLoader`** - loads one sprite asset's settings and requested clips
   into a `SpriteAsset`, combining `AssetPathResolver` (folder resolution) and
   `AssetTextReader` (grid parsing) into the one loading path reused by every
@@ -71,12 +81,12 @@ palettes, materials) from disk/HTTP into in-memory game objects.
 - **`SpriteFrameTiler`** - repeats a tileable frame's authored unit along its
   declared axis (horizontal or vertical) to build an arbitrary-length
   platform or wall from one small authored unit, at spawn time.
-- **`LevelSummary` / `LevelCatalog`** - lightweight, non-gameplay metadata for
-  the level-selection screen: a level's `Title` and its fixed 16x8, optionally
+- **`WorldSummary` / `WorldCatalog`** - lightweight, non-gameplay metadata for
+  the world-selection screen: a world's `Title` and its fixed 16x8, optionally
   animated thumbnail art (see docs/AssetFormat.md §3.1/§3.2), loaded without
-  loading the rest of that level's playable `World2D`.
-  `LevelCatalog.LoadLevelNamesAsync` reads the explicit, authored list of
-  every playable level from `Global/Levels.ini` (§4.4) - Blazor WebAssembly
+  loading the rest of that world's playable `World2D`.
+  `WorldCatalog.LoadWorldNamesAsync` reads the explicit, authored list of
+  every playable world from `Global/Worlds.ini` (§4.4) - Blazor WebAssembly
   has no way to list `wwwroot`'s directory contents at runtime, so (like
   `[Stances]`) this is an authored list rather than one inferred from the
   filesystem.
@@ -89,7 +99,7 @@ The live game state and the entity types that make it up.
   player, every other body in one generic `Objects` list, the background
   layer, the resolved color palette, the resolved material library
   (`Materials`), gravity, world dimensions, and which body the camera should
-  follow. `World2D.LoadAsync` is the level loader: it reads a level's
+  follow. `World2D.LoadAsync` is the world loader: it reads a world's
   settings, background, and object-placement files, resolves each
   placement's sprite and concrete body type, resolves each spawned body's
   `Density`/`Friction`/`Restitution`/`Mass` from its material (a placement's
@@ -263,12 +273,12 @@ The live game state and the entity types that make it up.
 - **`Camera2D`** - follows a target's bounding box using a "dead zone": it
   only scrolls once the target nears the edge of the current view, and never
   scrolls past the world's own bounds. `SnapTo` immediately centers on a
-  target with no smoothing (used once at level load); `Follow` smoothly
+  target with no smoothing (used once at world load); `Follow` smoothly
   catches up each frame afterward.
 
 ### Rendering
 
-- **`AsciiRenderer`** - translates the floating-point game world into a flat
+- **`WorldRenderer`** - translates the floating-point game world into a flat
   list of positioned glyphs (background layer plus every object's active
   frame), resolving each cell's color codes through the palette and
   converting world positions to pixel positions via the camera's current
@@ -281,10 +291,33 @@ The live game state and the entity types that make it up.
   regardless of visibility.
 - **`Glyph`** - a single ASCII character to draw at a pixel position, with
   resolved foreground/background colors.
-- **`LevelSelectRenderer`** - builds the level-selection screen's glyph list
-  (thumbnails, titles, selector box). Unlike `AsciiRenderer` it has no camera
+- **`GlyphBuilder`** - shared color-resolution (a code's first match in a
+  caller-supplied precedence list, tried against the palette), cell-to-pixel
+  glyph construction, and box-drawing-border helpers used by `WorldRenderer`,
+  `WorldSelectRenderer`, and `UIRenderer` alike, since all three need the
+  same few small operations just with different precedence chains/coordinate
+  spaces/placements. Also defines `DefaultForeColor`, the single app-wide
+  fallback color used whenever no more specific color is resolved.
+- **`UIBox`** / **`UIText`** - the two independent screen-space drawable
+  primitives, laid out directly in viewport cell coordinates, unaffected by
+  the camera: a box-drawing border, and one or more lines of text.
+  Deliberately separate types rather than one bundled "panel" object, since
+  neither requires the other (a plain decorative frame needs no text; a
+  centered message needs no box) - any screen (world HUD, world-select, or a
+  future screen) can draw just one, or both side by side. Each has its own
+  optional foreground/background color, falling back to
+  `GlyphBuilder.DefaultForeColor` when unset; `UIText`'s width/line-count
+  caps are fixed rather than auto-sized to its current content, so a
+  reserved screen area keeps a stable footprint frame to frame even as the
+  text updates (e.g. a live score) - an overly long line or an overflowing
+  line count is simply truncated.
+- **`UIRenderer`** - turns a `UIBox` or `UIText` into glyphs, reusing
+  `GlyphBuilder.AddBox`/`BuildGlyph`; used by `GameLoop`'s HUD overlay and
+  available to any future screen-space overlay.
+- **`WorldSelectRenderer`** - builds the world-selection screen's glyph list
+  (thumbnails, titles, selector box). Unlike `WorldRenderer` it has no camera
   and no `World2D` - it lays out directly in viewport cell coordinates, since
-  the selection screen exists before any level is loaded.
+  the selection screen exists before any world is loaded.
 
 ### Animation
 
@@ -314,11 +347,11 @@ The live game state and the entity types that make it up.
 
 ### Menu
 
-- **`LevelSelectScreen`** - state and input handling for the pre-game
-  level-selection screen (see docs/AssetFormat.md §3.2): which level is
+- **`WorldSelectScreen`** - state and input handling for the pre-game
+  world-selection screen (see docs/AssetFormat.md §3.2): which world is
   currently selected, how many thumbnail slots are visible, and the scrolled
   window (`ScrollOffset`) that keeps the selection centered in the middle
-  slot once there are enough levels on both sides. Edge-triggers Left/Right
+  slot once there are enough worlds on both sides. Edge-triggers Left/Right
   (so holding the key doesn't repeat every frame) and exposes `Confirmed`
   once the jump/action key is pressed.
 
@@ -326,26 +359,26 @@ The live game state and the entity types that make it up.
 
 - **`GameLoop`** - ties every subsystem above together and drives them once
   per animation frame. Owns one instance of each system (input, physics,
-  collision, camera, renderer, animation) and, once past the level-selection
+  collision, camera, renderer, animation) and, once past the world-selection
   screen, one loaded `World2D`. Driven entirely by JavaScript's
   `requestAnimationFrame` calling back into C# - never by Blazor's
   `StateHasChanged`.
-  - Internally a strict three-state `GameMode` (`LevelSelecting` ->
-    `LoadingLevel` -> `Playing`) - never more than one is active, and
+  - Internally a strict three-state `GameMode` (`WorldSelecting` ->
+    `LoadingWorld` -> `Playing`) - never more than one is active, and
     `OnFrame` switches on it to decide whether to drive
-    `LevelSelectScreen`/`LevelSelectRenderer`, do nothing (a level's
+    `WorldSelectScreen`/`WorldSelectRenderer`, do nothing (a world's
     `World2D.LoadAsync` is in flight), or run the normal gameplay tick.
   - `OnFrame` is invoked by JS in a fire-and-forget fashion - the next
     `requestAnimationFrame` call is scheduled without waiting for the
     previous call's `Task` to finish (see game-interop.js) - so a frame that
     spans a genuine async gap (in particular, `World2D.LoadAsync`'s real
-    HTTP fetches while confirming a level) could otherwise be re-entered by
+    HTTP fetches while confirming a world) could otherwise be re-entered by
     an overlapping `OnFrame` call before it finishes, which previously
-    manifested as a level's assets being loaded more than once / the
+    manifested as a world's assets being loaded more than once / the
     selection screen and gameplay both appearing to render at once. Two
     guards prevent this: a blanket `_isProcessingFrame` flag drops any
     `OnFrame` call that overlaps one still in progress, and `GameMode` is
-    flipped to `LoadingLevel` synchronously - before the `await
+    flipped to `LoadingWorld` synchronously - before the `await
     World2D.LoadAsync(...)` gap - so the transition itself can never be
     entered twice even if that blanket guard were ever loosened.
 
@@ -360,22 +393,22 @@ The live game state and the entity types that make it up.
    project's `Program.cs` registers its own `HttpClient` (used by
    `HttpAssetFileProvider` to fetch asset files as static web content).
 3. The hosting page creates a `GameLoop` and calls `StartAsync`, which:
-   - Loads every level's lightweight `LevelSummary` up front via
-	 `LevelCatalog.LoadAllAsync` (reading `Global/Levels.ini` for the level
-	 list, then each level's title + thumbnail only, not a full `World2D`).
+   - Loads every world's lightweight `WorldSummary` up front via
+	 `WorldCatalog.LoadAllAsync` (reading `Global/Worlds.ini` for the world
+	 list, then each world's title + thumbnail only, not a full `World2D`).
    - Initializes `CanvasBridge`, which sets up the canvas and reports back
 	 the real measured pixel size of one glyph cell for the active font.
-   - Builds the initial `LevelSelectScreen` (how many thumbnail slots fit the
-	 measured viewport width, defaulting the selection to the first level)
-	 and puts `GameLoop` into its `LevelSelecting` `GameMode`.
-4. From here, `OnFrame` drives the level-selection screen (see below) until
-   the player confirms a level, at which point `GameLoop` switches to its
-   `LoadingLevel` `GameMode` and loads that level's `World2D` via
+   - Builds the initial `WorldSelectScreen` (how many thumbnail slots fit the
+	 measured viewport width, defaulting the selection to the first world)
+	 and puts `GameLoop` into its `WorldSelecting` `GameMode`.
+4. From here, `OnFrame` drives the world-selection screen (see below) until
+   the player confirms a world, at which point `GameLoop` switches to its
+   `LoadingWorld` `GameMode` and loads that world's `World2D` via
    `World2D.LoadAsync` (reading settings, background, palette, and every
    object placement, resolving each placement's sprite through
    `SpriteLoader`) - so gameplay never stalls mid-frame waiting on a network
-   fetch - snaps the camera immediately onto the level's designated camera
-   target (the player by default, or another body if a level opts one in),
+   fetch - snaps the camera immediately onto the world's designated camera
+   target (the player by default, or another body if a world opts one in),
    and finally switches to its `Playing` `GameMode`, running the normal
    per-frame gameplay tick from the next frame on.
 
@@ -404,23 +437,23 @@ large jumps after e.g. a tab switch):
    frame timer and ticks down any active effect's remaining lifetime.
 5. **Camera** - `Camera2D.Follow` smoothly scrolls toward the current camera
    target's position, respecting its dead zone and the world's bounds.
-6. **Render** - `AsciiRenderer.BuildFrame` converts the current world and
+6. **Render** - `WorldRenderer.BuildFrame` converts the current world and
    camera view into a flat glyph list - culled to the camera's current
    viewport rect (see Rendering above) - which `CanvasBridge.DrawFrameAsync`
    sends to JavaScript to paint onto the canvas.
 
-### Asset Loading (Global vs. Level Fallback)
+### Asset Loading (Global vs. World Fallback)
 
-Sprites, colors, and materials are resolved with a consistent "level
+Sprites, colors, and materials are resolved with a consistent "world
 overrides global" rule (see [AssetFormat.md](AssetFormat.md) §1.1 for the
 full reference):
 
-- A sprite is loaded from a level-local `Sprites/{AssetName}/` folder if one
+- A sprite is loaded from a world-local `Sprites/{AssetName}/` folder if one
   exists there; otherwise from the shared `Global/Sprites/{AssetName}/`
-  folder. The mere presence of the level-local folder is the override
+  folder. The mere presence of the world-local folder is the override
   signal - no explicit flag is needed.
-- A level's own optional `Colors.ini`/`Materials.ini` is merged over the
-  global one, with level entries taking precedence for same-named
+- A world's own optional `Colors.ini`/`Materials.ini` is merged over the
+  global one, with world entries taking precedence for same-named
   codes/sections, while anything only defined globally still applies.
 
 ### Coordinate System

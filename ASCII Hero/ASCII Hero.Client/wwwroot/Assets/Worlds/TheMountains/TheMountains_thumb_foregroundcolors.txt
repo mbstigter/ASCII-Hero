@@ -1,26 +1,26 @@
                 
-      CC        
-     C  C    CC 
- RRRC    C  C  C
-   C      CC    
+      CD        
+     C  D    CD 
+ RRRC    D  C  D
+   C      DC    
      RRR     RRR
                 
   G  G  G  G  G 
   //end
                   
-      CC        
-     C  C    CC 
- RRRC    C  C  C
-   C      CC    
+      CD        
+     C  D    CD 
+ RRRC    D  C  D
+   C      DC    
      RRR     RRR
                 
   G  G  G  G  G 
     //end
                   
-      CC        
-     C  C    CC 
- RRRC    C  C  C
-   C      CC    
+      CD        
+     C  D    CD 
+ RRRC    D  C  D
+   C      DC    
      RRR     RRR
                 
   G  G  G  G  G 

@@ -3,7 +3,7 @@ namespace ASCII_Hero.Client.Game.Assets;
 /// <summary>
 /// Loads a sprite asset's files (settings.ini + one or more clips' characters/foregroundcolors/
 /// backgroundcolors/materials layers) into an in-memory <see cref="SpriteAsset"/>, applying the
-/// Global/Level fallback rule (via <see cref="AssetPathResolver"/>) and the layer parsing/padding
+/// Global/World fallback rule (via <see cref="AssetPathResolver"/>) and the layer parsing/padding
 /// rules (via <see cref="AssetTextReader"/>). Reused identically for the player, static
 /// platforms, and any other sprite-backed object - there is only one loading concept, per
 /// AssetFormat.md section 5.
@@ -12,18 +12,18 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
 {
     /// <summary>
     /// Loads the given asset, reading only the requested clips (the caller - typically the world
-    /// loader - knows which clips are actually needed, e.g. from Level1_objects.ini).
+    /// loader - knows which clips are actually needed, e.g. from TheMountains_objects.ini).
     /// </summary>
-    public async Task<SpriteAsset> LoadAsync(string assetName, IReadOnlyList<string> clipNames, string? levelName)
+    public async Task<SpriteAsset> LoadAsync(string assetName, IReadOnlyList<string> clipNames, string? worldName)
     {
-        var folder = await AssetPathResolver.ResolveSpriteFolderAsync(fileProvider, assetName, levelName);
+        var folder = await AssetPathResolver.ResolveSpriteFolderAsync(fileProvider, assetName, worldName);
         var settingsContent = await fileProvider.TryReadTextAsync($"{folder}/{assetName}_settings.ini");
         var settings = IniDocument.Parse(settingsContent ?? string.Empty);
 
-        var emptyChar = ParseEmptyChar(settings.TryGetValue("Layout", "EmptyChar"));
+        var emptyChar = IniValueParser.ParseEmptyChar(settings.TryGetValue("Layout", "EmptyChar"));
         var tileAxis = ParseTileAxis(settings.TryGetValue("Layout", "TileAxis"));
-        var defaultForeColor = ParseColorCode(settings.TryGetValue("Colors", "DefaultForegroundColor"));
-        var defaultBackColor = ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
+        var defaultForeColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultForegroundColor"));
+        var defaultBackColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
         var defaultMaterial = settings.TryGetValue("Physics", "DefaultMaterial");
         var materialCodes = settings.Section("MaterialCodes");
         var defaultFrameDurationSeconds = ParseFrameDurationSeconds(settings.TryGetValue("Animation", "FrameDurationSeconds"));
@@ -292,25 +292,6 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         if (clipName.EndsWith("_down", StringComparison.OrdinalIgnoreCase)) return Facing.Down;
         return Facing.Idle;
     }
-
-    private static char ParseEmptyChar(string? rawValue)
-    {
-        if (string.IsNullOrEmpty(rawValue))
-        {
-            return ' ';
-        }
-
-        return rawValue[0];
-    }
-
-    /// <summary>
-    /// Parses a single-character color code (see <c>Global/Colors.ini</c>) from a
-    /// <c>DefaultForegroundColor</c>/<c>DefaultBackgroundColor</c> settings.ini value. Null if
-    /// absent/empty - actual resolution against the palette happens at render time, same as any
-    /// per-cell code, so an unresolvable code here just falls through the same way.
-    /// </summary>
-    private static char? ParseColorCode(string? rawValue) =>
-        string.IsNullOrEmpty(rawValue) ? null : rawValue[0];
 
     private static TileAxis ParseTileAxis(string? rawValue) =>
         Enum.TryParse<TileAxis>(rawValue, ignoreCase: true, out var parsed) ? parsed : TileAxis.None;

@@ -13,7 +13,7 @@ Assets/
 		Settings.ini
 		Colors.ini
 		Materials.ini
-		Levels.ini
+		Worlds.ini
 		Sprites/
 			Player/
 				Player_settings.ini
@@ -33,7 +33,7 @@ Assets/
 				BrickWall_default_characters.txt
 				BrickWall_default_foregroundcolors.txt
 				BrickWall_default_backgroundcolors.txt
-	Levels/
+	Worlds/
 		Level1/
 			Level1_settings.ini
 			Level1_background_characters.txt
@@ -41,48 +41,48 @@ Assets/
 			Level1_background_backgroundcolors.txt
 			Level1_objects.txt
 			Level1_objects.ini
-			Level1_thumb_characters.txt        (optional, level-selection screen preview)
+			Level1_thumb_characters.txt        (optional, world-selection screen preview)
 			Level1_thumb_foregroundcolors.txt  (optional)
-			Colors.ini            (optional, level-specific overrides/additions)
-			Materials.ini          (optional, level-specific overrides/additions)
+			Colors.ini            (optional, world-specific overrides/additions)
+			Materials.ini          (optional, world-specific overrides/additions)
 			Sprites/
-				BossPlant/           (optional, level-specific sprite - a boss unique
-									 to this level, for example)
+				BossPlant/           (optional, world-specific sprite - a boss unique
+									 to this world, for example)
 						BossPlant_settings.ini
 						BossPlant_idle_characters.txt
 						...
 ```
 
-- **`Global/`** holds everything shared across every level: the color palette, the
+- **`Global/`** holds everything shared across every world: the color palette, the
   material library, game-wide default settings, and every sprite that's reusable
-  across multiple levels (the player, common enemies, common platform/wall types,
+  across multiple worlds (the player, common enemies, common platform/wall types,
   ...). This is the default place to put a new sprite unless it's genuinely
-  one-level-only.
-- **`Levels/{LevelName}/`** holds one folder per level, containing that level's own
-  background/object-placement files, plus optional level-specific `Sprites/`,
+  one-world-only.
+- **`Worlds/{WorldName}/`** holds one folder per world, containing that world's own
+  background/object-placement files, plus optional world-specific `Sprites/`,
   `Colors.ini`, and `Materials.ini` for anything that only makes sense within that
-  one level (a unique boss sprite, a level-specific color not used anywhere else,
-  a special material only this level's puzzle needs).
+  one world (a unique boss sprite, a world-specific color not used anywhere else,
+  a special material only this world's puzzle needs).
 
 ### 1.1 Override/fallback resolution
 
-When loading an asset (sprite, color code, or material code) for a given level, the
-loader looks in that level's own `Levels/{LevelName}/` folder **first**, and falls
+When loading an asset (sprite, color code, or material code) for a given world, the
+loader looks in that world's own `Worlds/{WorldName}/` folder **first**, and falls
 back to `Global/` only if not found there:
 
-- **Sprites**: `Levels/{LevelName}/Sprites/{AssetName}/` is checked before
-  `Global/Sprites/{AssetName}/`. This lets a level override a global sprite (e.g. a
-  level-specific reskinned platform) simply by placing a same-named folder locally,
-  with no engine-level "override" flag needed - presence of the level-local folder
+- **Sprites**: `Worlds/{WorldName}/Sprites/{AssetName}/` is checked before
+  `Global/Sprites/{AssetName}/`. This lets a world override a global sprite (e.g. a
+  world-specific reskinned platform) simply by placing a same-named folder locally,
+  with no engine-level "override" flag needed - presence of the world-local folder
   is itself the override signal.
-- **Colors/materials**: a level's own `Colors.ini`/`Materials.ini` (if present) is
+- **Colors/materials**: a world's own `Colors.ini`/`Materials.ini` (if present) is
   merged over `Global/Colors.ini`/`Global/Materials.ini` - entries with the same
-  code/section name in the level file take precedence; entries only defined
-  globally still apply unchanged. A level with no local `Colors.ini`/`Materials.ini`
+  code/section name in the world file take precedence; entries only defined
+  globally still apply unchanged. A world with no local `Colors.ini`/`Materials.ini`
   simply uses the global ones as-is.
 
 This keeps the common case (everything shared globally) requiring zero extra
-files, while still allowing full per-level customization when actually needed.
+files, while still allowing full per-world customization when actually needed.
 
 Naming case convention: global shared files use "first word capitalized" naming
 (`Settings.ini`, `Colors.ini`, `Materials.ini`). Per-asset files stay entirely
@@ -238,7 +238,7 @@ the color analog of `[Physics] DefaultMaterial`'s whole-object shorthand (§2.3)
   falling through whenever a step doesn't apply (code absent) or doesn't resolve
   (code not found in the palette): the cell's own per-cell code (from
   `_foregroundcolors.txt`/`_backgroundcolors.txt`) &gt; this asset's
-  `[Colors]` default &gt; the level's own `[Colors]` default (see §3, `Level1_settings.ini`) &gt; a
+  `[Colors]` default &gt; the world's own `[Colors]` default (see §3, `Level1_settings.ini`) &gt; a
   hardcoded engine fallback (green foreground, no/transparent background fill).
   This lets an asset be authored with no color layer files at all (e.g. a
   single-color platform or ball) while still overriding the hardcoded fallback,
@@ -390,7 +390,7 @@ Swim = swim_idle, swim_left, swim_right, swim_up, swim_down
   already-required name.
 - `[Stances]` is entirely optional. Assets that don't declare it behave
   exactly as before: whatever single clip a placement/spawn requests (e.g.
-  `Clip = idle` in a level's `objects.ini`) is the only clip ever shown, with
+  `Clip = idle` in a world's `objects.ini`) is the only clip ever shown, with
   no stance/facing switching at all.
 - Frame counts are independent per clip - a stance's `Idle` clip can have three
   frames (e.g. a subtle idle head-turn) while its directional clips have two
@@ -412,7 +412,7 @@ Swim = swim_idle, swim_left, swim_right, swim_up, swim_down
   rows blank (as `Player_crawl_*` does - a full-height box with an empty top
   row) rather than by actually authoring a smaller grid.
 - For an asset whose stance set is dictated by code rather than purely by
-  level design (the player being the main example - `PhysicsSystem`/its
+  world design (the player being the main example - `PhysicsSystem`/its
   capability interfaces can put it into any stance it supports, e.g.
   `Clamber` as soon as a hangable surface is grabbed while crawling), every
   stance the code can produce must have a matching entry in `[Stances]`, and
@@ -439,7 +439,7 @@ A simple asset (`Pipe`, `BrickWall`) has only one or two clips and is happiest
 kept as a flat folder of files. A busy multi-stance asset (`Player`, and any
 future NPC with many poses) accumulates many files per stance and reads more
 clearly split into one subfolder per stance. Both are supported by the same
-loader, with **no change to how a level's `_objects.ini` references the
+loader, with **no change to how a world's `_objects.ini` references the
 asset or any of its clips** - callers keep asking for a clip by its plain name
 (`walk_idle`, `hang_left`, ...) exactly as before; only the on-disk layout
 changes.
@@ -477,7 +477,7 @@ one-off `spark` effect clip) stay in `Sprites/Player/`, while `walk`, `crawl`,
 `jump`, `climb`, `hang`, and `clamber` clips each live in their own matching
 subfolder (`Sprites/Player/Walk/`, `Sprites/Player/Crawl/`, ...).
 
-## 3. World/level files
+## 3. World files
 
 Structurally, a world is just another multi-layer grid asset (background layer),
 plus an additional object-placement layer.
@@ -513,7 +513,7 @@ Level1_objects.ini
   establish the world's width/height, then reads `Level1_objects.txt` against
   those same dimensions, padding any missing rows/columns with `EmptyChar`.
 
-`Level1_settings.ini` mirrors an asset's `settings.ini` (§2.4), but at level
+`Level1_settings.ini` mirrors an asset's `settings.ini` (§2.4), but at world
 scope:
 
 ```ini
@@ -528,79 +528,83 @@ Gravity = 40
 ```
 
 **`[Layout]`** — `EmptyChar` (default `' '`), same meaning as for a sprite asset,
-applied to this level's own background/object-placement grids.
+applied to this world's own background/object-placement grids.
 
 **`[Colors]`** (optional) — `DefaultForegroundColor`/`DefaultBackgroundColor`,
-the level-scoped fallback in the same color-resolution precedence chain
+the world-scoped fallback in the same color-resolution precedence chain
 described in §2.4: checked after a cell's own per-cell code and after the
 sprite's own `[Colors]` default (for object cells; background cells have no
-owning sprite so skip straight to this level default), before finally falling
-back to the hardcoded engine default. Lets an entire level nudge its default
+owning sprite so skip straight to this world default), before finally falling
+back to the hardcoded engine default. Lets an entire world nudge its default
 palette (e.g. a colder/warmer background tint) without touching every asset's
 own settings.ini.
 
-**`[Physics]`** — `Gravity` (default `40`), this level's gravity acceleration
+**`[Physics]`** — `Gravity` (default `40`), this world's gravity acceleration
 in world cells per second squared.
 
-**`[Level]`** (optional) — `Title`, a short human-readable name shown above
-this level's thumbnail on the level-selection screen (see §3.2). Falls back
-to the level's own folder/asset name (e.g. `Level1`) if omitted.
+**`[World]`** (optional) — `Title`, a short human-readable name shown above
+this world's thumbnail on the world-selection screen (see §3.2). Falls back
+to the world's own folder/asset name (e.g. `Level1`) if omitted.
 
-### 3.1 Level thumbnail (`{Name}_thumb_*`)
+### 3.1 World thumbnail (`{Name}_thumb_*`)
 
 ```
 Level1_thumb_characters.txt
 Level1_thumb_foregroundcolors.txt   (optional)
+Level1_thumb_backgroundcolors.txt   (optional)
 ```
 
 - An ordinary clip grid (§2.1-§2.3's rules apply as-is: `EmptyChar`-is-blank,
-  optional color layer, `//end`-separated frames) with one difference: every
+  optional color layers, `//end`-separated frames) with one difference: every
   frame's size is **fixed at exactly 16 wide x 8 tall**, not derived from its
-  own content or any other file. This is what the level-selection screen
-  (§3.2) renders for every level in its row, so every level's thumbnail needs
+  own content or any other file. This is what the world-selection screen
+  (§3.2) renders for every world in its row, so every world's thumbnail needs
   to agree on one fixed size for that row to line up.
 - Animates exactly like a sprite clip if given more than one `//end`-separated
-  frame and an `[Animation]` section in that level's own `settings.ini` (same
+  frame and an `[Animation]` section in that world's own `settings.ini` (same
   `FrameDurationSeconds`/`Mode`/`DefaultFrame` keys as a sprite's own
   `[Animation]`/`[Animation.{clipName}]` - see §2.4). Absent `[Animation]`,
   a multi-frame thumbnail simply holds on its first (or `DefaultFrame`)
   frame forever, same as an un-configured sprite clip.
-- No `_backgroundcolors.txt` or `_materials.txt` — a thumbnail is a small
-  decorative preview, not a physical/collidable object, so neither concept
-  applies.
-- Entirely optional per level; a level with no `_thumb_characters.txt` simply
+- Background color follows the same resolution precedence as an in-game cell
+  (§2.4): a cell's own `_thumb_backgroundcolors.txt` code, then this world's
+  own `[Colors] DefaultBackgroundColor` (§3), then the hardcoded engine
+  default (no fill). No `_materials.txt` though — a thumbnail is a small
+  decorative preview, not a physical/collidable object, so that concept
+  doesn't apply.
+- Entirely optional per world; a world with no `_thumb_characters.txt` simply
   has no preview art (the selection screen falls back to a blank/placeholder
   box - see §3.2), the same "missing file = absent, not an error" rule as
   every other optional layer in this format.
 
-### 3.2 Level-selection screen
+### 3.2 World-selection screen
 
-Before any level loads and plays, the game shows a single row of level
-thumbnails (§3.1) with each one's `Title` (see `[Level]` above) displayed
+Before any world loads and plays, the game shows a single row of world
+thumbnails (§3.1) with each one's `Title` (see `[World]` above) displayed
 above it, styled the same way as in-game ASCII rendering (same font/cell
 grid, same `Global/Colors.ini` palette, plain CP437 box-drawing glyphs for
 the selector box) rather than ordinary Blazor HTML/CSS.
 
 - The row shows either 5 or 3 thumbnails at once (whichever largest odd
   count fits the viewport's width - odd so one slot is always exactly in
-  the middle), further capped to however many levels actually exist.
-- The default selection is the first level listed in `Global/Levels.ini`
+  the middle), further capped to however many worlds actually exist.
+- The default selection is the first world listed in `Global/Worlds.ini`
   (§4.4). The selector box always sits around the same, fixed middle slot;
-  what scrolls is which levels occupy the row, not the box itself. With
-  fewer levels than slots (e.g. exactly 3 levels shown in a 3-wide row), the
+  what scrolls is which worlds occupy the row, not the box itself. With
+  fewer worlds than slots (e.g. exactly 3 worlds shown in a 3-wide row), the
   row never needs to scroll at all - moving the selection just moves which
   of the already-visible slots is boxed.
-- Left/Right (or A/D) moves the selection one level at a time
+- Left/Right (or A/D) moves the selection one world at a time
   (edge-triggered - holding the key down does not repeat); the row only
   scrolls once the selection would otherwise land outside the visible
   slots, at which point it shifts by one thumbnail so the selection stays
   centered again. Confirming (the jump/action key) starts `GameLoop` with
-  the selected level.
+  the selected world.
 
 Since this is a Blazor WebAssembly app with no server-side directory listing,
-the set of available levels cannot be discovered by scanning
-`wwwroot/Assets/Levels/` at runtime - it is an explicit, authored manifest
-(`Global/Levels.ini`, §4.4), the same "authored list, not inferred from the
+the set of available worlds cannot be discovered by scanning
+`wwwroot/Assets/Worlds/` at runtime - it is an explicit, authored manifest
+(`Global/Worlds.ini`, §4.4), the same "authored list, not inferred from the
 filesystem" approach `[Stances]` already uses for a sprite's clips.
 
 ### 3.3 Object placement codes
@@ -782,7 +786,7 @@ ForegroundColor = Y
   overridable key (see above) rather than being tied to `Material`.
 - **`ForegroundColor`**/**`BackgroundColor`** — a single-character color code
   (see `Global/Colors.ini`), the highest-precedence tier in
-  `AsciiRenderer`'s color-resolution chain after the cell's own per-cell code:
+  `WorldRenderer`'s color-resolution chain after the cell's own per-cell code:
   per-cell layer file &gt; this placement's override &gt; the sprite asset's own
   `[Colors]` default &gt; the level's own `[Colors]` default (§3, above) &gt; a
   hardcoded engine fallback. Absent means this placement has no per-instance
@@ -877,25 +881,25 @@ Game-wide defaults that apply unless overridden by a more specific per-asset
 `settings.ini` (e.g. default gravity, default empty-char). Extended as new
 game-wide concepts emerge.
 
-### 4.4 `Global/Levels.ini`
+### 4.4 `Global/Worlds.ini`
 
-The explicit, authored manifest of every level available to play, shown in
-that order on the level-selection screen (§3.2):
+The explicit, authored manifest of every world available to play, shown in
+that order on the world-selection screen (§3.2):
 
 ```ini
 [Levels]
 Order = Level1, TestMovement, TestPhysics
 ```
 
-- **`Order`** — a comma-separated list of level folder names (each one a
-  `Levels/{LevelName}/` folder), in the order shown left-to-right on the
-  level-selection screen. Add a new level's folder name here to make it
-  selectable; removing a name here hides that level from selection without
+- **`Order`** — a comma-separated list of world folder names (each one a
+  `Worlds/{WorldName}/` folder), in the order shown left-to-right on the
+  world-selection screen. Add a new world's folder name here to make it
+  selectable; removing a name here hides that world from selection without
   needing to delete its files.
 - This is the same "authored list, not inferred from the filesystem"
   approach `[Stances]` uses for a sprite's clips — Blazor WebAssembly has no
   way to list `wwwroot`'s directory contents at runtime, so the set of
-  levels can't simply be discovered by scanning `Assets/Levels/`.
+  worlds can't simply be discovered by scanning `Assets/Worlds/`.
 
 ## 5. Design rationale summary
 

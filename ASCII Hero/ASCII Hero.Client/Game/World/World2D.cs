@@ -1,4 +1,3 @@
-using System.Globalization;
 using ASCII_Hero.Client.Game.Assets;
 
 namespace ASCII_Hero.Client.Game.World;
@@ -9,16 +8,16 @@ public class World2D
     public Player2D Player { get; } = new();
 
     /// <summary>
-    /// The body the camera should follow. Defaults to <see cref="Player"/>, but a level can
+    /// The body the camera should follow. Defaults to <see cref="Player"/>, but a world can
     /// designate a different body instead (e.g. the bouncing ball in TestMovement) by setting
-    /// <c>CameraTarget = true</c> on that object's section in the level's objects.ini.
+    /// <c>CameraTarget = true</c> on that object's section in the world's objects.ini.
     /// </summary>
     public IPhysicsBody CameraTarget { get; set; } = null!;
 
     /// <summary>
     /// Every body in the world - static or moving, player or otherwise - as one generic
     /// collection. Systems (<see cref="Physics.PhysicsSystem"/>, <see cref="Physics.CollisionSystem"/>,
-    /// <see cref="Rendering.AsciiRenderer"/>) iterate this list and filter by capability
+    /// <see cref="Rendering.WorldRenderer"/>) iterate this list and filter by capability
     /// interface (<see cref="IPhysicsBody"/>, <see cref="IHazardBody"/>, <see cref="ICollectableBody"/>)
     /// rather than by concrete type, so no system needs to know about every noun in the game.
     /// </summary>
@@ -57,7 +56,7 @@ public class World2D
         _pendingRemovals.Clear();
     }
 
-    /// <summary>Background layer of the level, purely visual - one glyph per world cell.</summary>
+    /// <summary>Background layer of the world, purely visual - one glyph per world cell.</summary>
     public char[,] BackgroundChars { get; private set; } = new char[0, 0];
 
     /// <summary>Foreground color code per background cell, same dimensions as <see cref="BackgroundChars"/>.</summary>
@@ -66,15 +65,15 @@ public class World2D
     /// <summary>Background (fill) color code per background cell, same dimensions as <see cref="BackgroundChars"/>.</summary>
     public char[,] BackgroundBack { get; private set; } = new char[0, 0];
 
-    /// <summary>"No cell here" marker used by this level's background/object grids.</summary>
+    /// <summary>"No cell here" marker used by this world's background/object grids.</summary>
     public char EmptyChar { get; private set; } = ' ';
 
-    /// <summary>The resolved Global+Level color palette, used to render every fore/back color code.</summary>
+    /// <summary>The resolved Global+World color palette, used to render every fore/back color code.</summary>
     public ColorPalette Palette { get; private set; } = null!;
 
     /// <summary>
-    /// Color code (see <c>Global/Colors.ini</c>) this level's own <c>[Colors]
-    /// DefaultForegroundColor</c> settings.ini key resolves to, used by <see cref="Rendering.AsciiRenderer"/>
+    /// Color code (see <c>Global/Colors.ini</c>) this world's own <c>[Colors]
+    /// DefaultForegroundColor</c> settings.ini key resolves to, used by <see cref="Rendering.WorldRenderer"/>
     /// as the fallback for any cell (background or object) whose own color code is absent/empty
     /// and whose sprite has no own default either. Null when not set, in which case the
     /// hardcoded renderer default applies. See docs/AssetFormat.md §3.
@@ -101,35 +100,35 @@ public class World2D
     public int HeightCells { get; private set; }
 
     /// <summary>
-    /// Loads a level's background/object-placement files and the sprite assets they reference,
+    /// Loads a world's background/object-placement files and the sprite assets they reference,
     /// building up Platforms and the Player's spawn position/sprite. Replaces what used to be a
-    /// hardcoded constructor - see AssetFormat.md section 3 for the level file format and
-    /// section 1.1 for the Global/Level fallback rule applied by SpriteLoader.
+    /// hardcoded constructor - see AssetFormat.md section 3 for the world file format and
+    /// section 1.1 for the Global/World fallback rule applied by SpriteLoader.
     /// </summary>
-    public static async Task<World2D> LoadAsync(IAssetFileProvider fileProvider, string levelName)
+    public static async Task<World2D> LoadAsync(IAssetFileProvider fileProvider, string worldName)
     {
         var world = new World2D();
-        var levelFolder = $"{AssetPathResolver.LevelsRoot}/{levelName}";
+        var worldFolder = $"{AssetPathResolver.WorldsRoot}/{worldName}";
 
-        var settingsContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_settings.ini");
+        var settingsContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_settings.ini");
         var settings = IniDocument.Parse(settingsContent ?? string.Empty);
-        var emptyChar = ParseEmptyChar(settings.TryGetValue("Layout", "EmptyChar"));
+        var emptyChar = IniValueParser.ParseEmptyChar(settings.TryGetValue("Layout", "EmptyChar"));
         world.EmptyChar = emptyChar;
-        world.DefaultForeColor = ParseColorCode(settings.TryGetValue("Colors", "DefaultForegroundColor"));
-        world.DefaultBackColor = ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
+        world.DefaultForeColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultForegroundColor"));
+        world.DefaultBackColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
 
         var globalSettingsContent = await fileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/Settings.ini");
         var globalSettings = IniDocument.Parse(globalSettingsContent ?? string.Empty);
-        if (TryParseDouble(globalSettings.TryGetValue("Physics", "Gravity"), out var gravity))
+        if (IniValueParser.TryParseDouble(globalSettings.TryGetValue("Physics", "Gravity"), out var gravity))
         {
             world.Gravity = gravity;
         }
 
-        world.Palette = await ColorPalette.LoadAsync(fileProvider, levelName);
-        world.Materials = await MaterialLibrary.LoadAsync(fileProvider, levelName);
+        world.Palette = await ColorPalette.LoadAsync(fileProvider, worldName);
+        world.Materials = await MaterialLibrary.LoadAsync(fileProvider, worldName);
 
-        var backgroundContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_background_characters.txt")
-            ?? throw new FileNotFoundException($"Missing required background layer for level '{levelName}'.");
+        var backgroundContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_background_characters.txt")
+            ?? throw new FileNotFoundException($"Missing required background layer for world '{worldName}'.");
         var backgroundFrames = AssetTextReader.ParseCharsLayer(backgroundContent, emptyChar);
         world.BackgroundChars = backgroundFrames[0];
         var width = world.BackgroundChars.GetLength(1);
@@ -137,17 +136,17 @@ public class World2D
         world.WidthCells = width;
         world.HeightCells = height;
 
-        var backgroundForeContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_background_foregroundcolors.txt");
-        var backgroundBackContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_background_backgroundcolors.txt");
+        var backgroundForeContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_background_foregroundcolors.txt");
+        var backgroundBackContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_background_backgroundcolors.txt");
         world.BackgroundFore = AssetTextReader.ParseSecondaryLayer(backgroundForeContent, backgroundFrames, emptyChar)[0];
         world.BackgroundBack = AssetTextReader.ParseSecondaryLayer(backgroundBackContent, backgroundFrames, emptyChar)[0];
 
-        var objectsIniContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_objects.ini")
-            ?? throw new FileNotFoundException($"Missing required object placement definitions for level '{levelName}'.");
+        var objectsIniContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_objects.ini")
+            ?? throw new FileNotFoundException($"Missing required object placement definitions for world '{worldName}'.");
         var objectsIni = IniDocument.Parse(objectsIniContent);
 
-        var objectsContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_objects.txt")
-            ?? throw new FileNotFoundException($"Missing required object placement grid for level '{levelName}'.");
+        var objectsContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_objects.txt")
+            ?? throw new FileNotFoundException($"Missing required object placement grid for world '{worldName}'.");
         var objectsGrid = AssetTextReader.ParseFixedSizeGrid(objectsContent, width, height, emptyChar);
 
         var spriteLoader = new SpriteLoader(fileProvider);
@@ -173,16 +172,16 @@ public class World2D
                 var objectSection = objectsIni.Section(sectionName);
                 if (!objectSection.TryGetValue("Asset", out var assetName))
                 {
-                    throw new FormatException($"Section '{sectionName}' of level '{levelName}' is missing required key 'Asset'.");
+                    throw new FormatException($"Section '{sectionName}' of world '{worldName}' is missing required key 'Asset'.");
                 }
 
                 if (!objectSection.TryGetValue("Kind", out var kind))
                 {
-                    throw new FormatException($"Section '{sectionName}' of level '{levelName}' is missing required key 'Kind'.");
+                    throw new FormatException($"Section '{sectionName}' of world '{worldName}' is missing required key 'Kind'.");
                 }
 
                 var clipName = objectSection.TryGetValue("Clip", out var clip) ? clip : "default";
-                var repeatCount = objectSection.TryGetValue("Repeat", out var repeatText) && TryParseInt(repeatText, out var parsedRepeat)
+                var repeatCount = objectSection.TryGetValue("Repeat", out var repeatText) && IniValueParser.TryParseInt(repeatText, out var parsedRepeat)
                     ? parsedRepeat
                     : 1;
                 var position = new Vector2D(col, row);
@@ -195,14 +194,14 @@ public class World2D
                 var requestedClipNames = effectClipName is null
                     ? (IReadOnlyList<string>)[clipName]
                     : [clipName, effectClipName];
-                var sprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, requestedClipNames, levelName);
+                var sprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, requestedClipNames, worldName);
                 var frameIndex = sprite.GetClip(clipName).DefaultFrame;
 
                 var gravityAffected = !objectSection.TryGetValue("GravityAffected", out var gravityText) || !bool.TryParse(gravityText, out var parsedGravity) || parsedGravity;
                 // Restitution is no longer defaulted here - absent means "use whatever the
                 // spawned body's resolved material provides" (see the post-spawn material
                 // resolution below), only an explicit ini value overrides that.
-                var restitutionOverride = objectSection.TryGetValue("Restitution", out var restitutionText) && TryParseDouble(restitutionText, out var parsedRestitution)
+                var restitutionOverride = objectSection.TryGetValue("Restitution", out var restitutionText) && IniValueParser.TryParseDouble(restitutionText, out var parsedRestitution)
                     ? (double?)parsedRestitution
                     : null;
                 // Lets a placement spawn its asset with a different material than the asset's own
@@ -213,13 +212,13 @@ public class World2D
                 // Lets a placement give its own instance a distinct color from its sprite's own
                 // default (e.g. TestPhysics distinguishing its four Ball placements by material)
                 // without needing a separate sprite asset per color - mirrors materialOverride
-                // above, and is inserted into AsciiRenderer's fallback chain the same way.
-                var foreColorOverride = ParseColorCode(objectSection.TryGetValue("ForegroundColor", out var foreColorText) ? foreColorText : null);
-                var backColorOverride = ParseColorCode(objectSection.TryGetValue("BackgroundColor", out var backColorText) ? backColorText : null);
-                var initialVelocityX = objectSection.TryGetValue("InitialVelocityX", out var velocityXText) && TryParseDouble(velocityXText, out var parsedVelocityX)
+                // above, and is inserted into WorldRenderer's fallback chain the same way.
+                var foreColorOverride = IniValueParser.ParseColorCode(objectSection.TryGetValue("ForegroundColor", out var foreColorText) ? foreColorText : null);
+                var backColorOverride = IniValueParser.ParseColorCode(objectSection.TryGetValue("BackgroundColor", out var backColorText) ? backColorText : null);
+                var initialVelocityX = objectSection.TryGetValue("InitialVelocityX", out var velocityXText) && IniValueParser.TryParseDouble(velocityXText, out var parsedVelocityX)
                     ? parsedVelocityX
                     : 0.0;
-                var initialVelocityY = objectSection.TryGetValue("InitialVelocityY", out var velocityYText) && TryParseDouble(velocityYText, out var parsedVelocityY)
+                var initialVelocityY = objectSection.TryGetValue("InitialVelocityY", out var velocityYText) && IniValueParser.TryParseDouble(velocityYText, out var parsedVelocityY)
                     ? parsedVelocityY
                     : 0.0;
                 var initialVelocity = new Vector2D(initialVelocityX, initialVelocityY);
@@ -311,7 +310,7 @@ public class World2D
                         break;
 
                     default:
-                        throw new FormatException($"Unknown object Kind '{kind}' in section '{sectionName}' of level '{levelName}'.");
+                        throw new FormatException($"Unknown object Kind '{kind}' in section '{sectionName}' of world '{worldName}'.");
                 }
 
                 spawnedBody.IsPassable = passable;
@@ -352,28 +351,17 @@ public class World2D
         Dictionary<string, SpriteAsset> cache,
         string assetName,
         IReadOnlyList<string> clipNames,
-        string levelName)
+        string worldName)
     {
         if (cache.TryGetValue(assetName, out var cached))
         {
             return cached;
         }
 
-        var sprite = await spriteLoader.LoadAsync(assetName, clipNames, levelName);
+        var sprite = await spriteLoader.LoadAsync(assetName, clipNames, worldName);
         cache[assetName] = sprite;
         return sprite;
     }
-
-    private static char ParseEmptyChar(string? rawValue) =>
-        string.IsNullOrEmpty(rawValue) ? ' ' : rawValue[0];
-
-    /// <summary>
-    /// Parses a single-character color code (see <c>Global/Colors.ini</c>) from a level's own
-    /// <c>DefaultForegroundColor</c>/<c>DefaultBackgroundColor</c> settings.ini value. Null if
-    /// absent/empty - mirrors <see cref="Assets.SpriteLoader"/>'s identical per-asset parsing.
-    /// </summary>
-    private static char? ParseColorCode(string? rawValue) =>
-        string.IsNullOrEmpty(rawValue) ? null : rawValue[0];
 
     /// <summary>
     /// Whether an object's ini section explicitly opts in as the body the camera should follow
@@ -385,16 +373,4 @@ public class World2D
         objectSection.TryGetValue("CameraTarget", out var cameraTargetText)
         && bool.TryParse(cameraTargetText, out var isCameraTarget)
         && isCameraTarget;
-
-    /// <summary>
-    /// Parses a numeric ini value with <see cref="CultureInfo.InvariantCulture"/> so a decimal
-    /// point (e.g. "1.0") is never misread as a thousands separator under locales where '.'
-    /// is the group separator (which silently turned "1.0" into 10 and sent physics values
-    /// like Restitution wildly out of range).
-    /// </summary>
-    private static bool TryParseDouble(string? rawValue, out double value) =>
-        double.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out value);
-
-    private static bool TryParseInt(string? rawValue, out int value) =>
-        int.TryParse(rawValue, NumberStyles.Integer, CultureInfo.InvariantCulture, out value);
 }

@@ -7,17 +7,12 @@ namespace ASCII_Hero.Client.Game.Rendering;
 /// <summary>
 /// Translates the floating-point game world into a list of ASCII glyphs positioned in pixel
 /// space, based on the camera's current view. The world itself is not restricted to a grid;
-/// this mapping is purely a visual concept applied at render time.
+/// this mapping is purely a visual concept applied at render time. Compare
+/// <see cref="WorldSelectRenderer"/>, which lays out glyphs directly in screen space with no
+/// camera, for the level-selection screen instead.
 /// </summary>
-public class AsciiRenderer
+public class WorldRenderer
 {
-    /// <summary>Default foreground color used when a cell has no color code resolvable in the palette.</summary>
-    private const string DefaultForeColor = "#00ff00";
-
-    /// <summary>Default background color used when a cell has no color code resolvable in the palette
-    /// (null means no fill - fully transparent, letting the canvas show through).</summary>
-    private const string? DefaultBackColor = null;
-
     /// <summary>Size of one world cell in pixels.</summary>
     public double CellWidthPixels { get; set; } = 16;
     public double CellHeightPixels { get; set; } = 24;
@@ -74,8 +69,10 @@ public class AsciiRenderer
                     continue;
                 }
 
-                var foreColor = ResolveColor(world.Palette, world.BackgroundFore[row, col], world.EmptyChar, world.DefaultForeColor, DefaultForeColor);
-                var backColor = ResolveColor(world.Palette, world.BackgroundBack[row, col], world.EmptyChar, world.DefaultBackColor, DefaultBackColor);
+                var cellForeCode = GlyphBuilder.NullIfEmpty(world.BackgroundFore[row, col], world.EmptyChar);
+                var cellBackCode = GlyphBuilder.NullIfEmpty(world.BackgroundBack[row, col], world.EmptyChar);
+                var foreColor = GlyphBuilder.ResolveColor(world.Palette, GlyphBuilder.DefaultForeColor, cellForeCode, world.DefaultForeColor);
+                var backColor = GlyphBuilder.ResolveColor(world.Palette, GlyphBuilder.DefaultBackColor, cellBackCode, world.DefaultBackColor);
                 var cellPosition = new Vector2D(col, row);
                 glyphs.Add(ToGlyph(cellPosition, character, foreColor, backColor, camera));
             }
@@ -109,60 +106,20 @@ public class AsciiRenderer
                     continue;
                 }
 
-                var foreColor = ResolveColor(palette, frame.Fore[row, col], emptyChar, gameObject.ForeColorOverride, gameObject.Sprite.DefaultForeColor, world.DefaultForeColor, DefaultForeColor);
-                var backColor = ResolveColor(palette, frame.Back[row, col], emptyChar, gameObject.BackColorOverride, gameObject.Sprite.DefaultBackColor, world.DefaultBackColor, DefaultBackColor);
+                var cellForeCode = GlyphBuilder.NullIfEmpty(frame.Fore[row, col], emptyChar);
+                var cellBackCode = GlyphBuilder.NullIfEmpty(frame.Back[row, col], emptyChar);
+                var foreColor = GlyphBuilder.ResolveColor(palette, GlyphBuilder.DefaultForeColor, cellForeCode, gameObject.ForeColorOverride, gameObject.Sprite.DefaultForeColor, world.DefaultForeColor);
+                var backColor = GlyphBuilder.ResolveColor(palette, GlyphBuilder.DefaultBackColor, cellBackCode, gameObject.BackColorOverride, gameObject.Sprite.DefaultBackColor, world.DefaultBackColor);
                 glyphs.Add(ToGlyph(cellPosition, character, foreColor, backColor, camera));
             }
         }
     }
-
-    /// <summary>
-    /// Resolves a cell's color, in precedence order: the cell's own color code (if not
-    /// <paramref name="emptyChar"/> and resolvable in the palette), then this placement's own
-    /// per-instance override (<paramref name="instanceOverrideCode"/>, e.g. one placement of a
-    /// shared sprite asset picking a distinct color from another placement of that same asset),
-    /// then the sprite's own <c>DefaultForegroundColor</c>/<c>DefaultBackgroundColor</c>
-    /// (<paramref name="assetDefaultCode"/>, for background cells there is no owning sprite so
-    /// this is always null), then the level's own default (<paramref name="levelDefaultCode"/>),
-    /// then <paramref name="hardcodedFallback"/>. Each color-code step is itself skipped if that
-    /// code doesn't resolve in the palette, falling through to the next step - see
-    /// docs/AssetFormat.md §2.5/§4 for the format/precedence.
-    /// </summary>
-    private static string? ResolveColor(
-        ColorPalette palette, char cellCode, char emptyChar, char? instanceOverrideCode, char? assetDefaultCode, char? levelDefaultCode, string? hardcodedFallback)
-    {
-        if (cellCode != emptyChar && palette.TryGetColor(cellCode) is { } cellColor)
-        {
-            return cellColor;
-        }
-
-        if (instanceOverrideCode is { } instanceCode && palette.TryGetColor(instanceCode) is { } instanceColor)
-        {
-            return instanceColor;
-        }
-
-        if (assetDefaultCode is { } foreCode && palette.TryGetColor(foreCode) is { } assetColor)
-        {
-            return assetColor;
-        }
-
-        if (levelDefaultCode is { } levelCode && palette.TryGetColor(levelCode) is { } levelColor)
-        {
-            return levelColor;
-        }
-
-        return hardcodedFallback;
-    }
-
-    private static string? ResolveColor(
-        ColorPalette palette, char cellCode, char emptyChar, char? levelDefaultCode, string? hardcodedFallback) =>
-        ResolveColor(palette, cellCode, emptyChar, instanceOverrideCode: null, assetDefaultCode: null, levelDefaultCode, hardcodedFallback);
 
     private Glyph ToGlyph(Vector2D worldPosition, char character, string? foreColor, string? backColor, Camera2D camera)
     {
         var relative = worldPosition - camera.Position;
         var pixelX = relative.X * CellWidthPixels;
         var pixelY = relative.Y * CellHeightPixels;
-        return new Glyph(pixelX, pixelY, character, foreColor ?? DefaultForeColor, backColor);
+        return GlyphBuilder.BuildGlyph(pixelX, pixelY, character, foreColor, backColor);
     }
 }

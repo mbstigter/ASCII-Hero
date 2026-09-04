@@ -1,36 +1,44 @@
 namespace ASCII_Hero.Client.Game.Assets;
 
-/// <summary>One frame of a level's thumbnail art: a char grid plus its parallel foreground-color grid.</summary>
+/// <summary>One frame of a world's thumbnail art: a char grid plus its parallel foreground/background-color grids.</summary>
 public class ThumbnailFrame
 {
     public required char[,] Chars { get; init; }
     public required char[,] Fore { get; init; }
+    public required char[,] Back { get; init; }
 }
 
 /// <summary>
-/// Everything a level-selection screen needs to show one level without fully loading it (compare
-/// <see cref="World.World2D.LoadAsync"/>, which loads the whole playable level): its display
+/// Everything a world-selection screen needs to show one world without fully loading it (compare
+/// <see cref="World.World2D.LoadAsync"/>, which loads the whole playable world): its display
 /// title and its fixed-size, optionally-animated thumbnail art. See docs/AssetFormat.md §3.1/§3.2.
 /// Owns its own thumbnail animation state (current frame, elapsed time) since exactly one instance
-/// of each level's thumbnail is ever shown on the selection screen at a time - unlike a sprite's
+/// of each world's thumbnail is ever shown on the selection screen at a time - unlike a sprite's
 /// clip, there's no need to separate "shared asset data" from "one placement's playback state".
 /// </summary>
-public class LevelSummary
+public class WorldSummary
 {
-    public string LevelName { get; }
+    public string WorldName { get; }
 
-    /// <summary>From this level's <c>[Level] Title</c> settings.ini key, falling back to <see cref="LevelName"/>.</summary>
+    /// <summary>From this world's <c>[World] Title</c> settings.ini key, falling back to <see cref="WorldName"/>.</summary>
     public string Title { get; }
 
-    /// <summary>Every frame of this level's thumbnail, each always exactly
-    /// <see cref="LevelCatalog.ThumbnailWidth"/> x <see cref="LevelCatalog.ThumbnailHeight"/>. Always
-    /// has at least one frame (a blank one, if the level has no thumbnail art at all).</summary>
+    /// <summary>Every frame of this world's thumbnail, each always exactly
+    /// <see cref="WorldCatalog.ThumbnailWidth"/> x <see cref="WorldCatalog.ThumbnailHeight"/>. Always
+    /// has at least one frame (a blank one, if the world has no thumbnail art at all).</summary>
     public IReadOnlyList<ThumbnailFrame> ThumbnailFrames { get; }
 
     public char EmptyChar { get; }
 
-    /// <summary>This level's own resolved Global+Level color palette, for rendering thumbnail cells.</summary>
+    /// <summary>This world's own resolved Global+World color palette, for rendering thumbnail cells.</summary>
     public ColorPalette Palette { get; }
+
+    /// <summary>
+    /// Color code this world's own <c>[Colors] DefaultBackgroundColor</c> settings.ini key resolves
+    /// to, used as the fallback for a thumbnail cell whose own background color code is
+    /// absent/empty. Null when not set, in which case no fill (fully transparent) applies.
+    /// </summary>
+    public char? DefaultBackColor { get; }
 
     private readonly double? _frameDurationSeconds;
     private readonly AnimationMode _animationMode;
@@ -38,21 +46,23 @@ public class LevelSummary
     private int _frameIndex;
     private int _direction;
 
-    public LevelSummary(
-        string levelName,
+    public WorldSummary(
+        string worldName,
         string title,
         IReadOnlyList<ThumbnailFrame> thumbnailFrames,
         char emptyChar,
         ColorPalette palette,
+        char? defaultBackColor,
         double? frameDurationSeconds,
         AnimationMode animationMode,
         int defaultFrameIndex)
     {
-        LevelName = levelName;
+        WorldName = worldName;
         Title = title;
         ThumbnailFrames = thumbnailFrames;
         EmptyChar = emptyChar;
         Palette = palette;
+        DefaultBackColor = defaultBackColor;
         _frameDurationSeconds = frameDurationSeconds;
         _animationMode = animationMode;
 
@@ -66,7 +76,7 @@ public class LevelSummary
     public ThumbnailFrame CurrentThumbnailFrame => ThumbnailFrames[_frameIndex];
 
     /// <summary>
-    /// Advances this level's own thumbnail animation timer, exactly like <see cref="World.Body2D.AdvanceAnimation"/>
+    /// Advances this world's own thumbnail animation timer, exactly like <see cref="World.Body2D.AdvanceAnimation"/>
     /// does for a sprite clip. No-ops if no <c>[Animation]</c> timing was configured, there's only
     /// one frame, or the mode is <see cref="AnimationMode.Off"/>.
     /// </summary>
@@ -114,70 +124,76 @@ public class LevelSummary
 }
 
 /// <summary>
-/// The set of levels available to play and their lightweight <see cref="LevelSummary"/> metadata,
-/// for a level-selection screen shown before <see cref="World.World2D.LoadAsync"/> loads the
-/// chosen level. See docs/AssetFormat.md §3.2/§4.4.
+/// The set of worlds available to play and their lightweight <see cref="WorldSummary"/> metadata,
+/// for a world-selection screen shown before <see cref="World.World2D.LoadAsync"/> loads the
+/// chosen world. See docs/AssetFormat.md §3.2/§4.4.
 /// </summary>
-public static class LevelCatalog
+public static class WorldCatalog
 {
     public const int ThumbnailWidth = 16;
     public const int ThumbnailHeight = 8;
 
     /// <summary>
-    /// Reads the ordered list of every level available to play from <c>Global/Levels.ini</c> (see
+    /// Reads the ordered list of every world available to play from <c>Global/Worlds.ini</c> (see
     /// docs/AssetFormat.md §4.4) - an explicit, authored manifest rather than a directory listing,
     /// since Blazor WebAssembly has no way to enumerate `wwwroot`'s contents at runtime (the same
     /// reasoning as the authored, not filesystem-inferred, `[Stances]` clip list).
     /// </summary>
-    public static async Task<IReadOnlyList<string>> LoadLevelNamesAsync(IAssetFileProvider fileProvider)
+    public static async Task<IReadOnlyList<string>> LoadWorldNamesAsync(IAssetFileProvider fileProvider)
     {
-        var content = await fileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/Levels.ini");
+        var content = await fileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/Worlds.ini");
         var ini = IniDocument.Parse(content ?? string.Empty);
         var order = ini.TryGetValue("Levels", "Order") ?? string.Empty;
         return order.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
     }
 
-    /// <summary>Loads every level named in <c>Global/Levels.ini</c>, in the order listed there.</summary>
-    public static async Task<IReadOnlyList<LevelSummary>> LoadAllAsync(IAssetFileProvider fileProvider)
+    /// <summary>Loads every world named in <c>Global/Worlds.ini</c>, in the order listed there.</summary>
+    public static async Task<IReadOnlyList<WorldSummary>> LoadAllAsync(IAssetFileProvider fileProvider)
     {
-        var levelNames = await LoadLevelNamesAsync(fileProvider);
-        var summaries = new List<LevelSummary>(levelNames.Count);
-        foreach (var levelName in levelNames)
+        var worldNames = await LoadWorldNamesAsync(fileProvider);
+        var summaries = new List<WorldSummary>(worldNames.Count);
+        foreach (var worldName in worldNames)
         {
-            summaries.Add(await LoadAsync(fileProvider, levelName));
+            summaries.Add(await LoadAsync(fileProvider, worldName));
         }
 
         return summaries;
     }
 
-    /// <summary>Loads one level's title and thumbnail art without loading its full playable World2D.</summary>
-    public static async Task<LevelSummary> LoadAsync(IAssetFileProvider fileProvider, string levelName)
+    /// <summary>Loads one world's title and thumbnail art without loading its full playable World2D.</summary>
+    public static async Task<WorldSummary> LoadAsync(IAssetFileProvider fileProvider, string worldName)
     {
-        var levelFolder = $"{AssetPathResolver.LevelsRoot}/{levelName}";
+        var worldFolder = $"{AssetPathResolver.WorldsRoot}/{worldName}";
 
-        var settingsContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_settings.ini");
+        var settingsContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_settings.ini");
         var settings = IniDocument.Parse(settingsContent ?? string.Empty);
-        var emptyChar = ParseEmptyChar(settings.TryGetValue("Layout", "EmptyChar"));
-        var title = settings.TryGetValue("Level", "Title") is { Length: > 0 } titleValue ? titleValue : levelName;
+        var emptyChar = IniValueParser.ParseEmptyChar(settings.TryGetValue("Layout", "EmptyChar"));
+        var title = settings.TryGetValue("World", "Title") is { Length: > 0 } titleValue ? titleValue : worldName;
 
-        // Both files are optional (see docs/AssetFormat.md §3.1) - a level without thumbnail art
+        // Both files are optional (see docs/AssetFormat.md §3.1) - a world without thumbnail art
         // yields a single blank thumbnail frame rather than failing to load. Like any other clip,
         // multiple frames are separated by "//end"; unlike a sprite clip, every frame here is
         // fixed at exactly ThumbnailWidth x ThumbnailHeight rather than inferred from content.
-        var charsContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_thumb_characters.txt");
+        var charsContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_thumb_characters.txt");
         var charFrames = charsContent is null
             ? [EmptyGrid(emptyChar)]
             : AssetTextReader.ParseFixedSizeFrames(charsContent, ThumbnailWidth, ThumbnailHeight, emptyChar);
 
-        var foreContent = await fileProvider.TryReadTextAsync($"{levelFolder}/{levelName}_thumb_foregroundcolors.txt");
+        var foreContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_thumb_foregroundcolors.txt");
         var foreFrames = AssetTextReader.ParseFixedSizeSecondaryFrames(
             foreContent, charFrames.Count, ThumbnailWidth, ThumbnailHeight, emptyChar);
+
+        var backContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_thumb_backgroundcolors.txt");
+        var backFrames = AssetTextReader.ParseFixedSizeSecondaryFrames(
+            backContent, charFrames.Count, ThumbnailWidth, ThumbnailHeight, emptyChar);
 
         var thumbnailFrames = new List<ThumbnailFrame>(charFrames.Count);
         for (var i = 0; i < charFrames.Count; i++)
         {
-            thumbnailFrames.Add(new ThumbnailFrame { Chars = charFrames[i], Fore = foreFrames[i] });
+            thumbnailFrames.Add(new ThumbnailFrame { Chars = charFrames[i], Fore = foreFrames[i], Back = backFrames[i] });
         }
+
+        var defaultBackColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
 
         // An optional [Animation] section (same keys/semantics as a sprite clip's own
         // [Animation]/[Animation.{clipName}] section - see docs/AssetFormat.md §2.4) times the
@@ -194,10 +210,10 @@ public static class LevelCatalog
             ? SpriteLoader.ParseDefaultFrame(defaultFrameText) ?? 0
             : 0;
 
-        var palette = await ColorPalette.LoadAsync(fileProvider, levelName);
+        var palette = await ColorPalette.LoadAsync(fileProvider, worldName);
 
-        return new LevelSummary(
-            levelName, title, thumbnailFrames, emptyChar, palette,
+        return new WorldSummary(
+            worldName, title, thumbnailFrames, emptyChar, palette, defaultBackColor,
             frameDurationSeconds, animationMode, defaultFrameIndex);
     }
 
@@ -214,7 +230,4 @@ public static class LevelCatalog
 
         return grid;
     }
-
-    private static char ParseEmptyChar(string? rawValue) =>
-        string.IsNullOrEmpty(rawValue) ? ' ' : rawValue[0];
 }

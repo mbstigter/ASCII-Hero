@@ -95,3 +95,12 @@ not like a pixel-art game with ASCII characters placed on top.
 - **Enhance sprites**, especially Crawl and Clamber, which currently feel
   underdeveloped compared to Walk/Hang - consider adding a third animation
   frame for these (and other) animated clips.
+- **Single per-body `EffectClipName` may not scale.** `IEffectTrigger` (see
+  `CollisionSystem.ResolveHazardsAndCollectables`) currently exposes one
+  static clip name per body, e.g. the player's is reserved for an ordinary
+  (non-fatal) hazard contact "spark". That's fine while hazard contact is the
+  only situation triggering a player effect, but if more situations are added
+  later (e.g. fall damage, a death animation, a power-up flash) they would
+  all compete for the same single clip slot and overwrite each other. If that
+  happens, revisit this as an effect *request* (e.g. a method call or queued
+  clip name per contact/event) rather than a static per-body property.

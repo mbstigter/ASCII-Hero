@@ -65,7 +65,7 @@ DOM keyboard events.
   characters.
 - Every body in the world — static or moving, player or otherwise — lives in
   one generic `World2D.Objects` list. `PhysicsSystem`, `CollisionSystem`, and
-  `AsciiRenderer` iterate this single list and filter by capability interface
+  `WorldRenderer` iterate this single list and filter by capability interface
   (`IPhysicsBody`, `IGravityAffected`, `IHazardBody`, `ICollectableBody`,
   `ICollectorBody`) rather than by concrete type or by maintaining separate
   per-category collections — adding a new object category (e.g. a moving

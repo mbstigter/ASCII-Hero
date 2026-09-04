@@ -79,7 +79,7 @@ public abstract class Body2D
     /// set from this placement's <c>ForegroundColor</c>/<c>BackgroundColor</c> ini key (see
     /// <see cref="World.World2D.LoadAsync"/>). Null if the placement didn't specify one, in which
     /// case the sprite/level/hardcoded fallback chain applies unchanged (see
-    /// <see cref="Rendering.AsciiRenderer"/>). Mirrors <see cref="MaterialName"/>'s per-instance
+    /// <see cref="Rendering.WorldRenderer"/>). Mirrors <see cref="MaterialName"/>'s per-instance
     /// <c>Material</c> override - lets one sprite asset (e.g. the one shared <c>Ball</c>) be
     /// placed multiple times with a different color each time, without needing a separate asset
     /// per color.

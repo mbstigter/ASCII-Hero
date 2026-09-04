@@ -28,19 +28,19 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// <summary>
     /// The three strictly-separate states <see cref="OnFrame"/> can be in. Exactly one of these
     /// is ever "live" at a time - see the guards in <see cref="OnFrame"/> and
-    /// <see cref="OnLevelSelectingFrameAsync"/> for how a transition between them is made atomic
+    /// <see cref="OnWorldSelectingFrameAsync"/> for how a transition between them is made atomic
     /// even though <see cref="OnFrame"/> is invoked by JS in a fire-and-forget fashion (the next
     /// requestAnimationFrame call is scheduled without waiting for this one's Task to finish - see
-    /// game-interop.js) and both loading a level and level-selection input can span a genuine
+    /// game-interop.js) and both loading a world and world-selection input can span a genuine
     /// async gap (HTTP fetches).
     /// </summary>
     private enum GameMode
     {
-        /// <summary>Driving <see cref="LevelSelectScreen"/>/<see cref="LevelSelectRenderer"/>; no <see cref="World2D"/> exists yet.</summary>
-        LevelSelecting,
+        /// <summary>Driving <see cref="WorldSelectScreen"/>/<see cref="WorldSelectRenderer"/>; no <see cref="World2D"/> exists yet.</summary>
+        WorldSelecting,
 
-        /// <summary>A level was confirmed and <see cref="World2D.LoadAsync"/> is in flight; frames are dropped until it completes.</summary>
-        LoadingLevel,
+        /// <summary>A world was confirmed and <see cref="World2D.LoadAsync"/> is in flight; frames are dropped until it completes.</summary>
+        LoadingWorld,
 
         /// <summary>Driving the normal per-frame Physics/Collision/Camera/Render tick against a loaded <see cref="World2D"/>.</summary>
         Playing,
@@ -50,12 +50,30 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private readonly PhysicsSystem _physics = new();
     private readonly CollisionSystem _collision = new();
     private readonly Camera2D _camera = new();
-    private readonly AsciiRenderer _renderer = new();
+    private readonly WorldRenderer _renderer = new();
     private readonly AnimationSystem _animation = new();
 
     private World2D _world = null!;
-    private LevelSelectScreen _levelSelect = null!;
-    private GameMode _mode = GameMode.LevelSelecting;
+    private WorldSelectScreen _worldSelect = null!;
+    private GameMode _mode = GameMode.WorldSelecting;
+
+    private const string HudForeColor = "#00ff00";
+
+    /// <summary>
+    /// Test HUD overlay shown in the top-left corner while playing, using the independent
+    /// <see cref="UIFrame"/>/<see cref="UILabel"/> screen-space primitives directly - eventually
+    /// meant for a real score/collectable-count readout, not just this one placeholder line.
+    /// </summary>
+    private readonly UILabel _hudText = new(col: 2, row: 2, width: 20, height: 1, foreColor: HudForeColor);
+
+    private readonly UIFrame _hudBox = new(col: 1, row: 1, width: 22, height: 3, foreColor: HudForeColor);
+
+    /// <summary>
+    /// Test horizontal gauge shown below the HUD frame while playing, using the independent
+    /// <see cref="UIBar"/> screen-space primitive - eventually meant for a health/stamina style
+    /// readout, not just this placeholder value.
+    /// </summary>
+    private readonly UIBar _hudBar = new(col: 2, row: 4, width: 20, height: 1, minValue: 0, maxValue: 100, foreColor: HudForeColor) { CurrentValue = 75 };
 
     /// <summary>
     /// Blanket re-entrancy guard for <see cref="OnFrame"/> itself, on top of (not instead of) the
@@ -72,24 +90,29 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
     public async Task StartAsync(string canvasElementId, FontMode fontMode = FontMode.Authentic)
     {
-        // The level catalog's titles/thumbnails are cheap to load - unlike a full World2D - so
+        // The world catalog's titles/thumbnails are cheap to load - unlike a full World2D - so
         // they're loaded up front alongside everything else the selection screen needs.
-        var levels = await LevelCatalog.LoadAllAsync(assetFileProvider);
+        var worlds = await WorldCatalog.LoadAllAsync(assetFileProvider);
 
         var cellMetrics = await canvasBridge.InitializeAsync(canvasElementId, this, fontMode);
         ApplyCellMetrics(cellMetrics);
 
-        var visibleSlotCount = LevelSelectRenderer.ComputeVisibleSlotCount(_viewportWidthCells, levels.Count);
-        _levelSelect = new LevelSelectScreen(levels, visibleSlotCount);
-        _mode = GameMode.LevelSelecting;
+        var visibleSlotCount = WorldSelectRenderer.ComputeVisibleSlotCount(_viewportWidthCells, worlds.Count);
+        _worldSelect = new WorldSelectScreen(worlds, visibleSlotCount);
+        _mode = GameMode.WorldSelecting;
     }
 
-    private async Task LoadLevelAsync(string levelName)
+    private async Task LoadWorldAsync(string worldName)
     {
         // Assets are loaded once, up front, over HTTP (see IAssetFileProvider) so gameplay never
         // stalls mid-frame waiting on a fetch; the frame loop only starts driving Physics/etc.
         // once this completes.
-        _world = await World2D.LoadAsync(assetFileProvider, levelName);
+        _world = await World2D.LoadAsync(assetFileProvider, worldName);
+
+        // Placeholder readout - no actual points/rings tracking exists yet; this just shows
+        // what the HUD text line is eventually meant to display (see _hudText's own doc comment).
+        _hudText.Lines.Clear();
+        _hudText.Lines.Add("Points: 0   Rings: 0");
 
         _camera.SnapTo(
             _world.CameraTarget.Position,
@@ -116,7 +139,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         // Defensive guard: if the browser ever reports a non-finite or non-positive cell size
         // (e.g. a font measurement taken before layout/font-load settled), fall back to the
         // previous/default cell size instead of propagating NaN/Infinity into the renderer,
-        // which would later throw an OverflowException when cast to int in AsciiRenderer.
+        // which would later throw an OverflowException when cast to int in WorldRenderer.
         var width = cellMetrics.CellWidthPixels;
         var height = cellMetrics.CellHeightPixels;
 
@@ -160,15 +183,15 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
             switch (_mode)
             {
-                case GameMode.LevelSelecting:
-                    await OnLevelSelectingFrameAsync(deltaSeconds);
+                case GameMode.WorldSelecting:
+                    await OnWorldSelectingFrameAsync(deltaSeconds);
                     break;
                 case GameMode.Playing:
                     await OnPlayingFrameAsync(deltaSeconds);
                     break;
-                case GameMode.LoadingLevel:
-                    // Nothing to do - a confirmed level's World2D is already being loaded by an
-                    // earlier call to OnLevelSelectingFrameAsync; that call itself will switch
+                case GameMode.LoadingWorld:
+                    // Nothing to do - a confirmed world's World2D is already being loaded by an
+                    // earlier call to OnWorldSelectingFrameAsync; that call itself will switch
                     // _mode to Playing once it completes.
                     break;
             }
@@ -196,35 +219,38 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             deltaSeconds);
 
         var glyphs = _renderer.BuildFrame(_world, _camera, _viewportWidthCells, _viewportHeightCells);
+        UIRenderer.AddFrame(glyphs, _hudBox, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+        UIRenderer.AddLabel(glyphs, _hudText, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+        UIRenderer.AddBar(glyphs, _hudBar, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         await canvasBridge.DrawFrameAsync(ViewportWidthPixels, ViewportHeightPixels, glyphs);
     }
 
     /// <summary>
-    /// Drives one frame of the pre-game level-selection screen: Left/Right (or A/D) moves the
-    /// selection, the jump/action key confirms it, at which point the chosen level's actual
+    /// Drives one frame of the pre-game world-selection screen: Left/Right (or A/D) moves the
+    /// selection, the jump/action key confirms it, at which point the chosen world's actual
     /// World2D is loaded and gameplay begins once that completes. See docs/AssetFormat.md §3.2.
     /// </summary>
-    private async Task OnLevelSelectingFrameAsync(double deltaSeconds)
+    private async Task OnWorldSelectingFrameAsync(double deltaSeconds)
     {
-        _levelSelect.Update(_input, deltaSeconds);
+        _worldSelect.Update(_input, deltaSeconds);
 
-        if (_levelSelect.Confirmed)
+        if (_worldSelect.Confirmed)
         {
             // Switch modes synchronously, before the genuine async gap below (World2D.LoadAsync
             // does real HTTP fetches) - _isProcessingFrame already blocks a literally-overlapping
             // OnFrame call, but flipping _mode here too keeps the three states honest even if
             // that guard is ever loosened, and documents the transition explicitly.
-            _mode = GameMode.LoadingLevel;
+            _mode = GameMode.LoadingWorld;
 
-            var levelName = _levelSelect.SelectedLevel.LevelName;
-            await LoadLevelAsync(levelName);
+            var worldName = _worldSelect.SelectedWorld.WorldName;
+            await LoadWorldAsync(worldName);
 
             _mode = GameMode.Playing;
             return;
         }
 
-        var glyphs = LevelSelectRenderer.BuildFrame(
-            _levelSelect, _viewportWidthCells, _viewportHeightCells,
+        var glyphs = WorldSelectRenderer.BuildFrame(
+            _worldSelect, _viewportWidthCells, _viewportHeightCells,
             _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         await canvasBridge.DrawFrameAsync(ViewportWidthPixels, ViewportHeightPixels, glyphs);
     }
