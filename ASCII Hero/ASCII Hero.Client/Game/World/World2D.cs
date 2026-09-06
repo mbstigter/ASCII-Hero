@@ -291,6 +291,29 @@ public class World2D
                 var killable = objectSection.TryGetValue("Killable", out var killableText) && bool.TryParse(killableText, out var parsedKillable) && parsedKillable;
                 var effectPersists = objectSection.TryGetValue("EffectPersists", out var effectPersistsText) && bool.TryParse(effectPersistsText, out var parsedEffectPersists) && parsedEffectPersists;
 
+                // Patrol (Kind = MovingEnemy only, see below) - PatrolMinX/PatrolMaxX let a
+                // placement author a custom back-and-forth range; when Patrol is enabled without
+                // an explicit range, it defaults to the entire width of the world (this body's
+                // left edge sweeping from the world's left edge to its right edge), so "patrol
+                // this enemy" works with zero extra authoring for the common full-level case.
+                var patrol = objectSection.TryGetValue("Patrol", out var patrolText) && bool.TryParse(patrolText, out var parsedPatrol) && parsedPatrol;
+                var patrolMinXOverride = objectSection.TryGetValue("PatrolMinX", out var patrolMinXText) && IniValueParser.TryParseDouble(patrolMinXText, out var parsedPatrolMinX)
+                    ? (double?)parsedPatrolMinX
+                    : null;
+                var patrolMaxXOverride = objectSection.TryGetValue("PatrolMaxX", out var patrolMaxXText) && IniValueParser.TryParseDouble(patrolMaxXText, out var parsedPatrolMaxX)
+                    ? (double?)parsedPatrolMaxX
+                    : null;
+                // PatrolForce lets a placement tune how strongly (and so how fast, mass-scaled
+                // like gravity) this enemy patrols, defaulting to MovingEnemy2D's own default when
+                // unset. PatrolInitialDirection ("Left"/"Right") overrides which way it starts
+                // heading, instead of the default inference toward whichever bound is farther.
+                var patrolForceOverride = objectSection.TryGetValue("PatrolForce", out var patrolForceText) && IniValueParser.TryParseDouble(patrolForceText, out var parsedPatrolForce)
+                    ? (double?)parsedPatrolForce
+                    : null;
+                var patrolInitialDirectionRight = objectSection.TryGetValue("PatrolInitialDirection", out var patrolDirectionText)
+                    ? (bool?)string.Equals(patrolDirectionText, "Right", StringComparison.OrdinalIgnoreCase)
+                    : null;
+
                 // Passable/Climbable/Hangable are plain per-instance flags on Body2D (see its own
                 // doc comments) rather than anything gated by Kind - any static placement can set
                 // any combination of them. Passable defaults to true for hazards/collectables
@@ -351,6 +374,14 @@ public class World2D
                         movingEnemy.EffectClipName = effectClipName;
                         movingEnemy.IsKillable = killable;
                         movingEnemy.EffectPersists = effectPersists;
+                        if (patrol)
+                        {
+                            movingEnemy.SetPatrol(
+                                patrolMinXOverride ?? 0.0,
+                                patrolMaxXOverride ?? world.WidthCells - movingEnemy.Size.X,
+                                patrolForceOverride ?? MovingEnemy2D.DefaultPatrolForceMultiplier,
+                                patrolInitialDirectionRight);
+                        }
                         world.Objects.Add(movingEnemy);
                         movingBody = movingEnemy;
                         spawnedBody = movingEnemy;

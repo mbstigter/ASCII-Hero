@@ -739,7 +739,45 @@ Kind = StaticEnemy
 Asset = Goblin
 Clip = idle
 Kind = MovingEnemy
-InitialVelocityX = 4
+Patrol = true
+```
+
+A `Kind = MovingEnemy` placement may additionally set `Patrol = true` (default
+`false`) to have it move back and forth along the X axis under its own force
+(mass-scaled, integrated the same way as gravity - see
+docs/Decisions.md), rather than only ever sitting still or moving at a fixed
+`InitialVelocityX`/`Y`. The patrol range defaults to the entire width of the
+world (this body's left edge sweeping from the world's left edge to its
+right edge) - enough to "just patrol the level" with no further authoring -
+but can be narrowed to a specific stretch via `PatrolMinX`/`PatrolMaxX`
+(world-space X, in cells, both optional and independent of each other):
+
+```ini
+[CautiousGoblin]
+Asset = Goblin
+Clip = idle
+Kind = MovingEnemy
+Patrol = true
+PatrolMinX = 20
+PatrolMaxX = 35
+```
+
+Two further optional keys tune the patrol force itself rather than its
+range: `PatrolForce` (a number, default `60`) scales how strongly - and so
+how fast, mass-scaled like gravity rather than an instant snap to some
+target speed - this enemy patrols; `PatrolInitialDirection` (`Left` or
+`Right`) overrides which way it starts heading the instant the level loads,
+in place of the default inference (toward whichever patrol bound is farther
+from its spawn position):
+
+```ini
+[FastGoblin]
+Asset = Goblin
+Clip = idle
+Kind = MovingEnemy
+Patrol = true
+PatrolForce = 90
+PatrolInitialDirection = Right
 ```
 
 Any placement (the `Player` section, or a non-static object) may also set

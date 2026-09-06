@@ -3,7 +3,7 @@ using ASCII_Hero.Client.Game.Assets;
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>The player-controlled character, backed by the loaded "Player" sprite asset.</summary>
-public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody, IKillerBody, IEffectTrigger, IClimberBody, IHangerBody
+public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody, IKillerBody, IEffectTrigger, IClimberBody, IHangerBody, IPosedBody
 {
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }
@@ -68,5 +68,33 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody, 
         {
             SetFrame(sprite, "walk_idle", sprite.GetClip("walk_idle").DefaultFrame);
         }
+    }
+
+    /// <summary>
+    /// Resolves and applies the player's pose (see <see cref="IPosedBody"/>) from its current
+    /// stance/climbing/hanging state and its own now-integrated <see cref="Velocity"/> - vertical
+    /// (via <see cref="Body2D.ResolveVerticalFacing"/>) while climbing, since climbing sets
+    /// <see cref="Velocity"/>.Y directly from up/down input and has no horizontal facing at all;
+    /// horizontal (via <see cref="Body2D.ResolveHorizontalFacing"/>) for every other stance, the
+    /// same rule <see cref="MovingEnemy2D"/> uses. Not yet called by
+    /// <see cref="Physics.PhysicsSystem"/>'s generic force-based path (the player still moves via
+    /// direct velocity assignment - see the TODO in <see cref="Physics.PhysicsSystem.Step"/>), but
+    /// implemented now so the eventual conversion to that path is a drop-in rather than a redesign.
+    /// </summary>
+    public void UpdatePose()
+    {
+        // "Jump" is a visual-only pose, not a distinct stance the player can be toggled into/out
+        // of like Crawl - it's simply what's shown while airborne, regardless of which stance
+        // (Walk or Crawl) the player was in when they left the ground (e.g. crawling off a ledge
+        // still assumes the jump pose mid-air). Stance itself stays "Walk"/"Crawl" throughout;
+        // only the resolved pose swaps to the Jump stance's clips while not grounded. Climbing/
+        // hanging take priority over both: they're their own dedicated stances ("Climb" and
+        // "Hang"/"Clamber" depending on IsClambering), shown regardless of IsGrounded.
+        var poseStance = IsClimbing ? "Climb"
+            : IsHanging ? (IsClambering ? "Clamber" : "Hang")
+            : !IsGrounded ? "Jump"
+            : Stance;
+        var facing = IsClimbing ? ResolveVerticalFacing(Velocity.Y) : ResolveHorizontalFacing(Velocity.X);
+        SetPose(Sprite, poseStance, facing);
     }
 }

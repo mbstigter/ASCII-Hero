@@ -130,9 +130,12 @@ The live game state and the entity types that make it up.
   - `Player2D` - the player-controlled character; implements the mover,
 	gravity, collector, and killer capabilities (below), plus the climbing
 	(`IClimberBody`) and hanging (`IHangerBody`) capabilities (see Physics
-	below). Nothing here is player-specific - both are ordinary capability
-	interfaces any future body (e.g. a climbing/hanging enemy) could
-	implement the same way.
+	below), plus `IPosedBody` (its `UpdatePose()` resolves stance+facing from
+	its own state, but is called explicitly by `PhysicsSystem.Step` rather
+	than through the generic per-frame dispatch below, since the player still
+	moves via direct velocity assignment - see Physics below). Nothing here
+	is player-specific - all of these are ordinary capability interfaces any
+	future body (e.g. a climbing/hanging enemy) could implement the same way.
   - `StaticObject2D` - solid, static terrain (platforms, walls, decoration).
   - `StaticEnemy2D` - a non-moving hazard (e.g. spikes) that can optionally
 	be "killable" and can trigger a cosmetic effect on contact.
@@ -143,8 +146,11 @@ The live game state and the entity types that make it up.
 	affected by gravity. Currently a simple base for future patrol-style
 	motion.
   - `MovingEnemy2D` - an AI-controlled hazard that moves and collides exactly
-	like a `DynamicObject2D`; patrol/chase behavior itself is not yet
-	implemented.
+	like a `DynamicObject2D`; optionally patrols back and forth along the X
+	axis via `IPatrolBody` (see below), and implements `IPosedBody` to face
+	(and animate through) its sprite's directional clips (e.g. `Snake`'s
+	`move_left`/`move_right`) from its own resolved velocity each frame. Chase
+	behavior is not yet implemented.
   - `Collectable2D` - a static, non-solid item removed from the world when a
 	collector body touches it (e.g. a coin or power-up).
   - `EffectInstance2D` - a purely cosmetic, non-collidable body that plays a
@@ -158,6 +164,18 @@ The live game state and the entity types that make it up.
 	(position, velocity, size, grounded state, collision shape).
   - `IGravityAffected` - can optionally opt out of gravity via a
 	`GravityAffected` flag.
+  - `IPatrolBody` - patrols back and forth along the X axis between
+	`PatrolMinX`/`PatrolMaxX` under its own mass-scaled force, recomputed each
+	frame via `UpdatePatrolDirection()` and summed into `PhysicsSystem`'s force
+	accumulator alongside gravity (see `MovingEnemy2D`'s `Patrol` placement key,
+	docs/AssetFormat.md §3.4).
+  - `IPosedBody` - resolves and applies its own sprite pose (stance +
+	facing) once per frame via `UpdatePose()`, called by `PhysicsSystem` after
+	velocity/position are integrated for the frame (mirroring how a body owns
+	`IPatrolBody.UpdatePatrolDirection()` while `PhysicsSystem` only calls it
+	at the right moment). `Body2D.ResolveHorizontalFacing(velocityX)` is the
+	one shared rule every horizontally-facing implementer (`Player2D`,
+	`MovingEnemy2D`) derives `Facing.Left`/`Right`/`Idle` from.
   - `IHazardBody` - damages a body on contact (marker only; the actual damage
 	effect is not yet implemented, as there is no health/damage system yet).
   - `ICollectableBody` - removed from the world on contact with a collector
@@ -195,11 +213,11 @@ The live game state and the entity types that make it up.
   position from velocity for every `IPhysicsBody` each frame. The player
   still moves via direct velocity assignment from input; every other moving
   body integrates instead via a per-frame mass-scaled force accumulator
-  (`StepMovingBodyWithForces` - gravity as `mass * world.Gravity`, converted
-  to acceleration via `a = F / mass`, then integrated into velocity), which
-  is numerically identical to a direct gravity-velocity add for a
-  gravity-only body but is the extension point for any future non-gravity
-  force source. Also resolves
+  (`StepMovingBodyWithForces` - gravity as `mass * world.Gravity`, plus, for
+  any `IPatrolBody`, its own patrol force, converted to acceleration via
+  `a = F / mass`, then integrated into velocity), which is numerically
+  identical to a direct gravity-velocity add for a gravity-only body but is
+  the extension point for any further non-gravity force source. Also resolves
   the player's stance (Walk/Crawl, toggled by input) and pose (which swaps to
   a visual-only "Jump" pose while airborne, independent of the underlying
   stance). Also engages/disengages `IsClimbing`/`IsHanging` (on any

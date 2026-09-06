@@ -260,6 +260,24 @@ public abstract class Body2D
     }
 
     /// <summary>
+    /// Resolves a left/right <see cref="Facing"/> from a horizontal velocity, the shared rule used
+    /// by every horizontally-facing body (the player while walking/crawling/hanging, and any
+    /// <see cref="IPosedBody"/> moving body such as <see cref="MovingEnemy2D"/>) so this mapping is
+    /// defined exactly once rather than re-implemented per body type.
+    /// </summary>
+    public static Facing ResolveHorizontalFacing(double velocityX) =>
+        velocityX < 0 ? Facing.Left : velocityX > 0 ? Facing.Right : Facing.Idle;
+
+    /// <summary>
+    /// Resolves an up/down <see cref="Facing"/> from a vertical velocity - the vertical
+    /// counterpart to <see cref="ResolveHorizontalFacing"/>, used by any body whose stance faces
+    /// along the Y axis instead of X (e.g. the player's "Climb" stance, whose idle-vs-arm-over-arm
+    /// distinction is a movement direction read from velocity, not a sideways-facing one).
+    /// </summary>
+    public static Facing ResolveVerticalFacing(double velocityY) =>
+        velocityY < 0 ? Facing.Up : velocityY > 0 ? Facing.Down : Facing.Idle;
+
+    /// <summary>
     /// Applies a specific frame (with optional tiling) to this body, updating Frame, Size, and
     /// collision rectangles. Used by both SetFrame (at spawn) and AdvanceAnimation (each frame
     /// advance during playback).

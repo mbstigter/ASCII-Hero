@@ -2,13 +2,140 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## New `IPosedBody` capability interface + shared `Body2D.ResolveHorizontalFacing`, prepping `Player2D` for its own eventual force-based conversion
+
+- **Prompted by user request:** a follow-up review of the `MovingEnemy2D`
+  facing/animation work (previous entry below) asked whether its pose logic
+  was consistent with `Player2D`'s, and - once the plan to eventually convert
+  `Player2D` to the same force-based movement model was factored in - what to
+  do about it now rather than let the two diverge further first.
+- **Two inconsistencies identified and fixed:** (1) `MovingEnemy2D` decided
+  its own pose internally (inside `UpdatePatrolDirection()`), while
+  `Player2D`'s pose was decided externally, by `PhysicsSystem.Step`; and (2)
+  `MovingEnemy2D` derived facing from patrol *intent* (`_patrolMovingRight`,
+  decided before this frame's force is integrated), while `Player2D` derived
+  facing from actual resolved `Velocity.X` (read after integration) - meaning
+  the two could briefly disagree for a frame right after a patrol turn-around.
+- **New `IPosedBody : IPhysicsBody` interface, mirroring `IPatrolBody`'s own
+  shape:** a body owns its own `UpdatePose()` decision (matching how a body
+  already owns `IPatrolBody.UpdatePatrolDirection()`), and
+  `PhysicsSystem.StepMovingBodyWithForces` merely calls it once per frame,
+  after velocity/position are finalized - not before, and not by taking over
+  the decision itself. `MovingEnemy2D.UpdatePose()` now reads its own
+  (post-integration) `Velocity.X`, resolving the frame-of-lag inconsistency
+  above.
+- **`Player2D` also implements `IPosedBody` now, even though it isn't called
+  by `PhysicsSystem`'s generic force-based path yet** (the player still moves
+  via direct velocity assignment - see the next decision entry below and the
+  `TODO` in `PhysicsSystem.Step`). Its previous inline pose-resolution block
+  moved essentially verbatim into `Player2D.UpdatePose()`, called explicitly
+  by `PhysicsSystem.Step` for now. Climb facing (no horizontal facing at all
+  while climbing) is resolved from `Velocity.Y` via a new
+  `Body2D.ResolveVerticalFacing`, the vertical counterpart to
+  `ResolveHorizontalFacing` - **not** read directly from input as first
+  implemented: `PhysicsSystem` already writes up/down input straight into
+  `Velocity.Y` every frame while climbing (`velocity.Y -= ClimbVerticalSpeed`/
+  `+= ClimbVerticalSpeed`, both today's direct-assignment code and its future
+  force-based replacement), so `Velocity.Y`'s sign is already exactly as
+  reliable a direction proxy as `Velocity.X`'s sign is for every other
+  stance - an extra input-driven field would have added state to work around
+  a problem that doesn't exist, and would still have needed removing once
+  the player's movement converts. When the player's movement is eventually
+  converted, `PhysicsSystem.Step`'s explicit `player.UpdatePose()` call
+  becomes a one-line deletion, and the player falls into the same generic
+  `is IPosedBody` dispatch every other body already uses.
+- **`Body2D.ResolveHorizontalFacing(velocityX)`/`ResolveVerticalFacing(velocityY)`**
+  factor out the `< 0 ? Left/Up : > 0 ? Right/Down : Idle` rules every
+  velocity-driven stance needs, so there is exactly one definition of each
+  for the whole game rather than copies that could quietly drift apart
+  again.
+
+## `MovingEnemy2D` patrol facing/animation via `SetPose`, plus per-placement `SnakeTwo` patrol range
+
+- **Prompted by user request:** the `Enemies` world's `Snake` placements
+  didn't visually animate or turn to face the direction they were currently
+  patrolling, even though the `Snake` asset already had `left`/`right`
+  clips authored (tracked as a follow-up in the prior decision entry below).
+  The user also added a second placement, `SnakeTwo`, and asked that it be
+  confined to the platform it starts on rather than patrolling the full
+  world like `SnakeOne`.
+- **Facing/animation implemented via the existing stance/pose mechanism,
+  not a bespoke one:** rather than inventing new per-enemy facing state,
+  `Snake` gained a `[Stances]` section (`Snake_settings.ini`) with one
+  `Move` stance mapping `Facing.Idle/Left/Right` to `move_idle`/`move_left`/
+  `move_right` (the asset's existing clip files, renamed with a `move_`
+  prefix to fit the stance-clip naming convention described in
+  [AssetFormat.md \u00a72.6](AssetFormat.md)). Pose resolution itself was
+  revised again shortly after - see the newer decision entry above.
+- **`SnakeTwo`'s patrol range set via the already-existing `PatrolMinX`/
+  `PatrolMaxX` ini keys**, not a new mechanism - those keys were added in
+  the original patrol decision below specifically so a placement could be
+  narrowed to less than the full world width. `SnakeTwo`'s placement now
+  sets them to the column span of the wood platform it spawns on
+  (`Enemies_objects.txt`), while `SnakeOne` is left without an override and
+  continues to default to the full world width.
+
+## `MovingEnemy2D` linear patrol via a new `IPatrolBody` force source, not direct velocity assignment
+
+- **Prompted by user request:** implement `MovingEnemy2D`'s previously-stubbed
+  patrol behavior so the `Enemies` world's `Snake` placement can actually
+  move, having first confirmed (in conversation, not yet written down until
+  now) that `MovingEnemy2D`/`DynamicObject2D` already move via
+  `PhysicsSystem.StepMovingBodyWithForces`'s mass-scaled force accumulator
+  (today just gravity) rather than the player's direct velocity-assignment
+  model, and that the player's own conversion to force-based movement is
+  deliberately deferred until after this non-player groundwork is proven out.
+- **Design chosen over reviving the old `ConsoleGame2D` `IMoveable`/
+  `MovementForce` model wholesale:** the old reference project's
+  `MovingEnemy2D`/`Player2D` both drove movement through one shared
+  `IMoveable` interface with a settable `MovementForce`, braking factor, and
+  max-force clamp, applied every frame via `ApplyObjectSpecificForces`. This
+  round intentionally does *not* resurrect that as a shared player/enemy
+  interface (the player is explicitly out of scope for now) - instead, a new,
+  narrower `IPatrolBody : IPhysicsBody` capability interface (mirroring how
+  `IGravityAffected` lets `PhysicsSystem` apply gravity generically to any
+  opted-in body) exposes `IsPatrolling`, `PatrolMinX`/`PatrolMaxX`, a
+  `PatrolForce` the body recomputes itself, and an `UpdatePatrolDirection()`
+  call `PhysicsSystem` invokes once per frame before reading `PatrolForce`.
+  `StepMovingBodyWithForces` was already carrying a comment describing
+  exactly this kind of extension point ("a future force source... would sum
+  its contribution into netForce here") - this fills that in rather than
+  adding a separate movement code path.
+- **Patrol direction/turn-around logic ported from the old project's
+  `UpdateLinearPatrol`,** adapted from velocity-assignment to force
+  contribution: `MovingEnemy2D.UpdatePatrolDirection()` compares its current
+  position to whichever bound (`PatrolMinX`/`PatrolMaxX`) it's currently
+  heading toward, flips direction once within a small `PatrolTurnThreshold`
+  (0.25 cells) of that bound (avoiding oscillation exactly on the boundary),
+  then sets `PatrolForce` to a fixed-magnitude (`PatrolForceMultiplier = 30`),
+  mass-scaled horizontal force in the current direction - mirroring how
+  gravity itself is `mass * world.Gravity`, so patrol speed doesn't
+  implicitly depend on a body's resolved mass the way an un-scaled force
+  would.
+- **`Patrol`/`PatrolMinX`/`PatrolMaxX` ini keys (`Kind = MovingEnemy`
+  placements only), with the range defaulting to the entire world width**
+  (`0` to `WidthCells - Size.X`) when `Patrol = true` is set without an
+  explicit range - chosen so "make this enemy patrol the level" (the
+  `Snake` placement's actual ask) needs zero further authoring, while
+  `PatrolMinX`/`PatrolMaxX` remain available to narrow a specific enemy to a
+  shorter stretch later. `MovingEnemy2D.SetPatrol(minX, maxX)` also picks an
+  initial direction toward whichever bound is farther from the spawn
+  position, so an enemy spawned near one end still sweeps the full range
+  immediately instead of hitting the near bound and turning back within the
+  first frame or two.
+- **Deliberately out of scope for this round:** sprite facing (`Snake` has
+  unused `left`/`right` clips already authored - see
+  [Design.md](Design.md)'s Planned/Future Work; implemented in the decision
+  entry above), chase-the-player behavior, and any change to player movement
+  itself - tracked as follow-ups rather than bundled in here.
+
 ## Esc-to-world-select dev/testing shortcut
 
 - **Prompted by user request:** an easy way to abandon the current world and
   return to the world-select screen while testing, without a full
   level-complete/death flow existing yet.
 - **Implementation:** `InputState.IsEscapePressed` (a plain `Escape` key
-  check, no edge-triggering needed since it just flips `GameMode` once).
+
   `GameLoop.OnPlayingFrameAsync` checks it first thing each frame and, if
   pressed, calls `WorldSelectScreen.ResetConfirmation()` (already existed for
   the failed-load recovery path) and sets `_mode = GameMode.WorldSelecting`

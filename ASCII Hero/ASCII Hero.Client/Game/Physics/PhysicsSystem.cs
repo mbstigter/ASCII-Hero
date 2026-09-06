@@ -260,30 +260,11 @@ public class PhysicsSystem
 
         player.Velocity = velocity;
 
-        // "Jump" is a visual-only pose, not a distinct stance the player can be toggled into/out
-        // of like Crawl - it's simply what's shown while airborne, regardless of which stance
-        // (Walk or Crawl) the player was in when they left the ground (e.g. crawling off a ledge
-        // still assumes the jump pose mid-air). Stance itself stays "Walk"/"Crawl" throughout;
-        // only the resolved pose swaps to the Jump stance's clips while not grounded. Climbing/
-        // hanging take priority over both: they're their own dedicated stances ("Climb" and
-        // "Hang"/"Clamber" depending on IsClambering), shown regardless of IsGrounded.
-        //
-        // Facing selects which of a stance's clips to show, and is resolved along whichever axis
-        // that stance actually moves on (see Facing's own doc comment) - horizontal (Left/Right,
-        // from velocity.X) for every ground/air/hang stance, but vertical (Up/Down, from the
-        // climb input directly rather than velocity.Y, since climbing sets velocity.Y itself
-        // below) for Climb, whose idle-vs-arm-over-arm distinction is a movement direction, not a
-        // sideways-facing one. This replaces the previous separate "ClimbMoving" stance - climbing
-        // now has exactly one stance with three clips (Idle/Up/Down), symmetric with every other
-        // stance instead of being a special case.
-        var poseStance = player.IsClimbing ? "Climb"
-            : player.IsHanging ? (player.IsClambering ? "Clamber" : "Hang")
-            : !player.IsGrounded ? "Jump"
-            : player.Stance;
-        var facing = player.IsClimbing
-            ? (input.IsUpPressed ? Facing.Up : input.IsDownPressed ? Facing.Down : Facing.Idle)
-            : velocity.X < 0 ? Facing.Left : velocity.X > 0 ? Facing.Right : Facing.Idle;
-        player.SetPose(player.Sprite, poseStance, facing);
+        // Pose resolution itself lives on Player2D.UpdatePose (see IPosedBody), called here
+        // explicitly since the player doesn't yet go through the generic force-based dispatch
+        // (StepMovingBodyWithForces) every other IPosedBody does - once it moves there,
+        // PhysicsSystem calling UpdatePose becomes unnecessary here entirely.
+        player.UpdatePose();
 
         foreach (var body in world.Objects)
         {
@@ -335,14 +316,15 @@ public class PhysicsSystem
     /// <summary>
     /// Force-based counterpart to <see cref="StepMovingBody"/>, used for every non-player moving
     /// body (see the dispatch loop in <see cref="Step"/>): rather than adding a fixed velocity
-    /// delta for gravity directly, this accumulates forces acting on the body this frame (today,
-    /// just gravity as a mass-scaled force - <c>F = mass * gravity</c>, matching how a real
-    /// falling object's weight scales with its mass) into a net force, converts that to an
-    /// acceleration via <c>a = F / mass</c>, and integrates that into velocity. For a single
-    /// gravity-only force this reduces to the exact same <c>velocity.Y += gravity * dt</c> as
-    /// before (mass cancels out of <c>F / mass = mass * gravity / mass = gravity</c>) - the
-    /// accumulator's value is that any future force source (wind, thrust, a spring, etc.) can be
-    /// summed in here alongside gravity before the single acceleration/integration step, rather
+    /// delta for gravity directly, this accumulates forces acting on the body this frame (gravity
+    /// as a mass-scaled force - <c>F = mass * gravity</c>, matching how a real falling object's
+    /// weight scales with its mass - plus, for an <see cref="IPatrolBody"/>, its own patrol force)
+    /// into a net force, converts that to an acceleration via <c>a = F / mass</c>, and integrates
+    /// that into velocity. For a single gravity-only force this reduces to the exact same
+    /// <c>velocity.Y += gravity * dt</c> as before (mass cancels out of
+    /// <c>F / mass = mass * gravity / mass = gravity</c>) - the accumulator's value is that any
+    /// further force source (wind, thrust, a spring, etc.) can be summed in here alongside gravity
+    /// before the single acceleration/integration step, rather
     /// than every force needing its own bespoke velocity-mutation code path. A body with no
     /// resolved material (<see cref="Body2D.Mass"/> of 0) is treated as mass 1 for this
     /// conversion, same rationale as <see cref="CollisionSystem"/>'s impulse math, so an
@@ -368,10 +350,16 @@ public class PhysicsSystem
             netForce.Y += mass * world.Gravity;
         }
 
-        // Extension point: a future force source (e.g. a hypothetical IThrustBody capability for
-        // a moving enemy that flies/hovers via its own upward force) would sum its contribution
-        // into netForce here, alongside gravity, before the single acceleration/integration step
-        // below - not add a separate bespoke velocity mutation. No such capability exists yet.
+        // Patrolling bodies (see IPatrolBody) contribute their own horizontal force here,
+        // recomputed each frame from their current position relative to their patrol bounds -
+        // this is the "future force source" extension point this comment used to describe before
+        // one actually existed; any further force source (wind, thrust, etc.) would sum in here
+        // the same way, alongside gravity, before the single acceleration/integration step below.
+        if (body is IPatrolBody patrolBody)
+        {
+            patrolBody.UpdatePatrolDirection();
+            netForce += patrolBody.PatrolForce;
+        }
 
         var acceleration = new Vector2D(netForce.X / mass, netForce.Y / mass);
 
@@ -383,5 +371,13 @@ public class PhysicsSystem
         body.Position = new Vector2D(
             body.Position.X + velocity.X * deltaSeconds,
             body.Position.Y + velocity.Y * deltaSeconds);
+
+        // Pose (see IPosedBody) is resolved last, after velocity/position are both finalized for
+        // this frame, so a velocity-derived facing (e.g. MovingEnemy2D's) reflects this frame's
+        // actual resolved motion rather than a pre-integration estimate.
+        if (body is IPosedBody posedBody)
+        {
+            posedBody.UpdatePose();
+        }
     }
 }
