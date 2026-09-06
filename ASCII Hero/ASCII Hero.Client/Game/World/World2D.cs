@@ -100,12 +100,24 @@ public class World2D
     public int HeightCells { get; private set; }
 
     /// <summary>
+    /// Total number of logical steps <see cref="LoadAsync"/> reports through its optional
+    /// <c>progress</c> callback - used by <see cref="Menu.WorldSelectScreen"/>/
+    /// <see cref="Rendering.WorldSelectRenderer"/> to size the "Loading [World]" progress bar
+    /// shown while a world loads (see <c>GameLoop</c>'s LoadingWorld <c>GameMode</c>).
+    /// </summary>
+    public const int LoadStepCount = 5;
+
+    /// <summary>
     /// Loads a world's background/object-placement files and the sprite assets they reference,
     /// building up Platforms and the Player's spawn position/sprite. Replaces what used to be a
     /// hardcoded constructor - see AssetFormat.md section 3 for the world file format and
-    /// section 1.1 for the Global/World fallback rule applied by SpriteLoader.
+    /// section 1.1 for the Global/World fallback rule applied by SpriteLoader. The optional
+    /// <paramref name="progress"/> callback is invoked once after each of <see cref="LoadStepCount"/>
+    /// logical steps completes (settings, palette/materials, background, object definitions,
+    /// object placements), reporting the cumulative step count so far - purely a UI hook, it does
+    /// not affect loading itself.
     /// </summary>
-    public static async Task<World2D> LoadAsync(IAssetFileProvider fileProvider, string worldName)
+    public static async Task<World2D> LoadAsync(IAssetFileProvider fileProvider, string worldName, IProgress<int>? progress = null)
     {
         var world = new World2D();
         var worldFolder = $"{AssetPathResolver.WorldsRoot}/{worldName}";
@@ -123,9 +135,11 @@ public class World2D
         {
             world.Gravity = gravity;
         }
+        progress?.Report(1);
 
         world.Palette = await ColorPalette.LoadAsync(fileProvider, worldName);
         world.Materials = await MaterialLibrary.LoadAsync(fileProvider, worldName);
+        progress?.Report(2);
 
         var backgroundContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_background_characters.txt")
             ?? throw new FileNotFoundException($"Missing required background layer for world '{worldName}'.");
@@ -140,6 +154,7 @@ public class World2D
         var backgroundBackContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_background_backgroundcolors.txt");
         world.BackgroundFore = AssetTextReader.ParseSecondaryLayer(backgroundForeContent, backgroundFrames, emptyChar)[0];
         world.BackgroundBack = AssetTextReader.ParseSecondaryLayer(backgroundBackContent, backgroundFrames, emptyChar)[0];
+        progress?.Report(3);
 
         var objectsIniContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_objects.ini")
             ?? throw new FileNotFoundException($"Missing required object placement definitions for world '{worldName}'.");
@@ -148,6 +163,7 @@ public class World2D
         var objectsContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_objects.txt")
             ?? throw new FileNotFoundException($"Missing required object placement grid for world '{worldName}'.");
         var objectsGrid = AssetTextReader.ParseFixedSizeGrid(objectsContent, width, height, emptyChar);
+        progress?.Report(4);
 
         var spriteLoader = new SpriteLoader(fileProvider);
         var spriteCache = new Dictionary<string, SpriteAsset>(StringComparer.OrdinalIgnoreCase);
@@ -342,6 +358,7 @@ public class World2D
 
         // No object explicitly claimed the camera via CameraTarget = true; default to the player.
         world.CameraTarget ??= world.Player;
+        progress?.Report(5);
 
         return world;
     }

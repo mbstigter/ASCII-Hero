@@ -57,6 +57,15 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private WorldSelectScreen _worldSelect = null!;
     private GameMode _mode = GameMode.WorldSelecting;
 
+    /// <summary>
+    /// The "Loading [World]" progress bar shown under the thumbnail row while <see cref="GameMode.LoadingWorld"/>
+    /// is active - created fresh each time a world is confirmed (see <see cref="OnWorldSelectingFrameAsync"/>)
+    /// and filled in by the <see cref="IProgress{T}"/> callback passed to <see cref="World2D.LoadAsync"/>
+    /// as loading proceeds, so <see cref="OnFrame"/> can keep redrawing it instead of freezing the
+    /// last selection-screen frame.
+    /// </summary>
+    private UIBar? _loadingBar;
+
     private const string HudForeColor = "#00ff00";
 
     /// <summary>
@@ -106,8 +115,17 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     {
         // Assets are loaded once, up front, over HTTP (see IAssetFileProvider) so gameplay never
         // stalls mid-frame waiting on a fetch; the frame loop only starts driving Physics/etc.
-        // once this completes.
-        _world = await World2D.LoadAsync(assetFileProvider, worldName);
+        // once this completes. _loadingBar is filled in as each logical loading step completes
+        // (see World2D.LoadStepCount), read back by OnFrame's GameMode.LoadingWorld case so the
+        // bar visibly fills instead of the canvas freezing on the last selection-screen frame.
+        var progress = new Progress<int>(stepsCompleted =>
+        {
+            if (_loadingBar is not null)
+            {
+                _loadingBar.CurrentValue = stepsCompleted;
+            }
+        });
+        _world = await World2D.LoadAsync(assetFileProvider, worldName, progress);
 
         // Placeholder readout - no actual points/rings tracking exists yet; this just shows
         // what the HUD text line is eventually meant to display (see _hudText's own doc comment).
@@ -180,9 +198,11 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
                     await OnPlayingFrameAsync(deltaSeconds);
                     break;
                 case GameMode.LoadingWorld:
-                    // Nothing to do - a confirmed world's World2D is already being loaded by an
-                    // earlier call to OnWorldSelectingFrameAsync; that call itself will switch
-                    // _mode to Playing once it completes.
+                    // A confirmed world's World2D is already being loaded by an earlier call to
+                    // OnWorldSelectingFrameAsync (that call itself will switch _mode to Playing
+                    // once it completes) - keep redrawing the selection screen plus the filling
+                    // _loadingBar each frame in the meantime, rather than freezing the canvas.
+                    await OnLoadingWorldFrameAsync();
                     break;
             }
         }
@@ -231,16 +251,39 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             // OnFrame call, but flipping _mode here too keeps the three states honest even if
             // that guard is ever loosened, and documents the transition explicitly.
             _mode = GameMode.LoadingWorld;
+            _loadingBar = WorldSelectRenderer.CreateLoadingBar(_worldSelect, _viewportWidthCells, _viewportHeightCells, World2D.LoadStepCount);
+            await OnLoadingWorldFrameAsync();
 
             var worldName = _worldSelect.SelectedWorld.WorldName;
             await LoadWorldAsync(worldName);
 
             _mode = GameMode.Playing;
+            _loadingBar = null;
             return;
         }
 
         var glyphs = WorldSelectRenderer.BuildFrame(
             _worldSelect, _viewportWidthCells, _viewportHeightCells,
+            _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+        await canvasBridge.DrawFrameAsync(ViewportWidthPixels, ViewportHeightPixels, glyphs);
+    }
+
+    /// <summary>
+    /// Draws the frozen world-selection layout plus the current <see cref="_loadingBar"/> fill
+    /// level. Called both once synchronously right as loading starts (so the bar appears at 0
+    /// immediately, before the first await inside <see cref="LoadWorldAsync"/>) and from every
+    /// subsequent <see cref="OnFrame"/> tick that lands while <see cref="GameMode.LoadingWorld"/>
+    /// is still active.
+    /// </summary>
+    private async Task OnLoadingWorldFrameAsync()
+    {
+        if (_loadingBar is null)
+        {
+            return;
+        }
+
+        var glyphs = WorldSelectRenderer.BuildLoadingFrame(
+            _worldSelect, _loadingBar, _viewportWidthCells, _viewportHeightCells,
             _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         await canvasBridge.DrawFrameAsync(ViewportWidthPixels, ViewportHeightPixels, glyphs);
     }

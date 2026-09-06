@@ -378,8 +378,9 @@ The live game state and the entity types that make it up.
   - Internally a strict three-state `GameMode` (`WorldSelecting` ->
     `LoadingWorld` -> `Playing`) - never more than one is active, and
     `OnFrame` switches on it to decide whether to drive
-    `WorldSelectScreen`/`WorldSelectRenderer`, do nothing (a world's
-    `World2D.LoadAsync` is in flight), or run the normal gameplay tick.
+    `WorldSelectScreen`/`WorldSelectRenderer`, redraw the frozen selection
+    layout plus a filling "Loading..." `UIBar` (a world's `World2D.LoadAsync`
+    is in flight), or run the normal gameplay tick.
   - `OnFrame` is invoked by JS in a fire-and-forget fashion - the next
     `requestAnimationFrame` call is scheduled without waiting for the
     previous call's `Task` to finish (see game-interop.js) - so a frame that
@@ -415,14 +416,21 @@ The live game state and the entity types that make it up.
 	 and puts `GameLoop` into its `WorldSelecting` `GameMode`.
 4. From here, `OnFrame` drives the world-selection screen (see below) until
    the player confirms a world, at which point `GameLoop` switches to its
-   `LoadingWorld` `GameMode` and loads that world's `World2D` via
-   `World2D.LoadAsync` (reading settings, background, palette, and every
-   object placement, resolving each placement's sprite through
-   `SpriteLoader`) - so gameplay never stalls mid-frame waiting on a network
-   fetch - snaps the camera immediately onto the world's designated camera
-   target (the player by default, or another body if a world opts one in),
-   and finally switches to its `Playing` `GameMode`, running the normal
-   per-frame gameplay tick from the next frame on.
+   `LoadingWorld` `GameMode`, creates a `UIBar` sized to
+   `World2D.LoadStepCount` (`WorldSelectRenderer.CreateLoadingBar`), and
+   loads that world's `World2D` via `World2D.LoadAsync` (reading settings,
+   palette/materials, background, object definitions, and every object
+   placement, resolving each placement's sprite through `SpriteLoader`) - so
+   gameplay never stalls mid-frame waiting on a network fetch. `LoadAsync`
+   reports its progress after each of those logical steps via an
+   `IProgress<int>` callback, which fills in the bar's `CurrentValue`; every
+   `OnFrame` tick that lands while still in `LoadingWorld` redraws the
+   frozen selection layout plus that bar (`WorldSelectRenderer.BuildLoadingFrame`)
+   instead of leaving the canvas showing a stale frame. Once loading
+   completes, `GameLoop` snaps the camera immediately onto the world's
+   designated camera target (the player by default, or another body if a
+   world opts one in), and finally switches to its `Playing` `GameMode`,
+   running the normal per-frame gameplay tick from the next frame on.
 
 ### Per-Frame Tick
 

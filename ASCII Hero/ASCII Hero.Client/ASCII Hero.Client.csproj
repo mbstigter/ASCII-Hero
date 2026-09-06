@@ -10,6 +10,14 @@
     <AssemblyName>$(AssemblyName.Replace(' ', '_'))</AssemblyName>
     <BlazorDisableThrowNavigationException>true</BlazorDisableThrowNavigationException>
     <!--
+      Ahead-of-time compiles the app to native WebAssembly instead of running
+      as interpreted IL. Significantly improves runtime performance (frame
+      rate) for CPU-bound code like the game loop, at the cost of larger
+      publish output and longer publish time. Only affects `dotnet publish`,
+      not local `dotnet run`/F5 debugging.
+    -->
+    <RunAOTCompilation>true</RunAOTCompilation>
+    <!--
       Set to true only by the GitHub Pages publish workflow (see
       .github/workflows/deploy-gh-pages.yml), which publishes this project
       standalone rather than hosted inside the ASCII Hero server project.

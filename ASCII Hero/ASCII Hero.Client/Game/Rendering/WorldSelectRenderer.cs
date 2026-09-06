@@ -22,6 +22,26 @@ public static class WorldSelectRenderer
     private const int SlotVerticalPadding = 1;
     private const int BlockHeight = TitleRowCount + SlotVerticalPadding + WorldCatalog.ThumbnailHeight + SlotVerticalPadding;
 
+    // Layout for the "Loading [World]" progress bar shown under the thumbnail row while
+    // World2D.LoadAsync is in flight (see GameLoop's LoadingWorld GameMode).
+    private const int LoadingBarWidth = 30;
+    private const int LoadingBarGapRows = 2;
+    private const string LoadingLabelText = "Loading...";
+
+    // ASCII logo shown above the thumbnail row/selector frame - purely decorative, drawn via a
+    // single multi-line UILabel same as any other screen-space text.
+    private static readonly string[] LogoLines =
+    [
+        @"   ___   _____ ______________   __  __              ",
+        @"  /   | / ___// ____/  _/  _/  / / / /__  _________ ",
+        @" / /| | \__ \/ /    / / / /   / /_/ / _ \/ ___/ __ \",
+        @"/ ___ |___/ / /____/ /_/ /   / __  /  __/ /  / /_/ /",
+        @"/_/  |_/____/\____/___/___/  /_/ /_/\___/_/   \____/ ",
+    ];
+    private static readonly int LogoWidth = LogoLines.Max(line => line.Length);
+    private const int LogoHeight = 5;
+    private const int LogoGapRows = 1;
+
     /// <summary>
     /// Picks 5, 3, or 1 visible slots - whichever largest odd count both fits the viewport width
     /// and doesn't exceed how many worlds actually exist (so a short catalog doesn't reserve
@@ -52,6 +72,10 @@ public static class WorldSelectRenderer
         var startCol = (viewportWidthCells - totalRowWidth) / 2;
         var startRow = (viewportHeightCells - BlockHeight) / 2;
 
+        var logoLabel = new UILabel((viewportWidthCells - LogoWidth) / 2, startRow - LogoGapRows - LogoHeight, width: LogoWidth, height: LogoHeight, foreColor: WorldSelectForeColor);
+        logoLabel.Lines.AddRange(LogoLines);
+        UIRenderer.AddLabel(glyphs, logoLabel, cellWidthPixels, cellHeightPixels);
+
         for (var slot = 0; slot < screen.VisibleSlotCount; slot++)
         {
             var worldIndex = screen.ScrollOffset + slot;
@@ -75,6 +99,52 @@ public static class WorldSelectRenderer
 
             AddThumbnail(glyphs, world, thumbCol, thumbRow, cellWidthPixels, cellHeightPixels);
         }
+
+        return glyphs;
+    }
+
+    /// <summary>
+    /// Builds a fresh <see cref="UIBar"/> for the "Loading [World]" readout shown under the
+    /// thumbnail row while the selected world's <see cref="World.World2D"/> is being loaded (see
+    /// <c>GameLoop</c>'s LoadingWorld <c>GameMode</c>) - centered the same way the
+    /// thumbnail row itself is, so it lines up regardless of viewport width/visible slot count.
+    /// The caller owns the returned instance and updates its <see cref="UIBar.CurrentValue"/> as
+    /// loading progresses; this method only computes the (static) layout.
+    /// </summary>
+    public static UIBar CreateLoadingBar(WorldSelectScreen screen, double viewportWidthCells, double viewportHeightCells, double stepCount)
+    {
+        var totalRowWidth = screen.VisibleSlotCount * SlotPitch;
+        var startRow = (viewportHeightCells - BlockHeight) / 2;
+
+        var col = (viewportWidthCells - LoadingBarWidth) / 2;
+        var row = startRow + BlockHeight + LoadingBarGapRows;
+
+        return new UIBar(col, row, LoadingBarWidth, height: 1, minValue: 0, maxValue: stepCount, foreColor: WorldSelectForeColor)
+        {
+            CurrentValue = 0,
+        };
+    }
+
+    /// <summary>
+    /// Draws the world-selection screen's static layout (thumbnails/titles/selection box, same
+    /// as <see cref="BuildFrame"/>) plus the given loading progress bar and its "Loading..."
+    /// label underneath - used while <c>GameLoop</c> is in its LoadingWorld <c>GameMode</c> so
+    /// the last-confirmed selection stays visible and the bar can visibly fill in, instead of
+    /// freezing the last drawn frame.
+    /// </summary>
+    public static List<Glyph> BuildLoadingFrame(
+        WorldSelectScreen screen, UIBar loadingBar, double viewportWidthCells, double viewportHeightCells,
+        double cellWidthPixels, double cellHeightPixels)
+    {
+        var glyphs = BuildFrame(screen, viewportWidthCells, viewportHeightCells, cellWidthPixels, cellHeightPixels);
+
+        var labelCol = loadingBar.Col + (loadingBar.Width - LoadingLabelText.Length) / 2.0;
+        var labelRow = loadingBar.Row - 1;
+        var label = new UILabel(labelCol, labelRow, width: LoadingLabelText.Length, height: 1, foreColor: WorldSelectForeColor);
+        label.Lines.Add(LoadingLabelText);
+        UIRenderer.AddLabel(glyphs, label, cellWidthPixels, cellHeightPixels);
+
+        UIRenderer.AddBar(glyphs, loadingBar, cellWidthPixels, cellHeightPixels);
 
         return glyphs;
     }
