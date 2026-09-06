@@ -22,23 +22,26 @@ public class WorldSelectScreen(IReadOnlyList<WorldSummary> worlds, int visibleSl
     public int SelectedIndex { get; private set; }
 
     /// <summary>
-    /// Index into <see cref="Worlds"/> of the leftmost currently-visible slot. Keeps
-    /// <see cref="SelectedIndex"/> centered in the middle slot whenever there are enough worlds on
-    /// both sides to do so, clamping at either end of the list otherwise (e.g. the initial state,
-    /// where <see cref="SelectedIndex"/> is 0 and there is nothing to its left to scroll in).
+    /// Index into <see cref="Worlds"/> of the leftmost currently-visible slot. Scrolls the
+    /// minimum amount needed to keep <see cref="SelectedIndex"/> in view - rather than always
+    /// re-centering it - so the selector box moves exactly one slot per Left/Right press and only
+    /// reaches the rightmost/leftmost slot once <see cref="SelectedIndex"/> is actually at the end
+    /// of the list. A purely position-based (re-centering) formula would occasionally leave the
+    /// box visually stalled on one press and then jump on the next whenever the world count and
+    /// <see cref="VisibleSlotCount"/> don't divide evenly (e.g. 4 worlds, 3 visible slots).
     /// </summary>
-    public int ScrollOffset
-    {
-        get
-        {
-            var centerSlot = VisibleSlotCount / 2;
-            var maxOffset = Math.Max(0, Worlds.Count - VisibleSlotCount);
-            return Math.Clamp(SelectedIndex - centerSlot, 0, maxOffset);
-        }
-    }
+    public int ScrollOffset { get; private set; }
 
     /// <summary>True once the player has confirmed <see cref="SelectedWorld"/> to play.</summary>
     public bool Confirmed { get; private set; }
+
+    /// <summary>
+    /// Clears <see cref="Confirmed"/> so the player can pick again - used by <see cref="GameLoop"/>
+    /// if the confirmed world's <see cref="World.World2D.LoadAsync"/> fails, so a failed load
+    /// returns to a normally-interactive selection screen instead of one stuck thinking a
+    /// (failed) confirmation is still pending.
+    /// </summary>
+    public void ResetConfirmation() => Confirmed = false;
 
     public WorldSummary SelectedWorld => Worlds[SelectedIndex];
 
@@ -66,6 +69,13 @@ public class WorldSelectScreen(IReadOnlyList<WorldSummary> worlds, int visibleSl
         {
             SelectedIndex = Math.Max(SelectedIndex - 1, 0);
         }
+
+        // Scroll the minimum amount needed to keep SelectedIndex within the visible slot range -
+        // see ScrollOffset's own doc comment for why this can't just be recomputed from
+        // SelectedIndex alone.
+        var maxOffset = Math.Max(0, Worlds.Count - VisibleSlotCount);
+        ScrollOffset = Math.Clamp(ScrollOffset, SelectedIndex - (VisibleSlotCount - 1), SelectedIndex);
+        ScrollOffset = Math.Clamp(ScrollOffset, 0, maxOffset);
 
         if (confirmPressed && !_wasConfirmPressed)
         {

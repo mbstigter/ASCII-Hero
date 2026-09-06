@@ -112,12 +112,14 @@ public class World2D
     /// building up Platforms and the Player's spawn position/sprite. Replaces what used to be a
     /// hardcoded constructor - see AssetFormat.md section 3 for the world file format and
     /// section 1.1 for the Global/World fallback rule applied by SpriteLoader. The optional
-    /// <paramref name="progress"/> callback is invoked once after each of <see cref="LoadStepCount"/>
-    /// logical steps completes (settings, palette/materials, background, object definitions,
-    /// object placements), reporting the cumulative step count so far - purely a UI hook, it does
-    /// not affect loading itself.
+    /// <paramref name="progress"/> callback is invoked once after each of the first 4 logical
+    /// steps completes (settings, palette/materials, background, object definitions), then
+    /// repeatedly - fractionally, between 4 and <see cref="LoadStepCount"/> - as the 5th step
+    /// (spawning every object placement and loading each one's sprite over HTTP, by far the
+    /// longest-running step) works through the placement grid row by row, so the bar doesn't
+    /// appear to stall for the bulk of a load. Purely a UI hook; does not affect loading itself.
     /// </summary>
-    public static async Task<World2D> LoadAsync(IAssetFileProvider fileProvider, string worldName, IProgress<int>? progress = null)
+    public static async Task<World2D> LoadAsync(IAssetFileProvider fileProvider, string worldName, IProgress<double>? progress = null)
     {
         var world = new World2D();
         var worldFolder = $"{AssetPathResolver.WorldsRoot}/{worldName}";
@@ -170,6 +172,11 @@ public class World2D
 
         for (var row = 0; row < height; row++)
         {
+            // Reports fractional progress through the 5th (by far longest) step, one row of the
+            // placement grid at a time, so the bar keeps visibly advancing across the whole load
+            // instead of jumping straight from 4/5 to 5/5 once every sprite has been fetched.
+            progress?.Report(4.0 + (double)row / height);
+
             for (var col = 0; col < width; col++)
             {
                 var code = objectsGrid[row, col];

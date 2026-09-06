@@ -39,7 +39,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         /// <summary>Driving <see cref="WorldSelectScreen"/>/<see cref="WorldSelectRenderer"/>; no <see cref="World2D"/> exists yet.</summary>
         WorldSelecting,
 
-        /// <summary>A world was confirmed and <see cref="World2D.LoadAsync"/> is in flight; frames are dropped until it completes.</summary>
+        /// <summary>A world was confirmed and <see cref="World2D.LoadAsync"/> is running in the background via <see cref="_loadWorldTask"/>; each frame redraws the selection screen plus the filling loading bar until it completes.</summary>
         LoadingWorld,
 
         /// <summary>Driving the normal per-frame Physics/Collision/Camera/Render tick against a loaded <see cref="World2D"/>.</summary>
@@ -65,6 +65,17 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// last selection-screen frame.
     /// </summary>
     private UIBar? _loadingBar;
+
+    /// <summary>
+    /// The in-flight <see cref="LoadWorldAsync"/> call while <see cref="GameMode.LoadingWorld"/> is
+    /// active. Deliberately *not* awaited from within <see cref="OnWorldSelectingFrameAsync"/> -
+    /// doing so would hold <see cref="OnFrame"/>'s <see cref="_isProcessingFrame"/> guard for the
+    /// entire load, causing every intervening requestAnimationFrame tick (and so every intervening
+    /// redraw of <see cref="_loadingBar"/>) to be dropped, which is why the bar used to appear but
+    /// never visibly fill. Instead, each <see cref="OnFrame"/> tick while <see cref="GameMode.LoadingWorld"/>
+    /// is active redraws the bar and polls this task for completion.
+    /// </summary>
+    private Task? _loadWorldTask;
 
     private const string HudForeColor = "#00ff00";
 
@@ -118,7 +129,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         // once this completes. _loadingBar is filled in as each logical loading step completes
         // (see World2D.LoadStepCount), read back by OnFrame's GameMode.LoadingWorld case so the
         // bar visibly fills instead of the canvas freezing on the last selection-screen frame.
-        var progress = new Progress<int>(stepsCompleted =>
+        var progress = new Progress<double>(stepsCompleted =>
         {
             if (_loadingBar is not null)
             {
@@ -198,10 +209,10 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
                     await OnPlayingFrameAsync(deltaSeconds);
                     break;
                 case GameMode.LoadingWorld:
-                    // A confirmed world's World2D is already being loaded by an earlier call to
-                    // OnWorldSelectingFrameAsync (that call itself will switch _mode to Playing
-                    // once it completes) - keep redrawing the selection screen plus the filling
-                    // _loadingBar each frame in the meantime, rather than freezing the canvas.
+                    // A confirmed world's World2D is loading in the background via _loadWorldTask
+                    // (started, not awaited, by OnWorldSelectingFrameAsync) - keep redrawing the
+                    // selection screen plus the filling _loadingBar each frame, and switch to
+                    // Playing once that task completes.
                     await OnLoadingWorldFrameAsync();
                     break;
             }
@@ -246,19 +257,17 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
         if (_worldSelect.Confirmed)
         {
-            // Switch modes synchronously, before the genuine async gap below (World2D.LoadAsync
-            // does real HTTP fetches) - _isProcessingFrame already blocks a literally-overlapping
-            // OnFrame call, but flipping _mode here too keeps the three states honest even if
-            // that guard is ever loosened, and documents the transition explicitly.
+            // Switch modes synchronously, then kick off the load WITHOUT awaiting it here - see
+            // _loadWorldTask's doc comment for why: awaiting it inline would hold this OnFrame
+            // call's _isProcessingFrame guard for the whole load, starving every intervening
+            // requestAnimationFrame tick (and so _loadingBar's redraw) until it's already done.
             _mode = GameMode.LoadingWorld;
             _loadingBar = WorldSelectRenderer.CreateLoadingBar(_worldSelect, _viewportWidthCells, _viewportHeightCells, World2D.LoadStepCount);
-            await OnLoadingWorldFrameAsync();
 
             var worldName = _worldSelect.SelectedWorld.WorldName;
-            await LoadWorldAsync(worldName);
+            _loadWorldTask = LoadWorldAsync(worldName);
 
-            _mode = GameMode.Playing;
-            _loadingBar = null;
+            await OnLoadingWorldFrameAsync();
             return;
         }
 
@@ -270,14 +279,14 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
     /// <summary>
     /// Draws the frozen world-selection layout plus the current <see cref="_loadingBar"/> fill
-    /// level. Called both once synchronously right as loading starts (so the bar appears at 0
-    /// immediately, before the first await inside <see cref="LoadWorldAsync"/>) and from every
-    /// subsequent <see cref="OnFrame"/> tick that lands while <see cref="GameMode.LoadingWorld"/>
+    /// level, and switches to <see cref="GameMode.Playing"/> once <see cref="_loadWorldTask"/>
+    /// completes. Called once right as loading starts (so the bar appears at 0 immediately) and
+    /// from every subsequent <see cref="OnFrame"/> tick that lands while <see cref="GameMode.LoadingWorld"/>
     /// is still active.
     /// </summary>
     private async Task OnLoadingWorldFrameAsync()
     {
-        if (_loadingBar is null)
+        if (_loadingBar is null || _loadWorldTask is null)
         {
             return;
         }
@@ -286,5 +295,34 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             _worldSelect, _loadingBar, _viewportWidthCells, _viewportHeightCells,
             _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         await canvasBridge.DrawFrameAsync(ViewportWidthPixels, ViewportHeightPixels, glyphs);
+
+        if (_loadWorldTask.IsCompleted)
+        {
+            try
+            {
+                // Propagate any load failure instead of silently swallowing it.
+                await _loadWorldTask;
+
+                _mode = GameMode.Playing;
+            }
+            catch (Exception ex)
+            {
+                // Without this, a faulted _loadWorldTask stays IsCompleted forever, so every
+                // subsequent OnFrame tick would re-await (and re-throw from) it here - which is
+                // exactly why the bar previously appeared to get permanently "stuck" at whatever
+                // percentage it last reached instead of surfacing the actual failure. Logged via
+                // Console (visible in the browser dev tools console for a WASM app) since there's
+                // no dedicated error-screen UI yet; falling back to WorldSelecting lets the player
+                // at least try again or pick a different world instead of a dead loading screen.
+                Console.Error.WriteLine($"Failed to load world '{_worldSelect.SelectedWorld.WorldName}': {ex}");
+                _mode = GameMode.WorldSelecting;
+                _worldSelect.ResetConfirmation();
+            }
+            finally
+            {
+                _loadingBar = null;
+                _loadWorldTask = null;
+            }
+        }
     }
 }
