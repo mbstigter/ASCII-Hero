@@ -20,9 +20,9 @@ public class PhysicsSystem
     private const double ClimbHorizontalSpeed = 8.0;
     private const double HangSpeed = 8.0;
     private const double ClamberSpeed = 5.0;
-    private const double WalkJumpSpeed = 18.0;
-    private const double ClimbJumpSpeed = 15.0;
-    private const double HangJumpSpeed = 12.0;
+    private const double WalkJumpSpeed = 22.0;
+    private const double ClimbJumpSpeed = 18.0;
+    private const double HangJumpSpeed = 14.0;
 
     private bool _wasUpKeyDown;
     private bool _wasDownKeyDown;

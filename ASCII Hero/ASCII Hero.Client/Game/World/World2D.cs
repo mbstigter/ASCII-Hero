@@ -105,7 +105,7 @@ public class World2D
     /// <see cref="Rendering.WorldSelectRenderer"/> to size the "Loading [World]" progress bar
     /// shown while a world loads (see <c>GameLoop</c>'s LoadingWorld <c>GameMode</c>).
     /// </summary>
-    public const int LoadStepCount = 5;
+    public const int LoadStepCount = 6;
 
     /// <summary>
     /// Loads a world's background/object-placement files and the sprite assets they reference,
@@ -114,10 +114,12 @@ public class World2D
     /// section 1.1 for the Global/World fallback rule applied by SpriteLoader. The optional
     /// <paramref name="progress"/> callback is invoked once after each of the first 4 logical
     /// steps completes (settings, palette/materials, background, object definitions), then
-    /// repeatedly - fractionally, between 4 and <see cref="LoadStepCount"/> - as the 5th step
-    /// (spawning every object placement and loading each one's sprite over HTTP, by far the
-    /// longest-running step) works through the placement grid row by row, so the bar doesn't
-    /// appear to stall for the bulk of a load. Purely a UI hook; does not affect loading itself.
+    /// fractionally within step 5 as each distinct sprite asset (and clip) any object definition
+    /// needs gets loaded - one asset at a time, evenly dividing 4-5 by how many distinct assets
+    /// there are, since this is where the bulk of load time (HTTP fetches) actually happens - and
+    /// then fractionally within step 6 as every object placement is spawned from the now fully-
+    /// cached sprites, one placement-grid row at a time, evenly dividing 5-6 by the grid's row
+    /// count. Purely a UI hook; does not affect loading itself.
     /// </summary>
     public static async Task<World2D> LoadAsync(IAssetFileProvider fileProvider, string worldName, IProgress<double>? progress = null)
     {
@@ -170,12 +172,56 @@ public class World2D
         var spriteLoader = new SpriteLoader(fileProvider);
         var spriteCache = new Dictionary<string, SpriteAsset>(StringComparer.OrdinalIgnoreCase);
 
+        // Pre-scan every object definition (not the placement grid) to work out which sprite
+        // assets this world actually needs and, per asset, the full union of clips any section
+        // requests from it - a section only names the clip(s) it itself needs, but two sections
+        // can share one asset while asking for different clips (e.g. a "Spikes" placement using
+        // an enemy asset's "idle" clip and a "FlameTrap" placement using the same asset's "trap"
+        // and "burst" clips), so loading must be driven by the union, not any single section.
+        var clipNamesByAsset = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+        foreach (var sectionName in objectsIni.Section("ObjectCodes").Values.Distinct())
+        {
+            var objectSection = objectsIni.Section(sectionName);
+            if (!objectSection.TryGetValue("Asset", out var assetName))
+            {
+                throw new FormatException($"Section '{sectionName}' of world '{worldName}' is missing required key 'Asset'.");
+            }
+
+            var clipName = objectSection.TryGetValue("Clip", out var clip) ? clip : "default";
+            var effectClipName = objectSection.TryGetValue("EffectClip", out var effectClipText) ? effectClipText : null;
+
+            if (!clipNamesByAsset.TryGetValue(assetName, out var clipNames))
+            {
+                clipNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                clipNamesByAsset[assetName] = clipNames;
+            }
+
+            clipNames.Add(clipName);
+            if (effectClipName is not null)
+            {
+                clipNames.Add(effectClipName);
+            }
+        }
+
+        // Loads every distinct asset once, up front, with the full clip set it needs - so the
+        // placement loop below never awaits mid-loop. Reports fractional progress through step 5
+        // per asset loaded, since this is where the actual HTTP fetches (and so the bulk of load
+        // time) happen.
+        var assetsLoaded = 0;
+        var assetsToLoad = clipNamesByAsset.Count;
+        foreach (var (assetName, clipNames) in clipNamesByAsset)
+        {
+            await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, [.. clipNames], worldName);
+            assetsLoaded++;
+            progress?.Report(assetsToLoad == 0 ? 5.0 : 4.0 + (double)assetsLoaded / assetsToLoad);
+        }
+
         for (var row = 0; row < height; row++)
         {
-            // Reports fractional progress through the 5th (by far longest) step, one row of the
-            // placement grid at a time, so the bar keeps visibly advancing across the whole load
-            // instead of jumping straight from 4/5 to 5/5 once every sprite has been fetched.
-            progress?.Report(4.0 + (double)row / height);
+            // The placement loop itself is now purely synchronous (every sprite it needs was
+            // already loaded above), so it finishes quickly; this reports step 6's progress row
+            // by row for a smooth final crawl to 100%.
+            progress?.Report(height == 0 ? 6.0 : 5.0 + (double)row / height);
 
             for (var col = 0; col < width; col++)
             {
@@ -208,17 +254,13 @@ public class World2D
                     ? parsedRepeat
                     : 1;
                 var position = new Vector2D(col, row);
-
                 var effectClipName = objectSection.TryGetValue("EffectClip", out var effectClipText) ? effectClipText : null;
 
-                // The effect clip (if any) lives on this same object's own asset (see
-                // IEffectTrigger), so it must be requested here alongside the object's main clip -
-                // SpriteLoader only loads clips it's explicitly asked for (plus stance clips).
-                var requestedClipNames = effectClipName is null
-                    ? (IReadOnlyList<string>)[clipName]
-                    : [clipName, effectClipName];
-                var sprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, requestedClipNames, worldName);
+                // The sprite (with every clip this section could ever need, including its effect
+                // clip if any) was already loaded and cached during the pre-scan above.
+                var sprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, [clipName], worldName);
                 var frameIndex = sprite.GetClip(clipName).DefaultFrame;
+
 
                 var gravityAffected = !objectSection.TryGetValue("GravityAffected", out var gravityText) || !bool.TryParse(gravityText, out var parsedGravity) || parsedGravity;
                 // Restitution is no longer defaulted here - absent means "use whatever the
@@ -365,7 +407,7 @@ public class World2D
 
         // No object explicitly claimed the camera via CameraTarget = true; default to the player.
         world.CameraTarget ??= world.Player;
-        progress?.Report(5);
+        progress?.Report(6);
 
         return world;
     }

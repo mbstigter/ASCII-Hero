@@ -32,4 +32,8 @@ public class InputState
     /// own equivalent jump key, positioned next to WASD the same way Space sits next to the arrow
     /// keys.</summary>
     public bool IsJumpPressed => IsPressed("Space") || IsPressed("ControlLeft");
+
+    /// <summary>Dev/testing shortcut - abandons the current world and returns to the world-select
+    /// screen, regardless of which stance/mode is active. See docs/Decisions.md.</summary>
+    public bool IsEscapePressed => IsPressed("Escape");
 }

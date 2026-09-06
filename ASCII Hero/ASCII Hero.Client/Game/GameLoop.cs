@@ -225,6 +225,16 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
     private async Task OnPlayingFrameAsync(double deltaSeconds)
     {
+        // Dev/testing shortcut: abandon the current world and return to the world-select screen -
+        // see InputState.IsEscapePressed's doc comment. Also the same _mode reset a future
+        // level-complete/death flow will use once those exist (see docs/Decisions.md).
+        if (_input.IsEscapePressed)
+        {
+            _worldSelect.ResetConfirmation();
+            _mode = GameMode.WorldSelecting;
+            return;
+        }
+
         _physics.Step(_world, _input, deltaSeconds);
         _collision.Resolve(_world);
         _world.ApplyPendingRemovals();
@@ -262,7 +272,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             // call's _isProcessingFrame guard for the whole load, starving every intervening
             // requestAnimationFrame tick (and so _loadingBar's redraw) until it's already done.
             _mode = GameMode.LoadingWorld;
-            _loadingBar = WorldSelectRenderer.CreateLoadingBar(_worldSelect, _viewportWidthCells, _viewportHeightCells, World2D.LoadStepCount);
+            _loadingBar = WorldLoadingRenderer.CreateLoadingBar(_worldSelect, _viewportWidthCells, _viewportHeightCells, World2D.LoadStepCount);
 
             var worldName = _worldSelect.SelectedWorld.WorldName;
             _loadWorldTask = LoadWorldAsync(worldName);
@@ -291,7 +301,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             return;
         }
 
-        var glyphs = WorldSelectRenderer.BuildLoadingFrame(
+        var glyphs = WorldLoadingRenderer.BuildLoadingFrame(
             _worldSelect, _loadingBar, _viewportWidthCells, _viewportHeightCells,
             _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         await canvasBridge.DrawFrameAsync(ViewportWidthPixels, ViewportHeightPixels, glyphs);

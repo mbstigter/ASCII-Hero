@@ -1,26 +1,26 @@
-                
-      CD        
+      CD  Y     
      C  D    CD 
- RRRC    D  C  D
+ RRRC    RRRC  D
    C      DC  Y 
+                
      RRR     RRR
                 
   G  G  G  G  G 
   //end
-                
-      CD        
+      CD  1     
      C  D    CD 
- RRRC    D  C  D
-   C      DC  Y 
+ RRRC    RRRC  D
+   C      DC  1 
+                
      RRR     RRR
                 
   G  G  G  G  G 
     //end
-                
-      CD        
+      CD  2     
      C  D    CD 
- RRRC    D  C  D
-   C      DC  Y 
+ RRRC    RRRC  D
+   C      DC  2 
+                
      RRR     RRR
                 
   G  G  G  G  G 

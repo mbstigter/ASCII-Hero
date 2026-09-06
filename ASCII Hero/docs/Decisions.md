@@ -2,6 +2,23 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## Esc-to-world-select dev/testing shortcut
+
+- **Prompted by user request:** an easy way to abandon the current world and
+  return to the world-select screen while testing, without a full
+  level-complete/death flow existing yet.
+- **Implementation:** `InputState.IsEscapePressed` (a plain `Escape` key
+  check, no edge-triggering needed since it just flips `GameMode` once).
+  `GameLoop.OnPlayingFrameAsync` checks it first thing each frame and, if
+  pressed, calls `WorldSelectScreen.ResetConfirmation()` (already existed for
+  the failed-load recovery path) and sets `_mode = GameMode.WorldSelecting`
+  directly - reusing the exact same `GameMode` transition a later
+  level-complete/death flow will need, rather than a one-off code path.
+- **Scope:** deliberately a raw dev shortcut, not itself the intended
+  finishing-a-level/dying flow - that will likely route through a dedicated
+  intermediate `GameMode` (e.g. showing a result message) before returning to
+  `WorldSelecting`, rather than jumping back instantly the way Esc does.
+
 ## Level-selection screen: strict `GameMode` state machine and `Global/Levels.ini` catalog
 
 - **Prompted by user report:** after confirming a level on the new
