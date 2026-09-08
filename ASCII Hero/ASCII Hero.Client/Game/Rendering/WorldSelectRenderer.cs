@@ -47,21 +47,17 @@ public static class WorldSelectRenderer
     // the right-scroll hint.
     private static readonly string[] LeftScrollArrow =
     [
-        "  / /",
         " / / ",
         "/ /  ",
         "\\ \\  ",
         " \\ \\ ",
-        "  \\ \\",
     ];
     private static readonly string[] RightScrollArrow =
     [
-        "\\ \\  ",
         " \\ \\ ",
         "  \\ \\",
         "  / /",
         " / / ",
-        "/ /  ",
     ];
     private static readonly int ScrollArrowWidth = LeftScrollArrow.Max(line => line.Length);
     private static readonly int ScrollArrowHeight = LeftScrollArrow.Length;

@@ -544,19 +544,34 @@ public class CollisionSystem
     /// also universal (not player-only) since, unlike horizontal, there's no player-input-
     /// overwrite problem on the vertical axis - gravity affects every body the same way.
     /// Deliberately checks the body's own <see cref="Body2D.CollisionRects"/> (there can be more
-    /// than one, e.g. the player's head+torso) against the solid's, using only the *first*
-    /// horizontally-overlapping pair found: this only ever needs to ask "is any part of the body
-    /// still above this platform at all", not resolve a precise deepest-penetration correction
-    /// (that is <see cref="ResolveRectAgainstSolid"/>'s job, immediately afterward in the same
-    /// frame). If the body has drifted entirely clear of the solid horizontally (walked off the
-    /// edge), no rect pair overlaps and nothing happens here - gravity and the ordinary collision
-    /// pass take back over exactly as they already do for stepping off a stationary platform's
-    /// edge.
+    /// than one, e.g. the player's head+torso) against the solid's, picking the *lowest*
+    /// (largest-Bottom) horizontally-overlapping body rect rather than simply the first one found:
+    /// <see cref="World.CollisionShapeBuilder.DeriveRectangles"/> orders a multi-rect body's rects
+    /// top-to-bottom (head before torso/legs), so naively using the first match would re-seat the
+    /// body by its head rect - snapping the whole body upward and visibly "hanging" it above the
+    /// surface instead of standing on it. Using the lowest rect mirrors which part of the body
+    /// would actually be resting on the surface, without needing a precise deepest-penetration
+    /// correction (that is <see cref="ResolveRectAgainstSolid"/>'s job, immediately afterward in
+    /// the same frame). If the body has drifted entirely clear of the solid horizontally (walked
+    /// off the edge), no rect pair overlaps and nothing happens here - gravity and the ordinary
+    /// collision pass take back over exactly as they already do for stepping off a stationary
+    /// platform's edge.
     /// </remarks>
     private static void MaintainVerticalGroundedContact(IPhysicsBody body, Body2D solid)
     {
         var solidRects = solid.CollisionRects;
         var bodyRects = body.CollisionRects;
+
+        // Track the lowest (feet-side) body rect that overlaps the solid horizontally, along with
+        // the solid rect it overlaps - a multi-rect body (e.g. the player's head+torso shape) must
+        // be re-seated by whichever of its own rects actually rests on the surface (its feet/
+        // torso), not simply the first rect CollisionShapeBuilder.DeriveRectangles happened to
+        // produce (which is ordered top-to-bottom, i.e. head first) - snapping by the head rect
+        // instead pulls the whole body upward by the head/torso height difference, visibly
+        // "hanging" the body from its head above the surface instead of standing on it.
+        var haveMatch = false;
+        var bestBodyRect = default(Rect2D);
+        var bestSolidRect = default(Rect2D);
 
         for (var bodyRectIndex = 0; bodyRectIndex < bodyRects.Count; bodyRectIndex++)
         {
@@ -574,16 +589,37 @@ public class CollisionSystem
                     continue;
                 }
 
-                // The collision rect may be offset from the body's own Position (e.g. it excludes
-                // blank sprite cells), so the correction is expressed in terms of that offset,
-                // same as ResolveRectAgainstSolid.
-                var rectOffsetY = bodyRect.Y - body.Position.Y;
-                body.Position = new Vector2D(
-                    body.Position.X,
-                    solidRect.Top - bodyRect.Height - rectOffsetY);
-                return;
+                if (!haveMatch || bodyRect.Bottom > bestBodyRect.Bottom)
+                {
+                    haveMatch = true;
+                    bestBodyRect = bodyRect;
+                    bestSolidRect = solidRect;
+                }
             }
         }
+
+        if (!haveMatch)
+        {
+            return;
+        }
+
+        // The collision rect may be offset from the body's own Position (e.g. it excludes
+        // blank sprite cells), so the correction is expressed in terms of that offset,
+        // same as ResolveRectAgainstSolid.
+        var rectOffsetY = bestBodyRect.Y - body.Position.Y;
+
+        // Snapped very slightly *past* flush (bodyRect.Bottom a hair below solidRect.Top,
+        // by HangOverlapEpsilon) rather than exactly flush: Rect2D.Overlaps uses strict
+        // inequalities, so a perfectly flush position (bodyRect.Bottom == solidRect.Top)
+        // produces zero actual overlap. Without this, the very next check this frame -
+        // the ordinary overlap-based landing check just below, which is what's supposed to
+        // reconfirm/refresh _groundedSolids for the next frame - would find no overlap at
+        // all, clear the body's grounded-solid memory, and reopen exactly the fall-through
+        // gap this method exists to close, this time with nothing left to catch it at all.
+        // Same fix, same reasoning as SnapOntoHangable's use of this constant.
+        body.Position = new Vector2D(
+            body.Position.X,
+            bestSolidRect.Top - bestBodyRect.Height - rectOffsetY + HangOverlapEpsilon);
     }
 
     /// <summary>
