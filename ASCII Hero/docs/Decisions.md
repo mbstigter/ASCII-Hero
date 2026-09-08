@@ -2,6 +2,46 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## Grounded-carry fix restricted to the horizontal axis only, fixing jitter it introduced vertically
+
+- **Prompted by user testing:** after the grounded-carry fix below shipped,
+  the user reported it did *not* fix the original downward-platform lag,
+  and additionally introduced new jitter - the player rapidly alternating
+  stand/airborne pose while riding a platform moving *upward*, and the same
+  jitter on an enemy riding an upward-moving platform. The *horizontal*
+  carry (walking on a sideways-patrolling platform) did work correctly,
+  however.
+- **Root cause: double-counting vertical carry.** Vertical motion was
+  already being carried by a second, independent mechanism that the
+  original fix's design didn't account for: `ResolveRectAgainstSolid`
+  already nudges a landed body's `Velocity.Y` toward the solid's own
+  velocity (see the reference-frame collision math below), and
+  `PhysicsSystem.Step` integrates that velocity into `Position` *before*
+  `CollisionSystem.Resolve` runs each frame - so a resting body's vertical
+  position was already approximately tracking the platform frame to frame,
+  with the following frame's ordinary landing-snap correction (onto the
+  solid's current, already-moved top surface) papering over the small
+  remaining gap. Applying the new `solidVelocity * deltaSeconds` position
+  shift on *top* of that (both before *and* independently of the existing
+  velocity-integration + snap) shifted the body too far, and the very next
+  frame's landing-snap then corrected it back - a feedback loop visible as
+  jitter, worse against gravity (moving up) than with it (moving down).
+  Horizontal was unaffected by this double-counting because
+  `PhysicsSystem.Step` overwrites the player's `Velocity.X` directly from
+  input every frame, so the friction-based horizontal velocity-matching
+  never had a chance to apply in the first place - the new shift was the
+  *only* thing carrying it, which is exactly why horizontal carry worked
+  immediately while vertical did not.
+- **Fix: the grounded-carry shift now applies to `Position.X` only.**
+  `Position.Y` is left entirely to the pre-existing velocity-matching +
+  landing-snap combination, which remains responsible for all vertical
+  platform-riding behavior (including whatever residual lag it still has
+  at the very top of a vertical patrol's reversal point - not eliminated
+  by this follow-up, since doing so without reintroducing the
+  double-counting would require deeper work, e.g. continuous rather than
+  discrete collision detection, and the jitter was the more urgent
+  regression to fix first).
+
 ## `CollisionSystem` carries grounded bodies along a moving solid's own displacement, closing the downward-platform lag
 
 - **Prompted by user request:** after validating (via `MovingEnemy2D`) that a

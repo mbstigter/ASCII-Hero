@@ -124,17 +124,25 @@ DOM keyboard events.
   more than a slick one), and vertical carry falls out for free from the
   existing per-frame snap-onto-top-surface correction always running
   against the platform's current (already-moved) position.
-- That snap-onto-top correction alone is not sufficient for a platform
-  moving *downward*, though: if the platform displaces farther in one frame
-  than the resting body's own (near-zero) velocity carries it, the body's
-  collision rect can stop overlapping the platform's new position entirely,
-  and the body free-falls under gravity until it "catches up" - a visible
-  landing lag. `CollisionSystem` closes this gap by remembering, per grounded
-  `IPhysicsBody`, which solid it last landed on; at the start of the next
-  `Resolve` call it shifts that body by the remembered solid's
-  `Velocity * deltaSeconds` before the ordinary overlap check runs, so
-  overlap is re-established the same frame the platform moves. This has no
-  effect against stationary terrain (velocity zero).
+- That snap-onto-top correction, combined with the velocity-matching
+  above (integrated into `Position` by `PhysicsSystem.Step` each frame
+  *before* `CollisionSystem.Resolve` runs), is what carries a resting body
+  vertically along with a moving platform - there is no separate positional
+  "carry" mechanism for the vertical axis. `CollisionSystem` additionally
+  remembers, per grounded `IPhysicsBody`, which solid it last landed on
+  (`_groundedSolids`), and at the start of the next `Resolve` call shifts
+  that body's `Position.X` (horizontal only) by the remembered solid's
+  `Velocity.X * deltaSeconds` before the ordinary overlap check runs. This
+  is needed because `PhysicsSystem.Step` overwrites the player's
+  `Velocity.X` directly from input every frame, so the friction-based
+  horizontal velocity-matching above never gets a chance to act — without
+  this explicit shift a rider wouldn't move with a horizontally-patrolling
+  platform at all. It deliberately does *not* also shift `Position.Y`:
+  vertical motion is already carried by velocity-matching + the landing
+  snap, and adding a second, independent vertical shift on top of those
+  double-counts the platform's displacement, which was tried and caused
+  visible up/down jitter (see docs/Decisions.md). This has no effect
+  against stationary terrain (velocity zero either way).
 - Hazard contact is resolved generically: any `IPhysicsBody` overlapping any
   `IHazardBody` in `World2D.Objects` is detected, with no concrete-type checks
   on either side. Hazard contact detection exists but does not yet apply any

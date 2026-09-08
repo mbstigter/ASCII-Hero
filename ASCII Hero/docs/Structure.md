@@ -287,16 +287,24 @@ The live game state and the entity types that make it up.
   body's velocity relative to the solid, then the solid's velocity is added
   back - so a moving platform naturally drags a resting rider along via
   friction (more so for a grippy material, less for a slick one) using the
-  exact same formulas as stationary terrain. This alone only carries a rider
-  correctly while its collision rect still overlaps the platform each frame;
-  for a downward-moving platform outrunning a resting body's own
-  near-zero velocity, `CollisionSystem` additionally remembers (in
-  `_groundedSolids`) which solid each grounded `IPhysicsBody` last landed on,
-  and at the start of the next `Resolve(world, deltaSeconds)` call shifts
-  that body by the remembered solid's `Velocity * deltaSeconds` before the
-  ordinary overlap check runs, re-establishing overlap the same frame the
-  platform moves (a no-op against stationary terrain, whose velocity is
-  zero). Moving-body-vs-moving-body resolution
+  exact same formulas as stationary terrain. Combined with `PhysicsSystem`
+  integrating that velocity into `Position` before `Resolve` runs each frame,
+  plus the landing-snap correction above always running against the
+  platform's current (already-moved) position, this is what carries a
+  resting rider vertically - there is no separate positional "carry" for the
+  vertical axis. Horizontally, though, the player's `Velocity.X` is
+  overwritten directly from input every frame (`PhysicsSystem.Step`), so
+  that same friction-based matching never gets a chance to act; to still
+  carry a rider along a horizontally-patrolling platform, `CollisionSystem`
+  additionally remembers (in `_groundedSolids`) which solid each grounded
+  `IPhysicsBody` last landed on, and at the start of the next
+  `Resolve(world, deltaSeconds)` call shifts that body's `Position.X` (only)
+  by the remembered solid's `Velocity.X * deltaSeconds` before the ordinary
+  overlap check runs (a no-op against stationary terrain, whose velocity is
+  zero). This is deliberately horizontal-only: an earlier version also
+  shifted `Position.Y` the same way, which double-counted the platform's
+  vertical displacement on top of velocity-matching + the landing snap and
+  caused visible up/down jitter (see docs/Decisions.md). Moving-body-vs-moving-body resolution
   (`ResolveBodyPair`) splits position correction by relative mass and
   resolves the along-normal velocity response via a standard 1D
   mass-weighted impulse, rather than each body independently reflecting its

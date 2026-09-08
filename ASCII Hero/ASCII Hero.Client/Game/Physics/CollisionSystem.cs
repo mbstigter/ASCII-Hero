@@ -43,8 +43,10 @@ public class CollisionSystem
     /// <summary>
     /// Which solid each currently-grounded body was resting on as of the <em>previous</em> frame's
     /// <see cref="Resolve"/> call - used solely to carry a rider along a moving platform's own
-    /// frame-to-frame displacement (see the top of <see cref="Resolve"/>) before this frame's
-    /// ordinary overlap-based collision pass re-detects/re-confirms grounding. Deliberately kept
+    /// frame-to-frame *horizontal* displacement (see the top of <see cref="Resolve"/>; vertical
+    /// carry is already handled by ordinary velocity-matching + landing-snap and must not be
+    /// duplicated here) before this frame's ordinary overlap-based collision pass
+    /// re-detects/re-confirms grounding. Deliberately kept
     /// as a side dictionary here rather than a property on <see cref="IPhysicsBody"/> itself -
     /// this is purely bookkeeping this class needs for that one purpose, not state any body or
     /// other system ever needs to read or set directly (unlike <see cref="IPhysicsBody.IsGrounded"/>,
@@ -65,9 +67,9 @@ public class CollisionSystem
 
     /// <summary>
     /// Resolves all collision for one frame. <paramref name="deltaSeconds"/> is used solely to
-    /// carry a grounded body along by its resting solid's own displacement this frame (see the
-    /// remarks on <see cref="_groundedSolids"/>) - every other collision response in this class is
-    /// purely positional/velocity-based and doesn't need a time delta of its own.
+    /// carry a grounded body along by its resting solid's own *horizontal* displacement this
+    /// frame (see the remarks on <see cref="_groundedSolids"/>) - every other collision response
+    /// in this class is purely positional/velocity-based and doesn't need a time delta of its own.
     /// </summary>
     public void Resolve(World2D world, double deltaSeconds)
     {
@@ -85,28 +87,37 @@ public class CollisionSystem
                 continue;
             }
 
-            // Carry a rider along by its previously-grounded solid's own displacement this frame,
-            // *before* the IsGrounded reset/re-detection below runs - this closes the gap that
-            // would otherwise open when a moving solid (e.g. a downward-patrolling
-            // KinematicObject2D) displaces farther in one frame than a resting body's own
-            // (typically near-zero, since it was just resting) velocity carries it: without this,
-            // the body's collision rect no longer overlaps the solid's new position at all this
-            // frame, so the ordinary overlap-based landing check below finds nothing and the body
-            // free-falls under gravity alone until it "catches up" - visible as a floaty landing
-            // lag - rather than moving with the solid the instant the solid itself moves. Only
-            // applies if the previously-grounded solid is still actually a real, still-existing
-            // body with a non-zero Velocity (ordinary stationary terrain has none, so this is a
-            // no-op for the overwhelming common case of resting on a plain platform/floor).
+            // Carry a rider along by its previously-grounded solid's own horizontal displacement
+            // this frame, *before* the IsGrounded reset/re-detection below runs. Horizontal-only:
+            // PhysicsSystem.Step overwrites the player's Velocity.X directly from input every
+            // frame (see its own remarks), so the friction-based velocity-matching that
+            // ResolveRectAgainstSolid already applies on landing (nudging the rider's velocity
+            // toward the solid's own) never gets a chance to take effect horizontally - without
+            // this explicit shift, a rider standing still relative to input still doesn't move
+            // with a horizontally-patrolling platform underneath it. Deliberately does NOT apply
+            // vertically: gravity-integrated bodies already track a vertically-moving solid via
+            // that same velocity-matching (their Velocity.Y is nudged toward the solid's each
+            // frame in ResolveRectAgainstSolid, then integrated into Position by PhysicsSystem
+            // *before* this runs), and the very next line below's ordinary landing check snaps
+            // the body flush onto the solid's current (already-moved) top surface regardless -
+            // adding a *second*, independent Position.Y shift here on top of both of those double-
+            // counts the platform's own motion, overshooting the snap and fighting the following
+            // frame's correction, which is exactly what caused the up/down jitter this replaced.
+            // Only applies if the previously-grounded solid is still actually a real,
+            // still-existing body with non-zero horizontal velocity (ordinary stationary terrain
+            // has none, so this is a no-op for the overwhelming common case of resting on a plain
+            // platform/floor).
             if (_groundedSolids.TryGetValue(movingBody, out var groundedSolid) && groundedSolid is IPhysicsBody groundedSolidBody)
             {
-                var solidVelocity = groundedSolidBody.Velocity;
-                if (solidVelocity.X != 0 || solidVelocity.Y != 0)
+                var solidVelocityX = groundedSolidBody.Velocity.X;
+                if (solidVelocityX != 0)
                 {
                     movingBody.Position = new Vector2D(
-                        movingBody.Position.X + solidVelocity.X * deltaSeconds,
-                        movingBody.Position.Y + solidVelocity.Y * deltaSeconds);
+                        movingBody.Position.X + solidVelocityX * deltaSeconds,
+                        movingBody.Position.Y);
                 }
             }
+
 
             movingBody.IsGrounded = false;
             _movingBodies.Add(movingBody);
