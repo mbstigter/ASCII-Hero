@@ -32,9 +32,6 @@ public class KinematicObject2D : Body2D, IPhysicsBody
     /// <summary>Current velocity, in world cells per second. Constant unless patrolling or changed externally.</summary>
     public Vector2D Velocity { get; set; }
 
-    /// <summary>Whether this object is currently resting on a platform or the world's floor.</summary>
-    public bool IsGrounded { get; set; }
-
     /// <summary>
     /// Left bound of this body's horizontal patrol range, in world cells, or null if this body
     /// doesn't patrol on the X axis at all (its horizontal velocity component then simply stays

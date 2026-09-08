@@ -15,11 +15,30 @@ public interface IPhysicsBody
 
     /// <summary>
     /// Whether the body currently rests on something solid, be it a platform's top surface, the
-    /// world's own floor, or the top of another moving body. Bodies never set this on
-    /// themselves; it is assigned each frame by whichever collision resolution finds them
-    /// resting on a supporting surface.
+    /// world's own floor, or the top of another moving body. Derived, not stored: simply
+    /// <c>HasContact(ContactType.SurfaceBottom)</c> for this frame, evaluated fresh every time
+    /// it's read rather than a flag some earlier code set/reset - see docs/Decisions.md for why
+    /// a mutable flag was replaced with a live query.
     /// </summary>
-    bool IsGrounded { get; set; }
+    bool IsGrounded { get; }
+
+    /// <summary>See <see cref="Body2D.HasContact"/>.</summary>
+    bool HasContact(Physics.ContactType type);
+
+    /// <summary>See <see cref="Body2D.HadContactLastFrame"/>.</summary>
+    bool HadContactLastFrame(Physics.ContactType type, Body2D? other = null);
+
+    /// <summary>See <see cref="Body2D.GetContactingBodies"/>.</summary>
+    IReadOnlyList<Body2D> GetContactingBodies(Physics.ContactType type);
+
+    /// <summary>See <see cref="Body2D.AddContact"/>.</summary>
+    void AddContact(Physics.ContactType type, Body2D other);
+
+    /// <summary>See <see cref="Body2D.RemoveContact"/>.</summary>
+    void RemoveContact(Physics.ContactType type, Body2D? other = null);
+
+    /// <summary>See <see cref="World.Body2D.SnapshotContactsForNextFrame"/>.</summary>
+    void SnapshotContactsForNextFrame();
 
     /// <summary>The body's collision shape, as one or more rectangles in world space.</summary>
     IReadOnlyList<Physics.Rect2D> CollisionRects { get; }

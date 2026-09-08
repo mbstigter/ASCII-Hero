@@ -8,9 +8,6 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody, 
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }
 
-    /// <summary>Whether the player is currently standing on a platform or the world's floor.</summary>
-    public bool IsGrounded { get; set; }
-
     /// <inheritdoc/>
     public bool IsTouchingClimbable { get; set; }
 

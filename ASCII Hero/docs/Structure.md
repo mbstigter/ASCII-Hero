@@ -328,7 +328,36 @@ The live game state and the entity types that make it up.
   matching a jump arc's peak still needing to finish naturally rather than
   instantly catching on a passing platform/pipe/ladder); hanging additionally
   requires approaching the surface from underneath, checked geometrically
-  (top-edge comparison) rather than by penetration depth so a fast-falling or
+
+  Every body records its own current-frame contacts as explicit `ContactType`
+  flags (`SurfaceTop`/`SurfaceBottom`/`SurfaceLeft`/`SurfaceRight`, plus
+  `Ladder`/`Bar`), via `Body2D.AddContact`/`HasContact`/`GetContactingBodies`.
+  `Resolve` snapshots and clears every body's contacts (via
+  `Body2D.SnapshotContactsForNextFrame`) at the very start of each frame -
+  including a `WorldBoundsSentinel` placeholder body so a body resting
+  against the world's own floor/wall/ceiling (not a placed platform) records
+  an ordinary `SurfaceBottom` contact the same way as any other solid, with
+  no special-casing. `ResolveRectAgainstSolid`/`ResolveBodyPair` then record
+  the reciprocal contact pair on both sides as they resolve a landing (e.g.
+  the rider gets `SurfaceBottom` against the solid, the solid gets
+  `SurfaceTop` against the rider). `IPhysicsBody.IsGrounded` is a derived,
+  read-only property (`HasContact(ContactType.SurfaceBottom)`), not a stored
+  mutable flag - see docs/Decisions.md for why this replaced the earlier
+  ordering-bug-prone stored flag. The one exception is `PhysicsSystem`
+  explicitly calling `RemoveContact(ContactType.SurfaceBottom)` the instant a
+  jump/climb/hang begins, so the derived state reflects "airborne" for that
+  same frame rather than waiting for `Resolve`'s next contact pass.
+  `Body2D.IsOneWayPlatform` lets a static solid block only a genuine
+  downward-moving top-landing (`ResolveRectAgainstSolid` checks the
+  overlap axis and the body's velocity relative to the solid); any other
+  overlap axis, or a body moving upward through it, passes straight
+  through untouched, so jumping up through a one-way platform from below
+  just works with no separate code path. Broad-phase candidate gathering
+  uses a per-frame spatial grid (`_solidsGrid`/`_movingBodiesGrid`, bucketed
+  by `GridCellSize`) rather than testing every solid/mover pair
+  unconditionally, so collision cost scales with nearby objects rather than
+  the level's total object count.
+
   passable body can't be misread as hanging while plunging through. Most of
   this is resolved generically against capability interfaces, never by
   checking concrete types - the player is just a moving body whose

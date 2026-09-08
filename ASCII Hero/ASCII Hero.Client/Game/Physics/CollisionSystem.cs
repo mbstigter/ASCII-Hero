@@ -37,8 +37,45 @@ public class CollisionSystem
     /// </summary>
     private const double HangOverlapEpsilon = 0.01;
 
+    /// <summary>
+    /// World-space size (in cells) of one broad-phase spatial-grid bucket - see
+    /// <see cref="BuildSpatialGrid"/>/<see cref="GetCandidates"/>. Chosen comfortably larger than
+    /// a typical body/platform's own footprint so most bodies span only one or two buckets rather
+    /// than dozens, while still being small enough that a handful of nearby objects (not the
+    /// entire level) are gathered as candidates for any one body.
+    /// </summary>
+    private const double GridCellSize = 4.0;
+
     /// <summary>Reused across frames to avoid an allocation every call for what is normally a tiny list.</summary>
     private readonly List<IPhysicsBody> _movingBodies = [];
+
+    /// <summary>Reused across frames for the solids broad-phase grid built once per <see cref="Resolve"/> call.</summary>
+    private readonly Dictionary<(int X, int Y), List<Body2D>> _solidsGrid = [];
+
+    /// <summary>Reused across frames for the moving-bodies broad-phase grid built once per <see cref="Resolve"/> call.</summary>
+    private readonly Dictionary<(int X, int Y), List<IPhysicsBody>> _movingBodiesGrid = [];
+
+    /// <summary>Reused per query to avoid a fresh allocation for every single candidate lookup.</summary>
+    private readonly HashSet<Body2D> _candidateSolidsBuffer = [];
+
+    /// <summary>Reused per query to avoid a fresh allocation for every single candidate lookup.</summary>
+    private readonly HashSet<IPhysicsBody> _candidateMovingBuffer = [];
+
+    /// <summary>
+    /// A placeholder <see cref="Body2D"/> representing the world's own floor/walls/ceiling for
+    /// contact-recording purposes only (see <see cref="ResolveWorldBounds"/>) - never rendered,
+    /// never collided against directly, never placed in <see cref="World2D.Objects"/>. Exists so
+    /// a body resting against the world's edge (not a placed platform) can still record an
+    /// ordinary <see cref="ContactType.SurfaceBottom"/> contact - and therefore still derive
+    /// <see cref="IPhysicsBody.IsGrounded"/> - the same way it would resting on any other solid,
+    /// with no special-casing needed by <see cref="Body2D.IsGrounded"/> or its consumers.
+    /// </summary>
+    private static readonly Body2D WorldBoundsSentinel = new WorldBoundsBody();
+
+    private sealed class WorldBoundsBody : Body2D
+    {
+        public WorldBoundsBody() => IsStatic = true;
+    }
 
     /// <summary>
     /// TEMPORARY HACK - remove once the player moves via a mass/force accumulator instead of
@@ -84,6 +121,17 @@ public class CollisionSystem
     public void Resolve(World2D world, double deltaSeconds)
     {
         _movingBodies.Clear();
+
+        // Every body (static or moving) can be on the receiving end of a recorded contact this
+        // frame (e.g. a static platform records SurfaceTop when something lands on it), so every
+        // body's contact set is snapshotted-and-cleared up front, before anything for this new
+        // frame is resolved/recorded - see Body2D.SnapshotContactsForNextFrame.
+        foreach (var contactBody in world.Objects)
+        {
+            contactBody.SnapshotContactsForNextFrame();
+        }
+
+        WorldBoundsSentinel.SnapshotContactsForNextFrame();
 
         foreach (var body in world.Objects)
         {
@@ -157,7 +205,12 @@ public class CollisionSystem
             // bouncing ball) still has IsGrounded briefly true the very frame it bounces upward
             // off of stationary terrain - re-seating it down every such frame regardless of its
             // now-upward velocity would wrongly cancel every bounce off solid ground.
-            if (movingBody.IsGrounded
+            // Uses HadContactLastFrame rather than IsGrounded: this frame's contacts were already
+            // cleared above (SnapshotContactsForNextFrame), so IsGrounded would read false here
+            // regardless - last frame's grounded state is exactly what's needed to decide whether
+            // this maintenance step applies before this frame's own landing check re-establishes
+            // (or doesn't) a fresh SurfaceBottom contact.
+            if (movingBody.HadContactLastFrame(ContactType.SurfaceBottom)
                 && _groundedSolids.TryGetValue(movingBody, out var solidToMaintain)
                 && solidToMaintain is IPhysicsBody solidToMaintainBody
                 && (solidToMaintainBody.Velocity.X != 0 || solidToMaintainBody.Velocity.Y != 0))
@@ -165,19 +218,24 @@ public class CollisionSystem
                 MaintainVerticalGroundedContact(movingBody, solidToMaintain);
             }
 
-            movingBody.IsGrounded = false;
             _movingBodies.Add(movingBody);
         }
 
         ResolveClimbingAndHanging(world);
 
-        // Solid terrain a moving body can stand on/collide against - any static body not marked
+
         // Body2D.IsPassable, checked directly and generically rather than by excluding specific
         // categories/types one at a time. Collectables and hazards default to passable (see
         // World2D.LoadAsync), a plain wall can opt into being passable too (e.g. a level-design
         // "secret passage"), and EffectInstance2D is always passable (see its own doc comment) -
         // none of that is special-cased here, it all flows through this one flag.
         var solids = world.Objects.Where(body => body.IsStatic && !body.IsPassable).ToList();
+
+        // Broad phase: bucket solids into a spatial grid once per frame so each moving body only
+        // has to test collision against nearby solids, not every solid in the level - see
+        // BuildSolidsGrid/GetCandidateSolids and docs/Decisions.md.
+        BuildSolidsGrid(solids);
+        BuildMovingBodiesGrid(_movingBodies);
 
         // Prune entries for bodies that no longer exist (e.g. a killed enemy removed via
         // World2D.ApplyPendingRemovals) so this dictionary can't grow unbounded over a long play
@@ -194,7 +252,7 @@ public class CollisionSystem
         foreach (var body in _movingBodies)
         {
             _groundedSolids.Remove(body);
-            foreach (var solid in solids)
+            foreach (var solid in GetCandidateSolids(body))
             {
                 if (ResolveAgainstSolid(body, solid))
                 {
@@ -204,12 +262,16 @@ public class CollisionSystem
         }
 
         // Every moving body can also collide with every other moving body (e.g. the player and
-        // the bouncing ball) - checked once per unordered pair.
+        // the bouncing ball) - checked once per unordered pair, gathered from the same spatial
+        // grid so this scales with nearby movers only, not every mover in the level.
         for (var i = 0; i < _movingBodies.Count; i++)
         {
-            for (var j = i + 1; j < _movingBodies.Count; j++)
+            foreach (var other in GetCandidateMovingBodies(_movingBodies[i]))
             {
-                ResolveBodyPair(_movingBodies[i], _movingBodies[j]);
+                if (_movingBodies.IndexOf(other) > i)
+                {
+                    ResolveBodyPair(_movingBodies[i], other);
+                }
             }
         }
 
@@ -220,6 +282,125 @@ public class CollisionSystem
 
 
         ResolveHazardsAndCollectables(world);
+    }
+
+    /// <summary>
+    /// The spatial-grid bucket coordinate a body's current AABB (its overall <see cref="Vector2D"/>
+    /// position/size, not its individual collision rects) spans - returns every bucket the body's
+    /// bounding box overlaps, since a body near a bucket boundary can span more than one.
+    /// </summary>
+    private static IEnumerable<(int X, int Y)> GetOverlappingCells(Vector2D position, Vector2D size)
+    {
+        var minX = (int)Math.Floor(position.X / GridCellSize);
+        var maxX = (int)Math.Floor((position.X + size.X) / GridCellSize);
+        var minY = (int)Math.Floor(position.Y / GridCellSize);
+        var maxY = (int)Math.Floor((position.Y + size.Y) / GridCellSize);
+
+        for (var x = minX; x <= maxX; x++)
+        {
+            for (var y = minY; y <= maxY; y++)
+            {
+                yield return (x, y);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds <see cref="_solidsGrid"/> from scratch for this frame's <paramref name="solids"/>
+    /// list - static bodies never move mid-frame, but the set of which solids exist can change
+    /// between frames (spawned/removed), so this is cheap enough to just redo every <see cref="Resolve"/>
+    /// call rather than trying to incrementally maintain it.
+    /// </summary>
+    private void BuildSolidsGrid(IReadOnlyList<Body2D> solids)
+    {
+        foreach (var bucket in _solidsGrid.Values)
+        {
+            bucket.Clear();
+        }
+
+        foreach (var solid in solids)
+        {
+            foreach (var cell in GetOverlappingCells(solid.Position, solid.Size))
+            {
+                if (!_solidsGrid.TryGetValue(cell, out var bucket))
+                {
+                    bucket = [];
+                    _solidsGrid[cell] = bucket;
+                }
+
+                bucket.Add(solid);
+            }
+        }
+    }
+
+    /// <summary>Same as <see cref="BuildSolidsGrid"/>, but for this frame's moving bodies (used for moving-body-vs-moving-body pairing).</summary>
+    private void BuildMovingBodiesGrid(IReadOnlyList<IPhysicsBody> movingBodies)
+    {
+        foreach (var bucket in _movingBodiesGrid.Values)
+        {
+            bucket.Clear();
+        }
+
+        foreach (var movingBody in movingBodies)
+        {
+            foreach (var cell in GetOverlappingCells(movingBody.Position, movingBody.Size))
+            {
+                if (!_movingBodiesGrid.TryGetValue(cell, out var bucket))
+                {
+                    bucket = [];
+                    _movingBodiesGrid[cell] = bucket;
+                }
+
+                bucket.Add(movingBody);
+            }
+        }
+    }
+
+    /// <summary>
+    /// The distinct set of solids sharing at least one spatial-grid bucket with <paramref name="body"/>
+    /// this frame - the broad-phase candidate set that <see cref="ResolveAgainstSolid"/> is then
+    /// actually run against, instead of every solid in the level.
+    /// </summary>
+    private IEnumerable<Body2D> GetCandidateSolids(IPhysicsBody body)
+    {
+        _candidateSolidsBuffer.Clear();
+        foreach (var cell in GetOverlappingCells(body.Position, body.Size))
+        {
+            if (!_solidsGrid.TryGetValue(cell, out var bucket))
+            {
+                continue;
+            }
+
+            foreach (var solid in bucket)
+            {
+                _candidateSolidsBuffer.Add(solid);
+            }
+        }
+
+        return _candidateSolidsBuffer;
+    }
+
+    /// <summary>Same as <see cref="GetCandidateSolids"/>, but for other moving bodies (including <paramref name="body"/> itself, filtered out by the caller).</summary>
+    private IEnumerable<IPhysicsBody> GetCandidateMovingBodies(IPhysicsBody body)
+    {
+        _candidateMovingBuffer.Clear();
+        foreach (var cell in GetOverlappingCells(body.Position, body.Size))
+        {
+            if (!_movingBodiesGrid.TryGetValue(cell, out var bucket))
+            {
+                continue;
+            }
+
+            foreach (var other in bucket)
+            {
+                if (!ReferenceEquals(other, body))
+                {
+                    _candidateMovingBuffer.Add(other);
+                }
+            }
+        }
+
+        return _candidateMovingBuffer;
     }
 
     /// <summary>
@@ -513,7 +694,9 @@ public class CollisionSystem
         {
             position.Y = maxY;
             velocity.Y = -velocity.Y * restitution;
-            body.IsGrounded = true;
+            // The world's own floor isn't a placed Body2D, so a shared sentinel instance stands
+            // in as the "other" body for this SurfaceBottom contact - see WorldBoundsSentinel.
+            body.AddContact(ContactType.SurfaceBottom, WorldBoundsSentinel);
         }
 
         body.Position = position;
@@ -726,6 +909,17 @@ public class CollisionSystem
         // Body velocity relative to the solid's own reference frame - see the remarks above.
         var relativeVelocity = new Vector2D(body.Velocity.X - solidVelocity.X, body.Velocity.Y - solidVelocity.Y);
 
+        // A one-way platform only ever blocks a body landing on its top surface while falling
+        // (or resting) onto it - jumping up through it from below, or approaching from either
+        // side, passes straight through untouched. Landing-from-above vs. approaching-from-below
+        // is told apart using the relative vertical velocity rather than position history: falling
+        // (relativeVelocity.Y >= 0, moving down in this reference frame) is a legitimate landing,
+        // while moving upward through the platform is not - the standard one-way-platform test.
+        if (solid.IsOneWayPlatform && (minVertical >= minHorizontal || overlapTopBest >= overlapBottomBest || relativeVelocity.Y < 0))
+        {
+            return false;
+        }
+
         if (minVertical < minHorizontal)
         {
             if (overlapTopBest < overlapBottomBest)
@@ -742,10 +936,14 @@ public class CollisionSystem
                 body.Velocity = new Vector2D(
                     solidVelocity.X + ApplyFriction(relativeVelocity.X, friction),
                     solidVelocity.Y + -relativeVelocity.Y * restitution);
-                body.IsGrounded = true;
+                // Every IPhysicsBody implementation in this codebase is a Body2D (see
+                // Body2D.AddContact); recording the reciprocal SurfaceTop contact on the solid
+                // lets it (and anything reading it) know something rests on top of it this frame.
+                body.AddContact(ContactType.SurfaceBottom, solid);
+                solid.AddContact(ContactType.SurfaceTop, (Body2D)body);
                 return true;
             }
-            else
+
             {
                 // Hitting the underside of the solid.
                 body.Position = new Vector2D(
@@ -937,14 +1135,16 @@ public class CollisionSystem
                 // A's bottom rests on B's top - push A up and B down, split by relative mass.
                 a.Position = new Vector2D(a.Position.X, a.Position.Y - minVertical * aShare);
                 b.Position = new Vector2D(b.Position.X, b.Position.Y + minVertical * bShare);
-                a.IsGrounded = true;
+                a.AddContact(ContactType.SurfaceBottom, (Body2D)b);
+                b.AddContact(ContactType.SurfaceTop, (Body2D)a);
             }
             else
             {
                 // B's bottom rests on A's top.
                 b.Position = new Vector2D(b.Position.X, b.Position.Y - minVertical * bShare);
                 a.Position = new Vector2D(a.Position.X, a.Position.Y + minVertical * aShare);
-                b.IsGrounded = true;
+                b.AddContact(ContactType.SurfaceBottom, (Body2D)a);
+                a.AddContact(ContactType.SurfaceTop, (Body2D)b);
             }
 
             var (newAY, newBY) = ResolveNormalImpulse(a.Velocity.Y, b.Velocity.Y, a.Mass, b.Mass, restitution);

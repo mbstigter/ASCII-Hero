@@ -19,6 +19,166 @@ public abstract class Body2D
     private int _animationDirection = 1;
     private int _repeatCount = 1;
 
+    /// <summary>
+    /// This frame's resolved contacts, keyed by <see cref="Physics.ContactType"/> flag with the
+    /// set of other bodies contacted for that flag (e.g. <see cref="Physics.ContactType.SurfaceBottom"/>
+    /// maps to whichever solid(s) this body is currently resting on). Rebuilt from scratch every
+    /// frame by <see cref="Physics.CollisionSystem"/> as contacts are resolved - never mutated by
+    /// any other system, and never carried forward as "still true until told otherwise": a stale
+    /// entry from a contact that stopped applying is removed the same frame, not left to linger.
+    /// See docs/Decisions.md for why this replaces the old ambiguous overlap-depth-only axis
+    /// inference and the mutable <see cref="IPhysicsBody.IsGrounded"/> field it used to feed.
+    /// </summary>
+    private readonly Dictionary<Physics.ContactType, List<Body2D>> _contacts = [];
+
+    /// <summary>
+    /// A read-only snapshot of <see cref="_contacts"/> as it stood at the end of the *previous*
+    /// frame, taken by <see cref="SnapshotContactsForNextFrame"/> right before this frame's
+    /// contacts are cleared and rebuilt. Used purely to disambiguate direction/approach (e.g. "was
+    /// this body already resting on top of that solid last frame" for one-way platforms, or "was a
+    /// moving platform already remembered as what this body rests on" for vertical/horizontal
+    /// carry) - never consulted to decide *this* frame's own contact state, which is always
+    /// resolved fresh.
+    /// </summary>
+    private IReadOnlyDictionary<Physics.ContactType, List<Body2D>> _previousContacts =
+        new Dictionary<Physics.ContactType, List<Body2D>>();
+
+    /// <summary>
+    /// Whether this body's current-frame contacts include the given <paramref name="type"/> with
+    /// any other body at all (an OR across every set flag if <paramref name="type"/> is a
+    /// combination). The single source of truth other systems should query instead of reading a
+    /// separately maintained flag - e.g. <see cref="IPhysicsBody.IsGrounded"/> is simply
+    /// <c>HasContact(ContactType.SurfaceBottom)</c>.
+    /// </summary>
+    public bool HasContact(Physics.ContactType type)
+    {
+        foreach (var flag in EnumerateFlags(type))
+        {
+            if (_contacts.TryGetValue(flag, out var bodies) && bodies.Count > 0)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Whether this body's contacts *as of the end of last frame* included the given
+    /// <paramref name="type"/> with <paramref name="other"/> specifically (or with anything, if
+    /// <paramref name="other"/> is null). Used only for direction/approach disambiguation - see
+    /// <see cref="_previousContacts"/>.
+    /// </summary>
+    public bool HadContactLastFrame(Physics.ContactType type, Body2D? other = null)
+    {
+        foreach (var flag in EnumerateFlags(type))
+        {
+            if (!_previousContacts.TryGetValue(flag, out var bodies))
+            {
+                continue;
+            }
+
+            if (other is null ? bodies.Count > 0 : bodies.Contains(other))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>The other bodies currently contacted for the given single <paramref name="type"/> flag, or empty if none.</summary>
+    public IReadOnlyList<Body2D> GetContactingBodies(Physics.ContactType type) =>
+        _contacts.TryGetValue(type, out var bodies) ? bodies : [];
+
+    /// <summary>
+    /// Removes a recorded contact for the given (single-flag) <paramref name="type"/> - either
+    /// just with <paramref name="other"/>, or every body recorded for that flag if
+    /// <paramref name="other"/> is null. Used sparingly, only when a system needs this frame's
+    /// derived state (e.g. <see cref="IsGrounded"/>) to reflect a change immediately rather than
+    /// waiting for the next frame's contact resolution - e.g. <see cref="Physics.PhysicsSystem"/>
+    /// clearing a just-jumped player's <see cref="Physics.ContactType.SurfaceBottom"/> contact so
+    /// its pose immediately shows airborne instead of grounded for the one frame before collision
+    /// re-resolves. This is still just editing this frame's contact set, not reintroducing a
+    /// separately mutable flag.
+    /// </summary>
+    public void RemoveContact(Physics.ContactType type, Body2D? other = null)
+    {
+        if (!_contacts.TryGetValue(type, out var bodies))
+        {
+            return;
+        }
+
+        if (other is null)
+        {
+            bodies.Clear();
+        }
+        else
+        {
+            bodies.Remove(other);
+        }
+    }
+
+    /// <summary>
+    /// Records that <paramref name="other"/> is contacted for the given (single-flag)
+    /// <paramref name="type"/> this frame. Called by <see cref="Physics.CollisionSystem"/> as
+    /// contacts are resolved each frame - never by a body on itself.
+    /// </summary>
+    public void AddContact(Physics.ContactType type, Body2D other)
+    {
+        if (!_contacts.TryGetValue(type, out var bodies))
+        {
+            bodies = [];
+            _contacts[type] = bodies;
+        }
+
+        if (!bodies.Contains(other))
+        {
+            bodies.Add(other);
+        }
+    }
+
+    /// <summary>
+    /// Clears every recorded contact for this frame, first preserving the current set as
+    /// "previous frame" (see <see cref="_previousContacts"/>) for the next frame's direction
+    /// disambiguation. Called once per body at the start of <see cref="Physics.CollisionSystem.Resolve"/>,
+    /// before any contact for the new frame is resolved/recorded.
+    /// </summary>
+    public void SnapshotContactsForNextFrame()
+    {
+        var snapshot = new Dictionary<Physics.ContactType, List<Body2D>>(_contacts.Count);
+        foreach (var (type, bodies) in _contacts)
+        {
+            snapshot[type] = [.. bodies];
+        }
+
+        _previousContacts = snapshot;
+        _contacts.Clear();
+    }
+
+    /// <summary>
+    /// Whether this body currently rests on something solid, be it a platform's top surface, the
+    /// world's own floor, or the top of another moving body. Derived fresh from this frame's
+    /// resolved contacts (<c>HasContact(ContactType.SurfaceBottom)</c>) rather than a stored,
+    /// mutable flag - there is nothing to reset each frame and no risk of stale state from a
+    /// missed reset/set ordering, which is exactly the class of bug the old stored flag caused
+    /// (see docs/Decisions.md). Any future hysteresis/game-feel exception (e.g. coyote-time jump
+    /// forgiveness) must be its own separately named field - never reusing this property's name
+    /// or storage.
+    /// </summary>
+    public bool IsGrounded => HasContact(Physics.ContactType.SurfaceBottom);
+
+    private static IEnumerable<Physics.ContactType> EnumerateFlags(Physics.ContactType type)
+    {
+        foreach (Physics.ContactType flag in Enum.GetValues<Physics.ContactType>())
+        {
+            if (flag != Physics.ContactType.None && type.HasFlag(flag))
+            {
+                yield return flag;
+            }
+        }
+    }
+
     /// <summary>Position of the body's top-left corner, in world cells (not pixels).</summary>
     public Vector2D Position { get; set; }
 
@@ -67,6 +227,18 @@ public abstract class Body2D
     /// movement (the usual case for an actual pipe/bar).
     /// </summary>
     public bool IsHangable { get; set; }
+
+    /// <summary>
+    /// Whether this body only blocks approach from above - a body resting on top of it lands and
+    /// stays grounded normally, but a body approaching from below (jumping up through it, or
+    /// already underneath) passes straight through instead of colliding. Disambiguated using last
+    /// frame's contacts (see <see cref="HadContactLastFrame"/>): a <see cref="Physics.ContactType.SurfaceBottom"/>
+    /// contact against this body is only created/kept if the other body was already resting on
+    /// top of it as of last frame, never freshly created for a body newly arriving from below.
+    /// Has no effect unless <see cref="IsStatic"/> is also true (moving one-way platforms are not
+    /// currently supported).
+    /// </summary>
+    public bool IsOneWayPlatform { get; set; }
 
     /// <summary>The sprite asset this object was spawned from.</summary>
     public SpriteAsset Sprite { get; private set; } = null!;

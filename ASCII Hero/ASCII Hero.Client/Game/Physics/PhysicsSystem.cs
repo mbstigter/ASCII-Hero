@@ -239,7 +239,11 @@ public class PhysicsSystem
             {
                 velocity.Y += ClimbVerticalSpeed;
             }
-            player.IsGrounded = false;
+            // IsGrounded is derived from this frame's SurfaceBottom contact (see Body2D.IsGrounded);
+            // clearing it immediately here (rather than waiting for the next collision pass) means
+            // the player's pose/jump-gating reflects "climbing, not grounded" the same frame a
+            // ladder is grabbed, not one frame late.
+            player.RemoveContact(ContactType.SurfaceBottom);
         }
         else if (player.IsHanging)
         {
@@ -250,12 +254,15 @@ public class PhysicsSystem
             // by the time this runs, so this branch only still applies to an ordinary hang with
             // no exit this frame.
             velocity.Y = 0;
-            player.IsGrounded = false;
+            player.RemoveContact(ContactType.SurfaceBottom);
         }
         else if (input.IsJumpPressed && player.IsGrounded && player.Stance == "Walk" && !stoodUpThisFrame)
         {
             velocity.Y = -WalkJumpSpeed;
-            player.IsGrounded = false;
+            // Clears IsGrounded immediately so the jump's own frame already shows airborne (jump
+            // pose, re-jump gated out) instead of waiting for the next collision pass to notice
+            // the player has left the surface.
+            player.RemoveContact(ContactType.SurfaceBottom);
         }
 
         player.Velocity = velocity;

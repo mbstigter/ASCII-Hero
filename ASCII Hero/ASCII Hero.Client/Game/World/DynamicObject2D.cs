@@ -13,9 +13,6 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }
 
-    /// <summary>Whether this object is currently resting on a platform or the world's floor.</summary>
-    public bool IsGrounded { get; set; }
-
     /// <summary>Whether this object is subject to normal world gravity.</summary>
     public bool GravityAffected { get; set; } = true;
 
