@@ -39,6 +39,36 @@ public static class WorldSelectRenderer
     private const int LogoHeight = 5;
     private const int LogoGapRows = 1;
 
+    // Small "more options this way" indicators drawn just outside the outer edge of the
+    // leftmost/rightmost visible thumbnail, shown only when scrolling that direction would
+    // actually reveal another world. Each is a 6-row chevron built from '/'/'\' pairs stepping
+    // diagonally toward the tip; the two arrays are the same shape, just with rows (and slash
+    // direction) reversed, so the tip points outward - left for the left-scroll hint, right for
+    // the right-scroll hint.
+    private static readonly string[] LeftScrollArrow =
+    [
+        "  / /",
+        " / / ",
+        "/ /  ",
+        "\\ \\  ",
+        " \\ \\ ",
+        "  \\ \\",
+    ];
+    private static readonly string[] RightScrollArrow =
+    [
+        "\\ \\  ",
+        " \\ \\ ",
+        "  \\ \\",
+        "  / /",
+        " / / ",
+        "/ /  ",
+    ];
+    private static readonly int ScrollArrowWidth = LeftScrollArrow.Max(line => line.Length);
+    private static readonly int ScrollArrowHeight = LeftScrollArrow.Length;
+    // Horizontal gap left between a thumbnail's outer edge and its scroll arrow, so the arrow
+    // reads as a separate indicator rather than touching the thumbnail.
+    private const int ScrollArrowGap = 1;
+
     /// <summary>
     /// Picks 5, 3, or 1 visible slots - whichever largest odd count both fits the viewport width
     /// and doesn't exceed how many worlds actually exist (so a short catalog doesn't reserve
@@ -95,9 +125,46 @@ public static class WorldSelectRenderer
             }
 
             AddThumbnail(glyphs, world, thumbCol, thumbRow, cellWidthPixels, cellHeightPixels);
+
+            if (slot == 0 && screen.ScrollOffset > 0)
+            {
+                AddScrollArrow(glyphs, LeftScrollArrow, thumbCol - ScrollArrowGap - ScrollArrowWidth, thumbRow, cellWidthPixels, cellHeightPixels);
+            }
+
+            if (slot == screen.VisibleSlotCount - 1 && screen.ScrollOffset + screen.VisibleSlotCount < screen.Worlds.Count)
+            {
+                AddScrollArrow(glyphs, RightScrollArrow, thumbCol + WorldCatalog.ThumbnailWidth + ScrollArrowGap, thumbRow, cellWidthPixels, cellHeightPixels);
+            }
         }
 
         return glyphs;
+    }
+
+    /// <summary>
+    /// Draws a "more options this way" chevron entirely outside a thumbnail's outer edge (never
+    /// overlapping the thumbnail itself), vertically centered against it.
+    /// </summary>
+    private static void AddScrollArrow(
+        List<Glyph> glyphs, string[] arrowLines, double arrowCol, double thumbRow,
+        double cellWidthPixels, double cellHeightPixels)
+    {
+        var arrowRow = thumbRow + (WorldCatalog.ThumbnailHeight - ScrollArrowHeight) / 2.0;
+
+        for (var row = 0; row < arrowLines.Length; row++)
+        {
+            var line = arrowLines[row];
+            for (var col = 0; col < line.Length; col++)
+            {
+                var character = line[col];
+                if (character == ' ')
+                {
+                    continue;
+                }
+
+                glyphs.Add(GlyphBuilder.BuildGlyph(
+                    (arrowCol + col) * cellWidthPixels, (arrowRow + row) * cellHeightPixels, character, WorldSelectForeColor, null));
+            }
+        }
     }
 
     private static void AddTitle(

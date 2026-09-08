@@ -290,21 +290,36 @@ The live game state and the entity types that make it up.
   exact same formulas as stationary terrain. Combined with `PhysicsSystem`
   integrating that velocity into `Position` before `Resolve` runs each frame,
   plus the landing-snap correction above always running against the
-  platform's current (already-moved) position, this is what carries a
-  resting rider vertically - there is no separate positional "carry" for the
-  vertical axis. Horizontally, though, the player's `Velocity.X` is
-  overwritten directly from input every frame (`PhysicsSystem.Step`), so
-  that same friction-based matching never gets a chance to act; to still
-  carry a rider along a horizontally-patrolling platform, `CollisionSystem`
-  additionally remembers (in `_groundedSolids`) which solid each grounded
-  `IPhysicsBody` last landed on, and at the start of the next
-  `Resolve(world, deltaSeconds)` call shifts that body's `Position.X` (only)
-  by the remembered solid's `Velocity.X * deltaSeconds` before the ordinary
-  overlap check runs (a no-op against stationary terrain, whose velocity is
-  zero). This is deliberately horizontal-only: an earlier version also
-  shifted `Position.Y` the same way, which double-counted the platform's
-  vertical displacement on top of velocity-matching + the landing snap and
-  caused visible up/down jitter (see docs/Decisions.md). Moving-body-vs-moving-body resolution
+  platform's current (already-moved) position, this ordinarily carries a
+  resting rider vertically. But a platform displacing downward farther in
+  one frame than the body's own velocity-matched fall keeps up with can
+  still briefly lose all rect overlap before either mechanism runs;
+  `CollisionSystem.MaintainVerticalGroundedContact` permanently closes that
+  gap by directly re-seating a still-grounded body (`IsGrounded` still true
+  from last frame) that is remembered (`_groundedSolids`) to be standing on
+  a *moving* solid flush onto that solid's current top surface - provided
+  it still overlaps horizontally - before this frame's ordinary landing
+  check runs. Being a direct position assignment rather than an additive
+  velocity/position delta, this cannot double-count with the mechanisms
+  above (an earlier attempt that instead added a `solidVelocity.Y *
+  deltaSeconds` delta caused visible up/down jitter - see
+  docs/Decisions.md); it also skips a body that jumped this same frame
+  (already not `IsGrounded`) or a `DynamicObject2D` bouncing off ordinary
+  stationary terrain (solid velocity zero). Horizontally, by contrast, the
+  player's `Velocity.X` is overwritten directly from input every frame
+  (`PhysicsSystem.Step`), so that same friction-based matching never gets a
+  chance to act for the player specifically (every other body still
+  carries horizontally for free via it); `CollisionSystem` works around
+  this with a **temporary hack**, sharing the same `_groundedSolids`
+  dictionary: at the start of the next `Resolve(world, deltaSeconds)` call
+  it shifts *the player's* `Position.X` (only) by the remembered solid's
+  `Velocity.X * deltaSeconds` before the ordinary overlap check runs (a
+  no-op against stationary terrain). This is explicitly flagged in code to
+  be deleted once player movement becomes force/mass-based instead of
+  direct velocity assignment (see the deferred TODO on `PhysicsSystem.Step`),
+  at which point the same velocity-matching used by every other body will
+  carry the player horizontally too, with no special-casing needed.
+  Moving-body-vs-moving-body resolution
   (`ResolveBodyPair`) splits position correction by relative mass and
   resolves the along-normal velocity response via a standard 1D
   mass-weighted impulse, rather than each body independently reflecting its

@@ -2,6 +2,71 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## Vertical grounded-carry gap fixed permanently; horizontal fix explicitly flagged as a temporary hack
+
+- **Prompted by user follow-up:** after the horizontal-only restriction
+  below fixed enemy sliding, the user pointed out the *original* ask - the
+  player floating momentarily above a downward-moving platform - was still
+  entirely unfixed (the horizontal-only change left the vertical axis
+  exactly as it started), and separately asked that the still-necessary
+  horizontal carry be clearly flagged as temporary scaffolding rather than
+  a permanent design, since it exists only to work around the player's
+  input-driven `Velocity.X` overwrite and should be deleted once player
+  movement becomes force/mass-based (see the deferred TODO on
+  `PhysicsSystem.Step`) - at which point ordinary friction-based
+  velocity-matching (already used by every other body) will carry the
+  player horizontally for free, same as it already does vertically.
+- **Horizontal carry flagged, not removed:** `_groundedSolids` and the
+  block in `CollisionSystem.Resolve` that reads it are now explicitly
+  labeled `TEMPORARY HACK`, with the doc comments explaining exactly what
+  future change (player force/mass movement) makes them redundant and
+  should trigger their deletion, so this isn't mistaken for a permanent
+  design decision later.
+- **Vertical fix: a genuinely permanent, additive-free re-seat.** Unlike
+  horizontal, gravity affects the player exactly like every other body, so
+  there's no input-overwrite problem to work around here - the vertical
+  gap is purely the discrete-collision timing issue described below, with
+  no reason a proper fix couldn't be permanent and apply to every body.
+  Added `CollisionSystem.MaintainVerticalGroundedContact`: for a body that
+  was already confirmed grounded as of last frame (`IsGrounded` still true)
+  and remembered to be standing on a *moving* solid (`_groundedSolids`),
+  if it still horizontally overlaps that solid's collision rect(s) this
+  frame, its `Position.Y` is snapped directly onto the solid's *current*
+  top surface - an absolute, direct assignment, not an additive
+  velocity/position delta. This runs immediately, before this frame's
+  ordinary overlap-based landing check, closing the same gap the earlier
+  (reverted) vertical delta attempt intended to close - a platform
+  displacing downward farther in one frame than the body's own
+  velocity-matched fall keeps up with, which otherwise briefly loses all
+  rect overlap and free-falls under gravity alone until it "catches up".
+- **Why this can't double-count, unlike the earlier attempt:** the earlier
+  vertical fix failed because it *added* `solidVelocity.Y * deltaSeconds`
+  to whatever position the body already had - on top of the pre-existing
+  velocity-matching + landing-snap mechanism that was *also* moving the
+  body vertically, compounding both. This fix instead *sets* `Position.Y`
+  outright, purely from the solid's current rect - the same operation the
+  ordinary landing-snap in `ResolveRectAgainstSolid` already performs, just
+  run one step earlier so the body's rect never actually loses overlap
+  with the solid in the first place. The subsequent ordinary collision
+  pass then finds the exact same overlap it would already have produced
+  and simply reconfirms it - a no-op, not a second correction.
+- **Guarded against misuse in two ways:** (1) gated on `IsGrounded` still
+  being true as of the start of this `Resolve` call, since `PhysicsSystem`
+  already clears it the instant a jump/climb/hang begins - without this, a
+  player who just jumped off a platform this same frame would be wrongly
+  snapped straight back down for still horizontally overlapping it; and
+  (2) gated on the remembered solid's own `Velocity` being non-zero, since
+  ordinary stationary terrain never has this gap to begin with, and a
+  bouncing `DynamicObject2D` is still momentarily `IsGrounded` the very
+  frame it bounces upward off stationary ground - re-seating it back down
+  every such frame would wrongly cancel every bounce.
+- **Applies to every grounded `IPhysicsBody`, not just the player** - both
+  the enemy-sliding regression and the original platform-floating bug were
+  really the same class of problem (an axis not being carried correctly),
+  and this fix, being a correct/permanent one, is written generically from
+  the start rather than needing the same player-only carve-out the
+  horizontal hack requires.
+
 ## Grounded-carry fix restricted to the horizontal axis only, fixing jitter it introduced vertically
 
 - **Prompted by user testing:** after the grounded-carry fix below shipped,

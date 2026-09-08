@@ -127,22 +127,41 @@ DOM keyboard events.
 - That snap-onto-top correction, combined with the velocity-matching
   above (integrated into `Position` by `PhysicsSystem.Step` each frame
   *before* `CollisionSystem.Resolve` runs), is what carries a resting body
-  vertically along with a moving platform - there is no separate positional
-  "carry" mechanism for the vertical axis. `CollisionSystem` additionally
-  remembers, per grounded `IPhysicsBody`, which solid it last landed on
-  (`_groundedSolids`), and at the start of the next `Resolve` call shifts
-  that body's `Position.X` (horizontal only) by the remembered solid's
-  `Velocity.X * deltaSeconds` before the ordinary overlap check runs. This
-  is needed because `PhysicsSystem.Step` overwrites the player's
-  `Velocity.X` directly from input every frame, so the friction-based
-  horizontal velocity-matching above never gets a chance to act — without
-  this explicit shift a rider wouldn't move with a horizontally-patrolling
-  platform at all. It deliberately does *not* also shift `Position.Y`:
-  vertical motion is already carried by velocity-matching + the landing
-  snap, and adding a second, independent vertical shift on top of those
-  double-counts the platform's displacement, which was tried and caused
-  visible up/down jitter (see docs/Decisions.md). This has no effect
-  against stationary terrain (velocity zero either way).
+  vertically along with a moving platform in the ordinary case. But a
+  platform displacing downward farther in one frame than the resting
+  body's own velocity-matched fall keeps up with can still briefly lose
+  all rect overlap with the body entirely, before either mechanism gets a
+  chance to run - `CollisionSystem.MaintainVerticalGroundedContact` closes
+  this permanently: for a body still `IsGrounded` from last frame and
+  remembered (`_groundedSolids`) to be standing on a *moving* solid, if it
+  still overlaps that solid horizontally, its `Position.Y` is snapped
+  directly onto the solid's *current* top surface before this frame's
+  ordinary landing check runs - the same correction that check would
+  already produce, just performed one step earlier so overlap is never
+  actually lost. Being a direct assignment rather than an additive
+  velocity/position delta, it cannot double-count with the mechanisms
+  above (an earlier attempt that instead added `solidVelocity.Y *
+  deltaSeconds` on top of them caused visible up/down jitter - see
+  docs/Decisions.md). Gated on the body still being grounded (so a body
+  that jumped this same frame isn't wrongly snapped back down) and on the
+  solid actually moving (so a bouncing `DynamicObject2D`'s bounce off
+  ordinary stationary terrain is never cancelled).
+- `CollisionSystem` separately remembers, per grounded `IPhysicsBody`,
+  which solid it last landed on (`_groundedSolids`, shared with the fix
+  above), and at the start of the next `Resolve` call shifts *the
+  player's* `Position.X` by the remembered solid's `Velocity.X *
+  deltaSeconds` before the ordinary overlap check runs. This is a
+  **temporary hack**, not a permanent design: it exists only because
+  `PhysicsSystem.Step` overwrites the player's `Velocity.X` directly from
+  input every frame, so the friction-based horizontal velocity-matching
+  above never gets a chance to act for the player specifically (every
+  other body already carries horizontally for free via that
+  velocity-matching, same as vertical). It is scoped to the player only -
+  applying it to every body too would double-count the already-working
+  horizontal carry for non-player bodies. Once player movement becomes
+  force/mass-based instead of direct velocity assignment (see the
+  deferred TODO on `PhysicsSystem.Step`), this entire mechanism becomes
+  redundant and should be deleted.
 - Hazard contact is resolved generically: any `IPhysicsBody` overlapping any
   `IHazardBody` in `World2D.Objects` is detected, with no concrete-type checks
   on either side. Hazard contact detection exists but does not yet apply any
