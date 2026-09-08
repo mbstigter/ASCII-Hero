@@ -87,27 +87,36 @@ public class CollisionSystem
                 continue;
             }
 
-            // Carry a rider along by its previously-grounded solid's own horizontal displacement
-            // this frame, *before* the IsGrounded reset/re-detection below runs. Horizontal-only:
-            // PhysicsSystem.Step overwrites the player's Velocity.X directly from input every
-            // frame (see its own remarks), so the friction-based velocity-matching that
-            // ResolveRectAgainstSolid already applies on landing (nudging the rider's velocity
-            // toward the solid's own) never gets a chance to take effect horizontally - without
-            // this explicit shift, a rider standing still relative to input still doesn't move
-            // with a horizontally-patrolling platform underneath it. Deliberately does NOT apply
-            // vertically: gravity-integrated bodies already track a vertically-moving solid via
-            // that same velocity-matching (their Velocity.Y is nudged toward the solid's each
-            // frame in ResolveRectAgainstSolid, then integrated into Position by PhysicsSystem
-            // *before* this runs), and the very next line below's ordinary landing check snaps
-            // the body flush onto the solid's current (already-moved) top surface regardless -
-            // adding a *second*, independent Position.Y shift here on top of both of those double-
-            // counts the platform's own motion, overshooting the snap and fighting the following
-            // frame's correction, which is exactly what caused the up/down jitter this replaced.
-            // Only applies if the previously-grounded solid is still actually a real,
-            // still-existing body with non-zero horizontal velocity (ordinary stationary terrain
-            // has none, so this is a no-op for the overwhelming common case of resting on a plain
+            // Carry the player along by its previously-grounded solid's own horizontal
+            // displacement this frame, *before* the IsGrounded reset/re-detection below runs.
+            // Player-only, horizontal-only: PhysicsSystem.Step overwrites the player's Velocity.X
+            // directly from input every frame (see its own remarks), so the friction-based
+            // velocity-matching that ResolveRectAgainstSolid already applies on landing (nudging
+            // the rider's velocity toward the solid's own) never gets a chance to take effect for
+            // the player horizontally - without this explicit shift, a stationary (no
+            // left/right held) player doesn't move with a horizontally-patrolling platform
+            // underneath it. Every other IPhysicsBody (MovingEnemy2D, DynamicObject2D) moves via
+            // StepMovingBodyWithForces instead, which integrates its own Velocity.X - already
+            // matched to the solid's by ResolveRectAgainstSolid - into Position every frame just
+            // like the player's Velocity.Y does; applying this same shift to those bodies too
+            // would double-count that already-working horizontal carry and made a patrolling
+            // enemy resting on a moving platform (PatrolForce = 0) slide off it instead of staying
+            // put. Deliberately does NOT apply vertically for the same reason, even for the
+            // player: gravity-integrated bodies already track a vertically-moving solid via that
+            // same velocity-matching (their Velocity.Y is nudged toward the solid's each frame in
+            // ResolveRectAgainstSolid, then integrated into Position by PhysicsSystem *before*
+            // this runs), and the very next line below's ordinary landing check snaps the body
+            // flush onto the solid's current (already-moved) top surface regardless - adding a
+            // *second*, independent Position.Y shift here on top of both of those double-counts
+            // the platform's own motion, overshooting the snap and fighting the following frame's
+            // correction, which is exactly what caused the up/down jitter this replaced. Only
+            // applies if the previously-grounded solid is still actually a real, still-existing
+            // body with non-zero horizontal velocity (ordinary stationary terrain has none, so
+            // this is a no-op for the overwhelming common case of resting on a plain
             // platform/floor).
-            if (_groundedSolids.TryGetValue(movingBody, out var groundedSolid) && groundedSolid is IPhysicsBody groundedSolidBody)
+            if (movingBody is Player2D
+                && _groundedSolids.TryGetValue(movingBody, out var groundedSolid)
+                && groundedSolid is IPhysicsBody groundedSolidBody)
             {
                 var solidVelocityX = groundedSolidBody.Velocity.X;
                 if (solidVelocityX != 0)
