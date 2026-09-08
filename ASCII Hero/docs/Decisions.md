@@ -2,6 +2,125 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## Contact-tracking + impulse-based normal force redesign planned; supersedes "no separate normal force" decision
+
+- **Supersedes the earlier "No separate constraint-solver normal force
+  term" decision below** (kept in place further down for history): that
+  decision was made when `IsGrounded` was a simple, pragmatic contact
+  signal and grounded-response worked well enough for stationary/slowly
+  moving terrain. Debugging the moving-platform carry/grounding bugs (head
+  hanging on a platform's underside, side-collision jitter, vertical carry
+  gaps) repeatedly traced back to the same root cause: resolution axis
+  (top/bottom vs. left/right) was inferred from *current-frame overlap
+  depth alone*, with no memory of which side a body actually approached
+  from - workable for the common case, ambiguous whenever a thin/fast
+  solid or multi-rect body (e.g. player head+torso) produces a shallow
+  overlap on the "wrong" axis for one frame.
+- **New direction:** replace the ad hoc, per-bug patches
+  (`MaintainVerticalGroundedContact`, the temporary player-only horizontal
+  carry hack) with a persisted, explicit per-body `ContactType` model
+  (SurfaceTop/Bottom/Left/Right/Ladder/Bar - ported in spirit from the
+  older `ConsoleGame2D.CollisionSystem2D`/`Body2D` contact tracking) plus
+  genuine impulse/constraint-based normal-force resolution: a resting
+  body's velocity component along the contact normal (relative to the
+  contacted surface's own velocity) is clamped/reflected directly each
+  frame, rather than inferring "was I grounded" from geometry after the
+  fact. Explicitly **rejected**: a penalty/spring-style normal force
+  (force proportional to penetration depth) - this is the classic source
+  of the stiffness-tuning/oscillation problems experienced previously
+  before this codebase existed, and is unnecessary when the impulse/
+  constraint form is unconditionally stable (no spring constant to
+  calibrate).
+- **`IsGrounded` becomes a derived, read-only query, not stored state:**
+  rather than a mutable field set/reset by scattered code (the exact
+  pattern that caused ordering bugs this session), `IsGrounded` is
+  recomputed fresh every frame from that frame's resolved `ContactType`
+  set (`HasContact(ContactType.SurfaceBottom)`), evaluated once per frame
+  after normal-force resolution runs. Any future hysteresis/game-feel
+  state (e.g. coyote-time jump forgiveness) must be its own separately
+  named, clearly-labeled field - never reusing or conflating with
+  whatever replaces `IsGrounded`.
+- **One-way (jump-through-from-below) platforms fall out for free:** a
+  `Body2D.IsOneWayPlatform` flag can gate whether an underside
+  (`SurfaceBottom`) contact is even created, using the previous frame's
+  contact snapshot to disambiguate "was resting on top" from "approaching
+  from below" - not otherwise reliably possible under the old
+  overlap-depth-only model.
+- **Character-level narrow phase added as a toggle, not a replacement:**
+  the existing multi-rect AABB decomposition (chosen originally so oddly
+  shaped sprites, e.g. a rounded ball or a narrower head above wider
+  shoulders, only collide on their non-empty cells) is itself the source
+  of the platform-through-head bug, since a short per-rect height can
+  make a sub-rect's overlap look like "resting on top" at a shallower
+  penetration than the whole body's true silhouette would. A ported
+  character-grid narrow phase (test actual non-space sprite characters in
+  the overlap region, also from `ConsoleGame2D`) sidesteps this by testing
+  the true silhouette directly, but is added behind a
+  `CollisionSystem.NarrowPhaseMode` toggle (default `MultiRect`) rather
+  than replacing the existing path outright, until it's proven correct
+  and fast enough with many objects.
+- **Broad phase via spatial grid, not plain pairwise AABB:** since levels
+  are expected to have many objects, candidate-pair gathering is bucketed
+  by world cell so per-frame collision checks scale with nearby objects
+  only, not the full object count.
+- **Player force/mass movement rewrite deliberately deferred, sequenced
+  after this redesign:** the temporary horizontal carry hack being
+  deleted here exists only because Player currently overwrites
+  `Velocity.X` directly from input each frame (see "Force-based movement,
+  non-player only" below); once this contact/normal-force redesign lands,
+  `MovingEnemy2D` (already force-driven) serves as the proof that
+  platform-riding/grounding/one-way-platforms work correctly *before*
+  Player's own movement model changes, keeping the two rewrites isolated
+  rather than debugged together.
+
+## Medium (air/liquid) drag and buoyancy: deferred, distinguished from surface friction
+
+- **Prompted by user idea:** every character cell can already be assigned a
+  material with properties; the user proposed treating empty cells as an
+  implicit "air" material (low density, low friction/drag) as the natural
+  default, then adding explicit liquid regions (e.g. water) as ordinary
+  objects with their own material, so a steel ball sinks (slower through
+  water than air) and a low-density hollow ball floats - envisioned as a
+  variant of the `TestPhysics` world.
+- **Friction, drag, and buoyancy are three distinct mechanisms, not one:**
+  - **Friction** (`Body2D.Friction`, already implemented) is a
+    contact/surface phenomenon - it only exists between two bodies
+    actually touching via a resolved normal-force contact, and damps only
+    the *tangential* (parallel-to-surface) velocity component.
+  - **Drag** is a volumetric/medium phenomenon - it opposes a body's
+    velocity in whatever direction it's actually moving, requires no
+    contact/touching at all, only "is this body's position currently
+    inside a medium's volume," and scales with the medium's density (and
+    typically the body's cross-section/shape).
+  - **Buoyancy** is a separate force again - proportional to displaced
+    medium volume times the medium's density, opposing gravity; whether a
+    body sinks or floats falls out of comparing the body's own `Density`
+    (already an existing property, used today for mass) against the
+    medium's density, with drag only affecting *how fast* it sinks/rises,
+    not *whether* it does.
+  - These are easy to conflate (all "resistance") but need separate
+    properties/forces: reusing `Friction` for medium drag would be
+    physically wrong (friction requires a surface contact; drag doesn't)
+    and would block correctly modeling a body moving through open air/water
+    with no surface contact at all.
+- **"Empty cells = air" is an elegant default, not a special case:**
+  treating the background/empty-cell state as an always-present, very
+  low-density, very low-drag medium means there is no special-casing
+  needed for "not inside anything" - it is simply the ambient medium,
+  with explicit water/liquid regions being ordinary denser/higher-drag
+  media placed as objects on top of that default.
+- **Deferred, not implemented now:** this is additive to, not entangled
+  with, the in-progress contact-tracking/impulse-based-normal-force
+  collision redesign (see below) - media/drag/buoyancy are forces applied
+  during integration alongside gravity, and don't touch contact
+  resolution, `ContactType`, or normal force at all. Sequencing it after
+  that redesign lands means medium overlap detection can reuse the new
+  broad-phase spatial grid instead of duplicating overlap-query code.
+  It's also a good, Player-independent milestone (falling/floating balls)
+  to exercise the force/mass integration loop before the Player force/mass
+  movement rewrite (also deferred, see below) takes on user input as just
+  another force source.
+
 ## Vertical grounded-carry gap fixed permanently; horizontal fix explicitly flagged as a temporary hack
 
 - **Prompted by user follow-up:** after the horizontal-only restriction
