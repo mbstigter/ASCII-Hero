@@ -2,6 +2,98 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## `KinematicObject2D.SetPatrol` gains explicit per-axis initial-direction overrides
+
+- **Prompted by user request:** a follow-up to the `KinematicObject2D` work
+  below asked whether the initial patrol direction is stored anywhere at
+  runtime, and if so, whether a level author could pin it explicitly via
+  `_objects.ini` instead of only relying on the automatic
+  farther-bound inference, for more precise level design.
+- **Yes - it was already stored, just not exposed as an override:**
+  `KinematicObject2D` already holds `_patrolMovingTowardMaxX`/
+  `_patrolMovingTowardMaxY` fields, computed once in `SetPatrol` and then
+  read every frame by `Move`. `MovingEnemy2D.SetPatrol` already had exactly
+  this kind of explicit override (`initialDirectionRight`, surfaced via the
+  `PatrolInitialDirection` ini key), so `KinematicObject2D.SetPatrol` was
+  extended to match: two new optional `bool?` parameters,
+  `initialDirectionTowardMaxX`/`initialDirectionTowardMaxY`, each either
+  overriding that axis's starting heading or (if left `null`, the default)
+  falling back to the existing farther-bound inference exactly as before.
+- **New ini keys `PatrolInitialDirectionX`/`PatrolInitialDirectionY`**
+  (`World2D.LoadAsync`), taking `Min`/`Max` (case-insensitive) rather than
+  `MovingEnemy`'s `Left`/`Right`, since a `KinematicObject`'s Y-axis patrol
+  has no "left"/"right" reading - `Min`/`Max` reads correctly for either
+  axis. Documented in docs/AssetFormat.md alongside the existing
+  `KinematicObject` patrol keys, and demonstrated in the `MovingPlatforms`
+  demo world's `SteelHorizontal` placement (pinned to start heading toward
+  `PatrolMinX`, so it visibly departs from the brick platform before
+  returning).
+
+## `KinematicObject2D` reimagined as a real kinematic body (static + `IPhysicsBody`), with per-axis patrol and reference-frame collision, plus a `MovingPlatforms` demo world
+
+- **Prompted by user request:** move on from `MovingEnemy2D` to
+  `KinematicObject2D` for moving platforms, referencing the old
+  `ConsoleGame2D` prototype's equivalent behavior, and build both the
+  plumbing and a demo world with a static brick platform flanked by a
+  horizontally- and a vertically-patrolling steel platform, tested by
+  walking the player onto them.
+- **`IsStatic` clarified to mean collision-response immunity, not
+  immobility:** `Body2D.IsStatic`'s doc comment now explicitly describes the
+  "kinematic body" case - a body that is `IsStatic` (never itself corrected
+  by `CollisionSystem`) yet still implements `IPhysicsBody` with a real,
+  non-zero `Velocity` it drives every frame under its own prescribed motion,
+  as distinct from ordinary stationary terrain where `IsStatic` and "never
+  moves" happen to coincide. This was needed because a moving platform must
+  push/carry other bodies (so it needs a real velocity other systems can
+  react to) while never being pushed/bounced/halted by anything it touches
+  (so it stays `IsStatic`).
+- **`KinematicObject2D` rewritten accordingly:** `IsStatic = true` (was
+  `false`), keeps `IPhysicsBody.Velocity`, and gains independent, optional
+  per-axis patrol state (`PatrolMinX`/`PatrolMaxX`/`PatrolSpeedX`,
+  `PatrolMinY`/`PatrolMaxY`/`PatrolSpeedY`, configured via `SetPatrol`) plus
+  its own `Move(deltaSeconds)` that recomputes each configured axis's
+  velocity toward its current target bound (reversing near it, mirroring
+  `MovingEnemy2D`'s turn-around approach) and integrates position - never
+  gravity/force integration. Per-axis (rather than a single linear
+  direction) was chosen specifically so a future non-linear patrol path
+  (e.g. a rectangular circuit) can be added without redesigning the body,
+  even though only pure-horizontal or pure-vertical patrol is used today.
+  `PhysicsSystem.Step`'s `KinematicObject2D` case now just calls
+  `Move(deltaSeconds)` instead of inlining the integration.
+- **`CollisionSystem`'s `_movingBodies` list now excludes any `IsStatic`
+  body:** previously any `IPhysicsBody` (including a would-be kinematic
+  body) was added, which would have made `KinematicObject2D` incorrectly
+  participate as something to be *itself* resolved/corrected. Static bodies
+  are only ever encountered from the *solids* side of collision resolution
+  now, matching how ordinary terrain already worked.
+- **Solid-collision math (`ResolveAgainstSolid`/`ResolveRectAgainstSolid`)
+  generalized to use the solid's own velocity as the collision's reference
+  frame**, rather than assuming every solid is stationary: bounce/friction
+  response is computed on the other body's velocity *relative to* the
+  solid's velocity, then the solid's velocity is added back to the result.
+  For ordinary static terrain (velocity always zero) this is numerically
+  identical to the prior math. For a moving `KinematicObject2D`, this means
+  friction naturally drags a resting/colliding rider's velocity toward
+  matching the platform's own velocity instead of toward zero (more so for a
+  grippy material, less for a slick one, using the exact same
+  `ApplyFriction` formula already used against stationary terrain), and
+  vertical carry (riding a platform up/down) falls out for free from the
+  existing per-frame snap-onto-top-surface correction, which already runs
+  against wherever the platform currently is. This was chosen deliberately
+  over a bespoke "carry the rider" mechanism, so a moving platform reuses
+  exactly the same collision code path as ordinary terrain.
+- **`World2D.LoadAsync` extended to parse the new per-axis `KinematicObject`
+  patrol ini keys** (`PatrolMinY`/`PatrolMaxY`/`PatrolSpeedX`/`PatrolSpeedY`,
+  alongside the existing X-axis keys and the shared `Patrol` flag) and call
+  `SetPatrol` with whichever axes are configured.
+- **New `MovingPlatforms` demo world** (registered in `Global/Worlds.ini`):
+  a static `BrickPlatform` in the middle where the player naturally lands
+  after falling from spawn, flanked by two `SteelPlatform` kinematic
+  objects - one patrolling purely horizontally, one purely vertically -
+  reusing the already-existing `BrickPlatform`/`SteelPlatform` sprite assets
+  rather than adding new ones, to validate the plumbing above by walking the
+  player onto each platform.
+
 ## New `IPosedBody` capability interface + shared `Body2D.ResolveHorizontalFacing`, prepping `Player2D` for its own eventual force-based conversion
 
 - **Prompted by user request:** a follow-up review of the `MovingEnemy2D`

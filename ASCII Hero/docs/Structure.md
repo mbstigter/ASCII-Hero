@@ -142,9 +142,20 @@ The live game state and the entity types that make it up.
   - `DynamicObject2D` - a non-player object driven by velocity and,
 	optionally, gravity, bouncing off world bounds/platforms according to its
 	restitution (e.g. the bouncing ball).
-  - `KinematicObject2D` - moves at a constant, predefined velocity; never
-	affected by gravity. Currently a simple base for future patrol-style
-	motion.
+  - `KinematicObject2D` - a static-for-collision-response (`IsStatic`) body
+	(e.g. a moving platform) that still implements `IPhysicsBody` with a
+	real, self-driven `Velocity` - a "kinematic body" in the usual
+	physics-engine sense: it drives its own prescribed motion every frame via
+	`Move(deltaSeconds)` (never gravity/force integration), and other bodies
+	collide against/are carried by it, but it is never itself pushed,
+	bounced, or halted by anything it touches (see `CollisionSystem` and
+	`Body2D.IsStatic`). Supports independent optional per-axis back-and-forth
+	patrol (`PatrolMinX`/`PatrolMaxX`/`PatrolSpeedX`,
+	`PatrolMinY`/`PatrolMaxY`/`PatrolSpeedY` - either, both, or neither axis
+	may be configured), a distinct scheme from `IPatrolBody`'s single X-only
+	force-based patrol used by `MovingEnemy2D`, chosen to leave room for a
+	future non-linear (e.g. rectangular-circuit) motion path without
+	redesigning the body.
   - `MovingEnemy2D` - an AI-controlled hazard that moves and collides exactly
 	like a `DynamicObject2D`; optionally patrols back and forth along the X
 	axis via `IPatrolBody` (see below), and implements `IPosedBody` to face
@@ -269,7 +280,15 @@ The live game state and the entity types that make it up.
   collision response are the combined (simple-average, see `Combine`) values
   of both contacting bodies' own resolved material properties (see
   `Body2D.Restitution`/`Friction` below), not a single one-sided or
-  type-based value. Moving-body-vs-moving-body resolution
+  type-based value. Solid-collision response (`ResolveRectAgainstSolid`)
+  treats the solid's own velocity (real for a kinematic body like
+  `KinematicObject2D`, zero for ordinary stationary terrain) as the
+  collision's reference frame - bounce/friction math runs on the other
+  body's velocity relative to the solid, then the solid's velocity is added
+  back - so a moving platform naturally drags a resting rider along via
+  friction (more so for a grippy material, less for a slick one) using the
+  exact same formulas as stationary terrain, with no separate "carry"
+  mechanism. Moving-body-vs-moving-body resolution
   (`ResolveBodyPair`) splits position correction by relative mass and
   resolves the along-normal velocity response via a standard 1D
   mass-weighted impulse, rather than each body independently reflecting its

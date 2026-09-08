@@ -110,6 +110,20 @@ DOM keyboard events.
   generically — there is no per-concrete-type collision method. The player
   differs from other moving bodies only by the restitution value passed in
   (0, so it stops dead instead of bouncing), not by a separate code path.
+- A kinematic body (`KinematicObject2D`, e.g. a moving platform) is
+  `IsStatic` (immune to collision response — nothing corrects its own
+  position/velocity) while also implementing `IPhysicsBody` with a real,
+  self-driven `Velocity`. `CollisionSystem`'s solid-collision math
+  (`ResolveRectAgainstSolid`) treats that solid's own velocity as the
+  collision's reference frame — computing bounce/friction on the other
+  body's velocity *relative to* the solid, then adding the solid's velocity
+  back — rather than assuming every solid is stationary. For ordinary
+  terrain (velocity zero) this reduces to exactly the prior math; for a
+  moving platform, friction naturally drags a resting rider along toward
+  matching the platform's own velocity (a grippy material carries the rider
+  more than a slick one), and vertical carry falls out for free from the
+  existing per-frame snap-onto-top-surface correction always running
+  against the platform's current (already-moved) position.
 - Hazard contact is resolved generically: any `IPhysicsBody` overlapping any
   `IHazardBody` in `World2D.Objects` is detected, with no concrete-type checks
   on either side. Hazard contact detection exists but does not yet apply any

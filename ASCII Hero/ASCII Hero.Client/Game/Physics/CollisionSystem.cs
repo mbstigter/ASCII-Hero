@@ -55,7 +55,12 @@ public class CollisionSystem
 
         foreach (var body in world.Objects)
         {
-            if (body is not IPhysicsBody movingBody)
+            // A static body (e.g. KinematicObject2D) can implement IPhysicsBody for its own real
+            // Velocity - so other bodies' collision response can react to it (see
+            // Body2D.IsStatic) - without itself being resolved as a mover: it must never appear
+            // in the solids list's own pairing loop, world-bounds check, or moving-body-vs-moving-
+            // body pairing, all of which assume the body they're correcting is actually pushable.
+            if (body is not IPhysicsBody movingBody || body.IsStatic)
             {
                 continue;
             }
@@ -409,7 +414,13 @@ public class CollisionSystem
     /// bounce - and applies a friction damping to the tangential velocity component from their
     /// combined friction. Despite the name, <paramref name="solid"/> is any immovable body from
     /// the <c>solids</c> list, not specifically a platform - a wall, crate, or any other static
-    /// terrain resolves the same way.
+    /// terrain resolves the same way. All of the bounce/friction math is done in <paramref name="solid"/>'s
+    /// own velocity reference frame (see <see cref="ResolveRectAgainstSolid"/>) rather than
+    /// assuming it is stationary, so a moving platform (e.g. <see cref="KinematicObject2D"/>)
+    /// naturally carries/drags a resting or colliding body along via the same formulas used
+    /// against ordinary stationary terrain - for stationary terrain (the overwhelming common
+    /// case) the reference frame's own velocity is zero, so this reduces to exactly the same
+    /// result as before.
     /// </summary>
     private static void ResolveAgainstSolid(IPhysicsBody body, Body2D solid)
     {
@@ -430,10 +441,14 @@ public class CollisionSystem
         // the body jitters between resolved positions frame to frame.
         var restitution = Combine(body.Restitution, solid.Restitution);
         var friction = Combine(body.Friction, solid.Friction);
+        // A solid that is itself an IPhysicsBody (a kinematic platform) has a real Velocity to
+        // treat as the collision's reference frame; ordinary static terrain implements no
+        // interface here and is implicitly stationary (Vector2D.Zero).
+        var solidVelocity = solid is IPhysicsBody solidBody ? solidBody.Velocity : default;
         var rectCount = body.CollisionRects.Count;
         for (var rectIndex = 0; rectIndex < rectCount; rectIndex++)
         {
-            ResolveRectAgainstSolid(body, restitution, friction, solid, body.CollisionRects[rectIndex]);
+            ResolveRectAgainstSolid(body, restitution, friction, solidVelocity, solid, body.CollisionRects[rectIndex]);
         }
     }
 
@@ -444,7 +459,21 @@ public class CollisionSystem
     /// rect by <see cref="ResolveAgainstSolid"/> so a multi-rect body (e.g. the player's
     /// head+torso shape) gets every part of itself pushed fully clear of the solid.
     /// </summary>
-    private static void ResolveRectAgainstSolid(IPhysicsBody body, double restitution, double friction, Body2D solid, Rect2D bodyRect)
+    /// <remarks>
+    /// All velocity response here is computed on <paramref name="body"/>'s velocity <em>relative
+    /// to</em> <paramref name="solidVelocity"/> - a simple Galilean frame shift - then converted
+    /// back to an absolute velocity by adding <paramref name="solidVelocity"/> back at the end.
+    /// For stationary terrain (<paramref name="solidVelocity"/> is zero) this is identical to
+    /// operating on the body's own velocity directly, exactly as before this generalization. For
+    /// a moving platform it means: the normal-direction bounce reflects the body's speed of
+    /// approach *toward* the platform, not its raw absolute speed (so standing on a platform
+    /// moving away underneath doesn't spuriously look like an impact); and the tangential
+    /// friction damping pulls the body's velocity toward matching the platform's own velocity
+    /// (not toward zero) - a grippy platform material genuinely drags a resting rider along with
+    /// it, a slick one lets the rider slip relative to it, using the exact same
+    /// <see cref="ApplyFriction"/> formula already used against stationary terrain.
+    /// </remarks>
+    private static void ResolveRectAgainstSolid(IPhysicsBody body, double restitution, double friction, Vector2D solidVelocity, Body2D solid, Rect2D bodyRect)
     {
         if (!TryFindDeepestOverlap([bodyRect], solid.CollisionRects, out var deepestBodyRect, out var bestSolidRect))
         {
@@ -465,18 +494,25 @@ public class CollisionSystem
         var rectOffsetX = deepestBodyRect.X - body.Position.X;
         var rectOffsetY = deepestBodyRect.Y - body.Position.Y;
 
+        // Body velocity relative to the solid's own reference frame - see the remarks above.
+        var relativeVelocity = new Vector2D(body.Velocity.X - solidVelocity.X, body.Velocity.Y - solidVelocity.Y);
+
         if (minVertical < minHorizontal)
         {
             if (overlapTopBest < overlapBottomBest)
             {
                 // Landing on top of the solid. Friction damps the tangential (horizontal)
-                // velocity component every frame the body rests here - see ApplyFriction - so a
-                // grippy surface (e.g. Concrete) settles sliding motion faster than a slick one.
+                // relative velocity component every frame the body rests here - see
+                // ApplyFriction - so a grippy surface (e.g. Concrete) settles sliding motion
+                // faster than a slick one, and (for a moving platform) drags the rider along
+                // toward matching the platform's own horizontal velocity instead of toward zero.
                 var newRectBottom = bestSolidRect.Top;
                 body.Position = new Vector2D(
                     body.Position.X,
                     newRectBottom - deepestBodyRect.Height - rectOffsetY);
-                body.Velocity = new Vector2D(ApplyFriction(body.Velocity.X, friction), -body.Velocity.Y * restitution);
+                body.Velocity = new Vector2D(
+                    solidVelocity.X + ApplyFriction(relativeVelocity.X, friction),
+                    solidVelocity.Y + -relativeVelocity.Y * restitution);
                 body.IsGrounded = true;
             }
             else
@@ -485,7 +521,7 @@ public class CollisionSystem
                 body.Position = new Vector2D(
                     body.Position.X,
                     bestSolidRect.Bottom - rectOffsetY);
-                body.Velocity = new Vector2D(body.Velocity.X, -body.Velocity.Y * restitution);
+                body.Velocity = new Vector2D(body.Velocity.X, solidVelocity.Y + -relativeVelocity.Y * restitution);
             }
         }
         else
@@ -504,7 +540,9 @@ public class CollisionSystem
                     bestSolidRect.Right - rectOffsetX,
                     body.Position.Y);
             }
-            body.Velocity = new Vector2D(-body.Velocity.X * restitution, ApplyFriction(body.Velocity.Y, friction));
+            body.Velocity = new Vector2D(
+                solidVelocity.X + -relativeVelocity.X * restitution,
+                solidVelocity.Y + ApplyFriction(relativeVelocity.Y, friction));
         }
     }
 

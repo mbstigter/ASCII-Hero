@@ -780,6 +780,39 @@ PatrolForce = 90
 PatrolInitialDirection = Right
 ```
 
+A `Kind = KinematicObject` placement (e.g. a moving platform) may likewise set
+`Patrol = true`, but with an independent range/speed per axis rather than
+`MovingEnemy`'s single X-only range: `PatrolMinX`/`PatrolMaxX`/`PatrolSpeedX`
+(world-space X, in cells, and cells/second) patrol it horizontally,
+`PatrolMinY`/`PatrolMaxY`/`PatrolSpeedY` patrol it vertically, and either or
+both axes may be configured (an axis left unconfigured simply never moves on
+its own). `PatrolSpeedX`/`PatrolSpeedY` are always a positive magnitude, never
+a direction - the initial heading is inferred automatically (toward whichever
+bound is farther from the spawn position) unless overridden by
+`PatrolInitialDirectionX`/`PatrolInitialDirectionY` (`Min` or `Max`), the
+`KinematicObject` equivalent of `MovingEnemy`'s `PatrolInitialDirection`:
+
+```ini
+[HorizontalPlatform]
+Asset = SteelPlatform
+Clip = default
+Kind = KinematicObject
+Patrol = true
+PatrolMinX = 5
+PatrolMaxX = 24
+PatrolSpeedX = 8
+PatrolInitialDirectionX = Min
+
+[VerticalPlatform]
+Asset = SteelPlatform
+Clip = default
+Kind = KinematicObject
+Patrol = true
+PatrolMinY = 8
+PatrolMaxY = 18
+PatrolSpeedY = 6
+```
+
 Any placement (the `Player` section, or a non-static object) may also set
 `CameraTarget = true` to have the camera follow that body instead of the
 player. If no placement sets it, the camera defaults to following the player;

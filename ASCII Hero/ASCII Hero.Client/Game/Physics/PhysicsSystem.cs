@@ -271,10 +271,9 @@ public class PhysicsSystem
             switch (body)
             {
                 case KinematicObject2D kinematicObject:
-                    // Predefined constant motion, no gravity/force integration.
-                    kinematicObject.Position = new Vector2D(
-                        kinematicObject.Position.X + kinematicObject.Velocity.X * deltaSeconds,
-                        kinematicObject.Position.Y + kinematicObject.Velocity.Y * deltaSeconds);
+                    // Predefined motion (optionally per-axis patrol), no gravity/force
+                    // integration - see KinematicObject2D.Move.
+                    kinematicObject.Move(deltaSeconds);
                     break;
 
                 // The player keeps its existing direct velocity-assignment model (see the TODO

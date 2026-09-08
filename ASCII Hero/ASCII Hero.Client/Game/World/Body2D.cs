@@ -25,7 +25,17 @@ public abstract class Body2D
     /// <summary>Size of the body's bounding box, in world cells.</summary>
     public Vector2D Size { get; set; } = new(1, 1);
 
-    /// <summary>Whether this body is immovable terrain (true) or subject to physics/movement (false).</summary>
+    /// <summary>
+    /// Whether this body is immune to collision response - <see cref="Physics.CollisionSystem"/>
+    /// never corrects its own position/velocity when something collides with it (it only ever
+    /// modifies the *other* side of a solid collision). This is orthogonal to whether the body
+    /// actually moves: an ordinary platform/wall is both static and stationary (its <see cref="Position"/>
+    /// never changes), but a body can also be static *and* implement <see cref="IPhysicsBody"/>
+    /// with a real, non-zero <see cref="IPhysicsBody.Velocity"/> - a "kinematic body" in the usual
+    /// physics-engine sense (see <see cref="KinematicObject2D"/>): it drives its own prescribed
+    /// motion every frame and other bodies collide against/are carried by it, but it is never
+    /// itself pushed, bounced, or halted by anything it touches.
+    /// </summary>
     public bool IsStatic { get; protected init; }
 
     /// <summary>

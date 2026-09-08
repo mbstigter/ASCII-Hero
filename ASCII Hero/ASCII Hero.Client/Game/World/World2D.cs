@@ -314,6 +314,35 @@ public class World2D
                     ? (bool?)string.Equals(patrolDirectionText, "Right", StringComparison.OrdinalIgnoreCase)
                     : null;
 
+                // Patrol (Kind = KinematicObject only) - independent per-axis bounds/speed, unlike
+                // MovingEnemy's single X-only range above: PatrolMinY/PatrolMaxY let a platform
+                // patrol vertically instead of (or as well as) horizontally, and each axis has its
+                // own speed since a platform's horizontal and vertical travel distances/paces are
+                // often unrelated. An axis with no min/max pair configured simply isn't patrolled
+                // (KinematicObject2D.Move leaves that velocity component untouched).
+                var patrolMinYOverride = objectSection.TryGetValue("PatrolMinY", out var patrolMinYText) && IniValueParser.TryParseDouble(patrolMinYText, out var parsedPatrolMinY)
+                    ? (double?)parsedPatrolMinY
+                    : null;
+                var patrolMaxYOverride = objectSection.TryGetValue("PatrolMaxY", out var patrolMaxYText) && IniValueParser.TryParseDouble(patrolMaxYText, out var parsedPatrolMaxY)
+                    ? (double?)parsedPatrolMaxY
+                    : null;
+                var patrolSpeedX = objectSection.TryGetValue("PatrolSpeedX", out var patrolSpeedXText) && IniValueParser.TryParseDouble(patrolSpeedXText, out var parsedPatrolSpeedX)
+                    ? parsedPatrolSpeedX
+                    : 0.0;
+                var patrolSpeedY = objectSection.TryGetValue("PatrolSpeedY", out var patrolSpeedYText) && IniValueParser.TryParseDouble(patrolSpeedYText, out var parsedPatrolSpeedY)
+                    ? parsedPatrolSpeedY
+                    : 0.0;
+                // PatrolInitialDirectionX/Y ("Min"/"Max") let a placement explicitly pin which way
+                // a KinematicObject starts heading on that axis, instead of the default inference
+                // toward whichever bound is farther from the spawn position - e.g. so two
+                // platforms sharing the same range can be made to start in opposite phase.
+                var patrolInitialDirectionTowardMaxX = objectSection.TryGetValue("PatrolInitialDirectionX", out var patrolDirectionXText)
+                    ? (bool?)string.Equals(patrolDirectionXText, "Max", StringComparison.OrdinalIgnoreCase)
+                    : null;
+                var patrolInitialDirectionTowardMaxY = objectSection.TryGetValue("PatrolInitialDirectionY", out var patrolDirectionYText)
+                    ? (bool?)string.Equals(patrolDirectionYText, "Max", StringComparison.OrdinalIgnoreCase)
+                    : null;
+
                 // Passable/Climbable/Hangable are plain per-instance flags on Body2D (see its own
                 // doc comments) rather than anything gated by Kind - any static placement can set
                 // any combination of them. Passable defaults to true for hazards/collectables
@@ -363,6 +392,13 @@ public class World2D
                     case "KinematicObject":
                         var kinematicObject = new KinematicObject2D();
                         kinematicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, repeatCount);
+                        if (patrol)
+                        {
+                            kinematicObject.SetPatrol(
+                                patrolMinXOverride, patrolMaxXOverride, patrolSpeedX,
+                                patrolMinYOverride, patrolMaxYOverride, patrolSpeedY,
+                                patrolInitialDirectionTowardMaxX, patrolInitialDirectionTowardMaxY);
+                        }
                         world.Objects.Add(kinematicObject);
                         movingBody = kinematicObject;
                         spawnedBody = kinematicObject;
