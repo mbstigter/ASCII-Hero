@@ -2,6 +2,60 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## `CollisionSystem` carries grounded bodies along a moving solid's own displacement, closing the downward-platform lag
+
+- **Prompted by user request:** after validating (via `MovingEnemy2D`) that a
+  body resting on a moving `KinematicObject2D` platform is properly dragged
+  along horizontally by the existing friction/reference-frame collision
+  math, the user noticed a platform moving *downward* still left a resting
+  rider visibly lagging behind/floating above it until gravity closed the
+  gap - most noticeable at the top of a vertical platform's patrol cycle,
+  right as it reverses and starts descending. Asked to fix this at the
+  engine level (favoring the most realistic simulation short of a full
+  player force/mass-based rewrite), rather than special-casing player
+  movement.
+- **Root cause: discrete per-frame overlap detection, not a friction/mass
+  problem.** `ResolveAgainstSolid`/`ResolveRectAgainstSolid` already treat a
+  solid's own `Velocity` as the collision reference frame, so once two
+  rects still overlap, friction correctly drags a resting body's velocity
+  toward the solid's velocity. But if the platform displaces *farther* in
+  one frame than the resting body's own (near-zero, since it was just
+  resting) velocity carries it, the body's collision rect can stop
+  overlapping the solid's new position entirely for a frame or more - the
+  landing check then finds nothing to resolve, and the body free-falls
+  under gravity alone until it "catches up". This is purely a consequence
+  of resolving collision once per frame from stale positions; it has
+  nothing to do with either body's mass.
+- **Fix: remember what each grounded body was standing on, and carry it
+  forward.** `CollisionSystem` now keeps a `Dictionary<IPhysicsBody, Body2D>`
+  (`_groundedSolids`) recording, for each currently-grounded moving body,
+  which solid it landed on. At the *start* of the next `Resolve` call -
+  before `IsGrounded` is reset and before the ordinary overlap-based
+  landing check runs - if that remembered solid is itself an
+  `IPhysicsBody` with a non-zero `Velocity`, the grounded body's `Position`
+  is shifted by `solidVelocity * deltaSeconds` first. This re-establishes
+  overlap for the *same* frame the platform moves, so the ordinary
+  collision pass immediately re-detects/re-confirms the landing instead of
+  the body ever visibly separating from the platform. For ordinary
+  stationary terrain (the overwhelming common case) the remembered
+  solid's `Velocity` is zero, so this is a no-op and behavior is unchanged.
+- **Scoped to `IPhysicsBody`, not `Body2D` in general:** only bodies
+  subject to the physics/collision pass (i.e. affected by gravity and
+  other forces) can ever be "grounded" on something in the first place, so
+  tracking is keyed by the mover, not by every `Body2D` in the world.
+  `ResolveAgainstSolid`/`ResolveRectAgainstSolid` were changed to return
+  whether the body landed on top of that particular solid, so `Resolve`
+  can record (or clear, if no longer grounded) the association per body
+  per frame without any extra overlap re-checking.
+- **`CollisionSystem.Resolve` gains a `deltaSeconds` parameter** (now
+  `Resolve(World2D world, double deltaSeconds)`), threaded in from
+  `GameLoop.OnPlayingFrameAsync`'s existing per-frame `deltaSeconds`, used
+  solely for this carry displacement - every other collision response in
+  the class remains purely positional/velocity-based.
+- **Stale entries are pruned each frame** against the current frame's
+  `_movingBodies` set, so a body removed from the world (e.g. a killed
+  enemy) can never leak its dictionary entry.
+
 ## `KinematicObject2D.SetPatrol` gains explicit per-axis initial-direction overrides
 
 - **Prompted by user request:** a follow-up to the `KinematicObject2D` work

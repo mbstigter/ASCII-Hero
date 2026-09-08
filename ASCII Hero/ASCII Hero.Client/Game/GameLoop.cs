@@ -236,7 +236,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
 
         _physics.Step(_world, _input, deltaSeconds);
-        _collision.Resolve(_world);
+        _collision.Resolve(_world, deltaSeconds);
         _world.ApplyPendingRemovals();
         _animation.Update(_world, deltaSeconds);
 

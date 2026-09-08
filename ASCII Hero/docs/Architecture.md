@@ -124,6 +124,17 @@ DOM keyboard events.
   more than a slick one), and vertical carry falls out for free from the
   existing per-frame snap-onto-top-surface correction always running
   against the platform's current (already-moved) position.
+- That snap-onto-top correction alone is not sufficient for a platform
+  moving *downward*, though: if the platform displaces farther in one frame
+  than the resting body's own (near-zero) velocity carries it, the body's
+  collision rect can stop overlapping the platform's new position entirely,
+  and the body free-falls under gravity until it "catches up" - a visible
+  landing lag. `CollisionSystem` closes this gap by remembering, per grounded
+  `IPhysicsBody`, which solid it last landed on; at the start of the next
+  `Resolve` call it shifts that body by the remembered solid's
+  `Velocity * deltaSeconds` before the ordinary overlap check runs, so
+  overlap is re-established the same frame the platform moves. This has no
+  effect against stationary terrain (velocity zero).
 - Hazard contact is resolved generically: any `IPhysicsBody` overlapping any
   `IHazardBody` in `World2D.Objects` is detected, with no concrete-type checks
   on either side. Hazard contact detection exists but does not yet apply any

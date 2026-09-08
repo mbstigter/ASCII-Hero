@@ -41,6 +41,20 @@ public class CollisionSystem
     private readonly List<IPhysicsBody> _movingBodies = [];
 
     /// <summary>
+    /// Which solid each currently-grounded body was resting on as of the <em>previous</em> frame's
+    /// <see cref="Resolve"/> call - used solely to carry a rider along a moving platform's own
+    /// frame-to-frame displacement (see the top of <see cref="Resolve"/>) before this frame's
+    /// ordinary overlap-based collision pass re-detects/re-confirms grounding. Deliberately kept
+    /// as a side dictionary here rather than a property on <see cref="IPhysicsBody"/> itself -
+    /// this is purely bookkeeping this class needs for that one purpose, not state any body or
+    /// other system ever needs to read or set directly (unlike <see cref="IPhysicsBody.IsGrounded"/>,
+    /// which genuinely is consulted elsewhere - jump logic, pose selection, etc.). A body is
+    /// removed from here the instant it's no longer found resting on a solid this frame (see the
+    /// bottom of <see cref="Resolve"/>), so a stale/removed solid is never carried forward.
+    /// </summary>
+    private readonly Dictionary<IPhysicsBody, Body2D> _groundedSolids = [];
+
+    /// <summary>
     /// Hazard/body contact pairs still overlapping as of the frame just resolved. Used so an
     /// ordinary (non-kill) hazard contact's effect fires only on the first frame of a new contact
     /// - a "rising edge" - rather than every single frame the two remain overlapping. Unlike solid
@@ -49,7 +63,13 @@ public class CollisionSystem
     /// </summary>
     private HashSet<(Body2D Hazard, IPhysicsBody Body)> _activeHazardContacts = [];
 
-    public void Resolve(World2D world)
+    /// <summary>
+    /// Resolves all collision for one frame. <paramref name="deltaSeconds"/> is used solely to
+    /// carry a grounded body along by its resting solid's own displacement this frame (see the
+    /// remarks on <see cref="_groundedSolids"/>) - every other collision response in this class is
+    /// purely positional/velocity-based and doesn't need a time delta of its own.
+    /// </summary>
+    public void Resolve(World2D world, double deltaSeconds)
     {
         _movingBodies.Clear();
 
@@ -63,6 +83,29 @@ public class CollisionSystem
             if (body is not IPhysicsBody movingBody || body.IsStatic)
             {
                 continue;
+            }
+
+            // Carry a rider along by its previously-grounded solid's own displacement this frame,
+            // *before* the IsGrounded reset/re-detection below runs - this closes the gap that
+            // would otherwise open when a moving solid (e.g. a downward-patrolling
+            // KinematicObject2D) displaces farther in one frame than a resting body's own
+            // (typically near-zero, since it was just resting) velocity carries it: without this,
+            // the body's collision rect no longer overlaps the solid's new position at all this
+            // frame, so the ordinary overlap-based landing check below finds nothing and the body
+            // free-falls under gravity alone until it "catches up" - visible as a floaty landing
+            // lag - rather than moving with the solid the instant the solid itself moves. Only
+            // applies if the previously-grounded solid is still actually a real, still-existing
+            // body with a non-zero Velocity (ordinary stationary terrain has none, so this is a
+            // no-op for the overwhelming common case of resting on a plain platform/floor).
+            if (_groundedSolids.TryGetValue(movingBody, out var groundedSolid) && groundedSolid is IPhysicsBody groundedSolidBody)
+            {
+                var solidVelocity = groundedSolidBody.Velocity;
+                if (solidVelocity.X != 0 || solidVelocity.Y != 0)
+                {
+                    movingBody.Position = new Vector2D(
+                        movingBody.Position.X + solidVelocity.X * deltaSeconds,
+                        movingBody.Position.Y + solidVelocity.Y * deltaSeconds);
+                }
             }
 
             movingBody.IsGrounded = false;
@@ -79,11 +122,27 @@ public class CollisionSystem
         // none of that is special-cased here, it all flows through this one flag.
         var solids = world.Objects.Where(body => body.IsStatic && !body.IsPassable).ToList();
 
+        // Prune entries for bodies that no longer exist (e.g. a killed enemy removed via
+        // World2D.ApplyPendingRemovals) so this dictionary can't grow unbounded over a long play
+        // session - _movingBodies above already reflects exactly the current, still-alive set of
+        // non-static IPhysicsBody instances in the world.
+        if (_groundedSolids.Count > 0)
+        {
+            foreach (var staleBody in _groundedSolids.Keys.Except(_movingBodies).ToList())
+            {
+                _groundedSolids.Remove(staleBody);
+            }
+        }
+
         foreach (var body in _movingBodies)
         {
+            _groundedSolids.Remove(body);
             foreach (var solid in solids)
             {
-                ResolveAgainstSolid(body, solid);
+                if (ResolveAgainstSolid(body, solid))
+                {
+                    _groundedSolids[body] = solid;
+                }
             }
         }
 
@@ -422,7 +481,12 @@ public class CollisionSystem
     /// case) the reference frame's own velocity is zero, so this reduces to exactly the same
     /// result as before.
     /// </summary>
-    private static void ResolveAgainstSolid(IPhysicsBody body, Body2D solid)
+    /// <returns>
+    /// True if any of the body's rects landed on top of this solid (i.e. this solid should be
+    /// remembered as what the body is now grounded on for next frame's carry - see
+    /// <see cref="_groundedSolids"/>), false otherwise.
+    /// </returns>
+    private static bool ResolveAgainstSolid(IPhysicsBody body, Body2D solid)
     {
         // A body's collision shape can be made up of several rectangles that don't all have the
         // same width/offset (e.g. the player's narrower "head" rect above its wider "torso"
@@ -446,10 +510,16 @@ public class CollisionSystem
         // interface here and is implicitly stationary (Vector2D.Zero).
         var solidVelocity = solid is IPhysicsBody solidBody ? solidBody.Velocity : default;
         var rectCount = body.CollisionRects.Count;
+        var landedOnTop = false;
         for (var rectIndex = 0; rectIndex < rectCount; rectIndex++)
         {
-            ResolveRectAgainstSolid(body, restitution, friction, solidVelocity, solid, body.CollisionRects[rectIndex]);
+            if (ResolveRectAgainstSolid(body, restitution, friction, solidVelocity, solid, body.CollisionRects[rectIndex]))
+            {
+                landedOnTop = true;
+            }
         }
+
+        return landedOnTop;
     }
 
     /// <summary>
@@ -473,11 +543,12 @@ public class CollisionSystem
     /// it, a slick one lets the rider slip relative to it, using the exact same
     /// <see cref="ApplyFriction"/> formula already used against stationary terrain.
     /// </remarks>
-    private static void ResolveRectAgainstSolid(IPhysicsBody body, double restitution, double friction, Vector2D solidVelocity, Body2D solid, Rect2D bodyRect)
+    /// <returns>True if this rect landed on top of the solid, false otherwise (including no overlap at all).</returns>
+    private static bool ResolveRectAgainstSolid(IPhysicsBody body, double restitution, double friction, Vector2D solidVelocity, Body2D solid, Rect2D bodyRect)
     {
         if (!TryFindDeepestOverlap([bodyRect], solid.CollisionRects, out var deepestBodyRect, out var bestSolidRect))
         {
-            return;
+            return false;
         }
 
         var overlapLeftBest = deepestBodyRect.Right - bestSolidRect.Left;
@@ -514,6 +585,7 @@ public class CollisionSystem
                     solidVelocity.X + ApplyFriction(relativeVelocity.X, friction),
                     solidVelocity.Y + -relativeVelocity.Y * restitution);
                 body.IsGrounded = true;
+                return true;
             }
             else
             {
@@ -522,6 +594,7 @@ public class CollisionSystem
                     body.Position.X,
                     bestSolidRect.Bottom - rectOffsetY);
                 body.Velocity = new Vector2D(body.Velocity.X, solidVelocity.Y + -relativeVelocity.Y * restitution);
+                return false;
             }
         }
         else
@@ -543,6 +616,7 @@ public class CollisionSystem
             body.Velocity = new Vector2D(
                 solidVelocity.X + -relativeVelocity.X * restitution,
                 solidVelocity.Y + ApplyFriction(relativeVelocity.Y, friction));
+            return false;
         }
     }
 
