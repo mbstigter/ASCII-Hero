@@ -113,6 +113,18 @@ public class CollisionSystem
     private HashSet<(Body2D Hazard, IPhysicsBody Body)> _activeHazardContacts = [];
 
     /// <summary>
+    /// Which narrow-phase test confirms an AABB overlap once broad phase finds two bodies'
+    /// bounding boxes intersect - see <see cref="NarrowPhaseMode"/>. Defaults to
+    /// <see cref="NarrowPhaseMode.MultiRect"/> (the original, still fully supported behavior);
+    /// switch to <see cref="NarrowPhaseMode.CharacterGrid"/> to additionally require the two
+    /// bodies' actual rendered characters overlap, not merely their merged collision rectangles -
+    /// useful for comparing the two approaches on shapes whose true silhouette isn't a perfect
+    /// rectangle. A runtime-settable property (not a compile-time constant) so it can be toggled
+    /// via a debug/config setting without a rebuild.
+    /// </summary>
+    public NarrowPhaseMode NarrowPhaseMode { get; set; } = NarrowPhaseMode.MultiRect;
+
+    /// <summary>
     /// Resolves all collision for one frame. <paramref name="deltaSeconds"/> is used solely for
     /// the TEMPORARY player-only horizontal platform-carry hack (see <see cref="_groundedSolids"/>)
     /// - every other collision response in this class is purely positional/velocity-based and
@@ -827,7 +839,7 @@ public class CollisionSystem
     /// remembered as what the body is now grounded on for next frame's carry - see
     /// <see cref="_groundedSolids"/>), false otherwise.
     /// </returns>
-    private static bool ResolveAgainstSolid(IPhysicsBody body, Body2D solid)
+    private bool ResolveAgainstSolid(IPhysicsBody body, Body2D solid)
     {
         // A body's collision shape can be made up of several rectangles that don't all have the
         // same width/offset (e.g. the player's narrower "head" rect above its wider "torso"
@@ -885,9 +897,9 @@ public class CollisionSystem
     /// <see cref="ApplyFriction"/> formula already used against stationary terrain.
     /// </remarks>
     /// <returns>True if this rect landed on top of the solid, false otherwise (including no overlap at all).</returns>
-    private static bool ResolveRectAgainstSolid(IPhysicsBody body, double restitution, double friction, Vector2D solidVelocity, Body2D solid, Rect2D bodyRect)
+    private bool ResolveRectAgainstSolid(IPhysicsBody body, double restitution, double friction, Vector2D solidVelocity, Body2D solid, Rect2D bodyRect)
     {
-        if (!TryFindDeepestOverlap([bodyRect], solid.CollisionRects, out var deepestBodyRect, out var bestSolidRect))
+        if (!TryFindDeepestOverlap([bodyRect], solid.CollisionRects, out var deepestBodyRect, out var bestSolidRect, (Body2D)body, solid, NarrowPhaseMode))
         {
             return false;
         }
@@ -996,11 +1008,25 @@ public class CollisionSystem
     /// deepest-penetration-axis math instead of maintaining separate copies of it. Returns false
     /// (with both rects left default) if no rectangle pair overlaps at all.
     /// </summary>
+    /// <param name="ownerA">
+    /// The body <paramref name="aRects"/> belongs to, or null. Only needed when <paramref name="mode"/>
+    /// is <see cref="NarrowPhaseMode.CharacterGrid"/> - see <see cref="HasCharacterOverlap"/>.
+    /// Callers that never pass <see cref="NarrowPhaseMode.CharacterGrid"/> may omit both owners.
+    /// </param>
+    /// <param name="ownerB">See <paramref name="ownerA"/>, for <paramref name="bRects"/>.</param>
+    /// <param name="mode">
+    /// Which narrow-phase test accepts a rectangle-pair overlap - see <see cref="NarrowPhaseMode"/>.
+    /// Defaults to <see cref="NarrowPhaseMode.MultiRect"/> (rectangle overlap alone is sufficient)
+    /// for callers (e.g. <see cref="SnapOntoHangable"/>) that don't care about the distinction.
+    /// </param>
     private static bool TryFindDeepestOverlap(
         IReadOnlyList<Rect2D> aRects,
         IReadOnlyList<Rect2D> bRects,
         out Rect2D bestA,
-        out Rect2D bestB)
+        out Rect2D bestB,
+        Body2D? ownerA = null,
+        Body2D? ownerB = null,
+        NarrowPhaseMode mode = NarrowPhaseMode.MultiRect)
     {
         bestA = default;
         bestB = default;
@@ -1012,6 +1038,16 @@ public class CollisionSystem
             foreach (var rectB in bRects)
             {
                 if (!rectA.Overlaps(rectB))
+                {
+                    continue;
+                }
+
+                // Character-grid mode additionally requires the two bodies' actual rendered
+                // (non-empty) characters to overlap somewhere within this rectangle pair's
+                // intersection, not just the merged rectangles themselves - see HasCharacterOverlap.
+                if (mode == NarrowPhaseMode.CharacterGrid
+                    && ownerA is not null && ownerB is not null
+                    && !HasCharacterOverlap(ownerA, ownerB, rectA, rectB))
                 {
                     continue;
                 }
@@ -1034,6 +1070,64 @@ public class CollisionSystem
 
         return found;
     }
+
+    /// <summary>
+    /// Ported (in spirit) from the older ConsoleGame2D prototype's <c>CheckCharacterCollision</c>:
+    /// confirms two bodies' rectangle overlap actually corresponds to their true rendered
+    /// silhouettes touching, by testing whether at least one world cell within the overlap region
+    /// has a non-empty character on both sides, rather than trusting the merged collision
+    /// rectangles alone. <see cref="CollisionShapeBuilder"/> already reduces each body's non-empty
+    /// cells to a small set of rectangles, so this refinement only matters for shapes whose true
+    /// silhouette doesn't exactly fill that merged rectangle (e.g. a diagonal or notched sprite) -
+    /// for a solid rectangular sprite, every cell within its own collision rect is already known
+    /// non-empty and this always agrees with the plain rectangle test.
+    /// </summary>
+    private static bool HasCharacterOverlap(Body2D ownerA, Body2D ownerB, Rect2D rectA, Rect2D rectB)
+    {
+        var left = Math.Max(rectA.Left, rectB.Left);
+        var right = Math.Min(rectA.Right, rectB.Right);
+        var top = Math.Max(rectA.Top, rectB.Top);
+        var bottom = Math.Min(rectA.Bottom, rectB.Bottom);
+
+        var gridLeft = (int)Math.Floor(left);
+        var gridRight = (int)Math.Ceiling(right);
+        var gridTop = (int)Math.Floor(top);
+        var gridBottom = (int)Math.Ceiling(bottom);
+
+        var aChars = ownerA.Frame.Chars;
+        var bChars = ownerB.Frame.Chars;
+        var aEmpty = ownerA.Sprite.EmptyChar;
+        var bEmpty = ownerB.Sprite.EmptyChar;
+        var aHeight = aChars.GetLength(0);
+        var aWidth = aChars.GetLength(1);
+        var bHeight = bChars.GetLength(0);
+        var bWidth = bChars.GetLength(1);
+
+        for (var gridY = gridTop; gridY < gridBottom; gridY++)
+        {
+            for (var gridX = gridLeft; gridX < gridRight; gridX++)
+            {
+                var localAX = gridX - (int)Math.Floor(ownerA.Position.X);
+                var localAY = gridY - (int)Math.Floor(ownerA.Position.Y);
+                var localBX = gridX - (int)Math.Floor(ownerB.Position.X);
+                var localBY = gridY - (int)Math.Floor(ownerB.Position.Y);
+
+                if (localAX < 0 || localAX >= aWidth || localAY < 0 || localAY >= aHeight ||
+                    localBX < 0 || localBX >= bWidth || localBY < 0 || localBY >= bHeight)
+                {
+                    continue;
+                }
+
+                if (aChars[localAY, localAX] != aEmpty && bChars[localBY, localBX] != bEmpty)
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
 
     /// <summary>
     /// Whether <paramref name="body"/>'s deepest overlap with <paramref name="other"/> is on the
@@ -1102,9 +1196,9 @@ public class CollisionSystem
     /// independently reflecting its own velocity. The tangential velocity component gets the same
     /// friction damping used against solids.
     /// </summary>
-    private static void ResolveBodyPair(IPhysicsBody a, IPhysicsBody b)
+    private void ResolveBodyPair(IPhysicsBody a, IPhysicsBody b)
     {
-        if (!TryFindDeepestOverlap(a.CollisionRects, b.CollisionRects, out var deepestRectA, out var bestRectB))
+        if (!TryFindDeepestOverlap(a.CollisionRects, b.CollisionRects, out var deepestRectA, out var bestRectB, (Body2D)a, (Body2D)b, NarrowPhaseMode))
         {
             return;
         }

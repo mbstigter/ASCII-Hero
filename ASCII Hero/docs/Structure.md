@@ -359,7 +359,15 @@ The live game state and the entity types that make it up.
   uses a per-frame spatial grid (`_solidsGrid`/`_movingBodiesGrid`, bucketed
   by `GridCellSize`) rather than testing every solid/mover pair
   unconditionally, so collision cost scales with nearby objects rather than
-  the level's total object count.
+  the level's total object count. `CollisionSystem.NarrowPhaseMode` (default
+  `MultiRect`) toggles an additional narrow-phase check ported (in spirit)
+  from the older ConsoleGame2D prototype's `CheckCharacterCollision`: in
+  `CharacterGrid` mode, `TryFindDeepestOverlap` only accepts a rectangle-pair
+  overlap if at least one world cell within it has a non-empty character on
+  both bodies' sprite frames (see `HasCharacterOverlap`), rather than trusting
+  the merged collision rectangles alone - a refinement that only matters for
+  a shape whose true silhouette doesn't exactly fill its own merged
+  rectangle (e.g. diagonal/notched sprites).
 
   passable body can't be misread as hanging while plunging through. Most of
   this is resolved generically against capability interfaces, never by
