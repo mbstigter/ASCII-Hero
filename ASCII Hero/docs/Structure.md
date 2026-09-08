@@ -331,7 +331,10 @@ The live game state and the entity types that make it up.
 
   Every body records its own current-frame contacts as explicit `ContactType`
   flags (`SurfaceTop`/`SurfaceBottom`/`SurfaceLeft`/`SurfaceRight`, plus
-  `Ladder`/`Bar`), via `Body2D.AddContact`/`HasContact`/`GetContactingBodies`.
+  `Climbable`/`Hangable`, currently unused/reserved - climbing/hanging touch
+  detection is still done via `IClimberBody.IsTouchingClimbable`/
+  `IHangerBody.IsTouchingHangable` rather than routed through `ContactType`),
+  via `Body2D.AddContact`/`HasContact`/`GetContactingBodies`.
   `Resolve` snapshots and clears every body's contacts (via
   `Body2D.SnapshotContactsForNextFrame`) at the very start of each frame -
   including a `WorldBoundsSentinel` placeholder body so a body resting

@@ -2,7 +2,7 @@ namespace ASCII_Hero.Client.Game.Physics;
 
 /// <summary>
 /// Describes which side of a body a resolved collision contact was found on this frame, or what
-/// kind of special surface it touched (<see cref="Ladder"/>/<see cref="Bar"/>). Recorded on both
+/// kind of special surface it touched (<see cref="Climbable"/>/<see cref="Hangable"/>). Recorded on both
 /// sides of a resolved contact by <see cref="CollisionSystem"/> - e.g. a body resting on top of a
 /// solid gets <see cref="SurfaceBottom"/> recorded on itself (something is below it) while the
 /// solid gets <see cref="SurfaceTop"/> recorded on itself (something is above it). Ported in spirit
@@ -29,8 +29,8 @@ public enum ContactType
     SurfaceRight = 1 << 3,
 
     /// <summary>Overlapping a climbable surface (see <see cref="World.Body2D.IsClimbable"/>).</summary>
-    Ladder = 1 << 4,
+    Climbable = 1 << 4,
 
     /// <summary>Overlapping a hangable surface (see <see cref="World.Body2D.IsHangable"/>).</summary>
-    Bar = 1 << 5,
+    Hangable = 1 << 5,
 }
