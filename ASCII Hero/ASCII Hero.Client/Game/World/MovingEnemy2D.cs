@@ -181,17 +181,18 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
     /// the (possibly new) direction - mirrors <see cref="Physics.PhysicsSystem"/>'s own player-side
     /// <c>UpdateWalkForce</c>, so patrol force behaves the same way the player's walk force does:
     /// strong while far from the target speed, tapering to zero once reached, rather than a
-    /// constant thrust that would otherwise accelerate this body indefinitely. Facing/animation is
-    /// deliberately not decided here - see <see cref="UpdatePose"/>, which runs after this frame's
-    /// force is actually integrated into <see cref="Velocity"/>, so the sprite reflects this
-    /// frame's resolved motion rather than the direction this (pre-integration) force is merely
-    /// heading toward.
+    /// constant thrust that would otherwise accelerate this body indefinitely. Also sets
+    /// <see cref="Body2D.MoveIntentX"/> from the (possibly just-flipped) patrol heading - <see
+    /// cref="UpdatePose"/> reads it from there rather than from <see cref="Velocity"/>, since
+    /// velocity reflects this body's actual, physically-resolved motion (still converging toward
+    /// the target speed, and subject to platform carry) rather than its plain directional intent.
     /// </summary>
     public void UpdatePatrolDirection()
     {
         if (!IsPatrolling)
         {
             PatrolForce = new Vector2D(0, 0);
+            MoveIntentX = 0.0;
             return;
         }
 
@@ -214,21 +215,26 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
         var targetVelocityX = surfaceVelocityX + (_patrolMovingRight ? 1.0 : -1.0) * PatrolCruiseSpeed;
         var forceX = (targetVelocityX - Velocity.X) * mass * PatrolForceMultiplier;
         PatrolForce = new Vector2D(forceX, 0);
+        // Facing intent (see Body2D.MoveIntentX) is simply this patrol's current heading -
+        // an AI has no separate "input" to read, so its patrol direction stands in for intent,
+        // same as Player2D.MoveIntentX stands in for the player's own key state. Set here (rather
+        // than in UpdatePose) since this is where the heading itself is actually decided/flipped.
+        MoveIntentX = _patrolMovingRight ? 1.0 : -1.0;
     }
 
     /// <summary>
-    /// Resolves and applies this enemy's pose (see <see cref="IPosedBody"/>) from its own
-    /// now-integrated <see cref="Velocity"/>.X *relative to whatever solid it currently rests on*
-    /// (see <see cref="Body2D.GetSurfaceVelocityX"/>), via the same shared
-    /// <see cref="Body2D.ResolveHorizontalFacing"/> rule <see cref="Player2D"/> uses - a body with
-    /// no matching pose (<c>Sprite.Poses</c> null, e.g. a MovingEnemy asset that hasn't
-    /// authored left/right clips) simply no-ops here (see <see cref="Body2D.SetPose"/>). Resolving
-    /// against absolute Velocity.X alone would flip facing to match whichever direction a
-    /// fast-moving platform happens to be carrying this body, even while its own patrol intent
-    /// hasn't changed.
+    /// Resolves and applies this enemy's pose (see <see cref="IPosedBody"/>) from its current
+    /// patrol-direction intent (see <see cref="Body2D.MoveIntentX"/>, set by
+    /// <see cref="UpdatePatrolDirection"/>) via the shared <see cref="Body2D.ResolveHorizontalFacing()"/>
+    /// rule <see cref="Player2D"/> also uses - a body with no matching pose (<c>Sprite.Poses</c>
+    /// null, e.g. a MovingEnemy asset that hasn't authored left/right clips) simply no-ops here
+    /// (see <see cref="Body2D.SetPose"/>). Resolving against <see cref="Velocity"/> directly would
+    /// flip facing to match whichever direction a fast-moving platform happens to be carrying this
+    /// body, even while its own patrol intent hasn't changed.
     /// </summary>
     public void UpdatePose()
     {
-        SetPose(Sprite, Pose, ResolveHorizontalFacing(Velocity.X - GetSurfaceVelocityX()));
+        SetPose(Sprite, Pose, ResolveHorizontalFacing());
     }
 }
+

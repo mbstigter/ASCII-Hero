@@ -11,6 +11,6 @@ namespace ASCII_Hero.Client.Game.World;
 /// </summary>
 public interface IWalkForceBody : IPhysicsBody
 {
-    /// <summary>The horizontal-only, mass-scaled force this body's current walk/crawl input currently contributes.</summary>
+    /// <summary>The mass-scaled force this body's current sustained locomotion (walk/crawl/climb/hang) currently contributes.</summary>
     Vector2D WalkForce { get; }
 }

@@ -228,18 +228,23 @@ The live game state and the entity types that make it up.
   via `a = F / mass`, then integrated into velocity), which is numerically
   identical to a direct gravity-velocity add for a gravity-only body but is
   the extension point for any further force source. The player's own
-  ground-level walk/crawl (and climb/hang side-step) locomotion is one such
-  force source: `Player2D` implements `IWalkForceBody`, and each frame
-  `PhysicsSystem.UpdateWalkForce` recomputes its `WalkForce` as a
-  proportional "motor" force converging `Velocity.X` toward whichever
-  walk/crawl/climb-side/hang-side target speed the current input calls for -
-  mirroring `IPatrolBody.PatrolForce`'s role for a patrolling enemy, just
-  proportional to the remaining speed gap rather than a fixed direction, so
-  the player still reaches (and then holds) the target speed promptly
-  without overshooting or oscillating. Climb/hang vertical velocity, and the
-  ground/climb/hang jump-off impulses themselves, remain direct velocity
-  assignments on purpose - those are discrete state-machine locomotion modes,
-  not the continuous ground-level movement `WalkForce` drives. Also resolves
+  sustained locomotion - walk/crawl on the ground, climbing a ladder
+  (including its vertical motion), and hanging/shimmying from a pipe/rope
+  (including holding position against suspended gravity) - is one such force
+  source, all driven the same way: `Player2D` implements `IWalkForceBody`,
+  and each frame `PhysicsSystem.UpdateWalkForce` recomputes its `WalkForce`
+  as a proportional "motor" force (both axes) converging `Velocity` toward
+  whichever walk/crawl/climb/hang target velocity the current pose/input
+  calls for - mirroring `IPatrolBody.PatrolForce`'s role for a patrolling
+  enemy, just proportional to the remaining speed gap rather than a fixed
+  direction, so the player still reaches (and then holds) the target speed
+  promptly without overshooting or oscillating. Jump-off impulses (a
+  standing jump, or letting go of a ladder/pipe with an upward launch) are
+  the one exception, and deliberately so: each is a genuine instantaneous
+  velocity kick applied once on the frame it triggers, not a sustained,
+  ongoing motion to converge toward, so they remain direct velocity
+  assignments on purpose - discrete state-machine transitions, not the
+  continuous locomotion `WalkForce` drives. Also resolves
   the player's stance (Walk/Crawl, toggled by input) and pose (which swaps to
   a visual-only "Jump" pose while airborne, independent of the underlying
   stance). Also engages/disengages `IsClimbing`/`IsHanging` (on any
@@ -355,18 +360,23 @@ The live game state and the entity types that make it up.
   overlap axis, or a body moving upward through it, passes straight
   through untouched, so jumping up through a one-way platform from below
   just works with no separate code path. Broad-phase candidate gathering
-  uses a per-frame spatial grid (`_solidsGrid`/`_movingBodiesGrid`, bucketed
-  by `GridCellSize`) rather than testing every solid/mover pair
-  unconditionally, so collision cost scales with nearby objects rather than
-  the level's total object count. `CollisionSystem.NarrowPhaseMode` (default
-  `MultiRect`) toggles an additional narrow-phase check ported (in spirit)
-  from the older ConsoleGame2D prototype's `CheckCharacterCollision`: in
-  `CharacterGrid` mode, `TryFindDeepestOverlap` only accepts a rectangle-pair
-  overlap if at least one world cell within it has a non-empty character on
-  both bodies' sprite frames (see `HasCharacterOverlap`), rather than trusting
-  the merged collision rectangles alone - a refinement that only matters for
-  a shape whose true silhouette doesn't exactly fill its own merged
-  rectangle (e.g. diagonal/notched sprites).
+  uses a per-frame `SpatialGrid<T>` (one instance each for solids and moving
+  bodies - `_solidsGrid`/`_movingBodiesGrid`, bucketed by `GridCellSize`)
+  rather than testing every solid/mover pair unconditionally, so collision
+  cost scales with nearby objects rather than the level's total object
+  count - this bucket-and-candidate-lookup logic is the broad phase in its
+  entirety; it only ever reasons about whole AABBs and grid cells, never
+  about a body's actual collision rectangles or rendered characters.
+  Everything downstream of a broad-phase candidate list - resolving a body
+  against a specific solid or another specific moving body - is the narrow
+  phase, and always performs the fine-grained check ported (in spirit) from
+  the older ConsoleGame2D prototype's `CheckCharacterCollision`:
+  `TryFindDeepestOverlap` only accepts a rectangle-pair overlap if at least
+  one world cell within it has a non-empty character on both bodies' sprite
+  frames (see `HasCharacterOverlap`), rather than trusting the merged
+  collision rectangles alone - a refinement that only matters for a shape
+  whose true silhouette doesn't exactly fill its own merged rectangle (e.g.
+  diagonal/notched sprites).
 
   passable body can't be misread as hanging while plunging through. Most of
   this is resolved generically against capability interfaces, never by
@@ -386,6 +396,11 @@ The live game state and the entity types that make it up.
   bounding box.
 - **`Rect2D`** - a simple axis-aligned rectangle in world cells, used to
   describe a piece of a body's collision shape and test overlap.
+- **`SpatialGrid<T>`** - a small reusable broad-phase spatial hash grid:
+  buckets arbitrary items by the world cells their AABB overlaps, then
+  answers "what's near this AABB" without testing every item. Used by
+  `CollisionSystem` for both solids and moving bodies; contains no
+  collision-specific logic of its own.
 
 ### Camera
 

@@ -29,10 +29,36 @@ public class PhysicsSystem
     /// </summary>
     public const double DefaultWalkForceMultiplier = 40.0;
 
+    /// <summary>
+    /// Fraction of the ordinary (grounded) horizontal <see cref="UpdateWalkForce"/> strength
+    /// applied while airborne - deliberately much weaker than the full ground motor so that
+    /// horizontal velocity at the moment of jump-off (which may include a moving platform's own
+    /// carried speed, per <see cref="Body2D.GetSurfaceVelocityX"/>) decays/steers gradually over
+    /// the jump's arc instead of snapping to the absolute walk-speed target within a single frame.
+    /// The full-strength ground motor exists to make grounded input feel immediately responsive
+    /// (see <see cref="UpdateWalkForce"/>'s own doc comment); in the air there is no such
+    /// "instantly responsive" expectation, and a real jumping body's horizontal momentum is
+    /// governed far more by whatever speed it left the ground with than by mid-air steering
+    /// input, so a soft, gradual air-control force is the more physically honest (and more
+    /// forgiving-feeling) choice. Only scales the horizontal component - the vertical target
+    /// while airborne is already just the player's own current <see cref="Vector2D"/>.Y (see the
+    /// call site in <see cref="Step"/>), so its force contribution is already ~0 regardless.
+    /// </summary>
+    private const double AirControlMultiplier = 0.25;
+
     private const double ClimbHorizontalSpeed = 8.0;
     private const double ClimbVerticalSpeed = 10.0;
     private const double HangSpeed = 8.0;
     private const double ClamberSpeed = 5.0;
+
+    // Jump-off impulses: an instantaneous velocity change (Delta-v), not a target speed to
+    // converge toward like the continuous motor forces above - a real jump/push-off is over in a
+    // single instant (the leg/arm extends and releases contact), not something sustained across
+    // multiple frames, so it is modeled as one direct vertical velocity kick (added to whatever
+    // vertical velocity already exists - see the jump-off sites in Step) rather than a force
+    // integrated over time. Graded by how much of the body's own momentum/leverage backs the
+    // push-off: solid ground under both feet gives the strongest launch, a ladder rung under just
+    // hands/feet is weaker, and swinging free from a single-handed pipe/rope grip is weakest.
     private const double WalkJumpSpeed = 22.0;
     private const double ClimbJumpSpeed = 18.0;
     private const double HangJumpSpeed = 14.0;
@@ -242,25 +268,50 @@ public class PhysicsSystem
         {
             targetVelocityX += horizontalSpeed;
         }
-        UpdateWalkForce(player, targetVelocityX);
+        if (!player.IsGrounded && !player.IsClimbing && !player.IsHanging && !input.IsLeftPressed && !input.IsRightPressed)
+        {
+            // Airborne with no horizontal key held: target the player's own current velocity
+            // rather than groundVelocityX (which is always 0 here - GetSurfaceVelocityX has
+            // nothing to report once the grounded contact is gone), so UpdateWalkForce's
+            // horizontal component collapses to exactly zero net force instead of still motoring
+            // - at AirControlMultiplier strength - toward a standstill. Without this, releasing
+            // the movement key mid-air (e.g. right after a diagonal jump's run-up) killed the
+            // jump's horizontal momentum almost immediately regardless of how small
+            // AirControlMultiplier was made, since even a weak motor still actively drags
+            // velocity toward 0 given enough of the jump's short airborne time. Grounded
+            // no-input deliberately keeps targeting groundVelocityX unchanged (decelerating to a
+            // stop, or holding still relative to a moving platform) - that "stop on release"
+            // ground feel is intentional; only the airborne case should behave as pure,
+            // undriven momentum.
+            targetVelocityX = player.Velocity.X;
+        }
+        // Raw move input intent for UpdatePose's facing (see Body2D.MoveIntentX) - deliberately
+        // just Left/Right key state, with no platform-carry reference frame or velocity involved
+        // at all, so facing reflects only what the player is actually trying to do this frame.
+        player.MoveIntentX = input.IsLeftPressed ? -1.0 : input.IsRightPressed ? 1.0 : 0.0;
 
+        // Vertical target speed for the same mass-scaled motor force: straight up/down at a
+        // fixed climb speed while IsClimbing (gravity already suspended via
+        // Player2D.GravityAffected), held at exactly zero while IsHanging (gravity likewise
+        // suspended, so a zero-velocity target is all it takes to hold position - there is no
+        // opposing force it needs to fight), and left equal to the player's own current Velocity.Y
+        // everywhere else so the vertical component of WalkForce is simply zero and gravity/
+        // collision response (falling, landing, jump arcs) are entirely unaffected by this motor.
+        // Both climbing and hanging are sustained, ongoing locomotion for as long as they're
+        // engaged - exactly like walking/crawling - so they use the same continuous
+        // force-convergence model rather than a direct per-frame velocity assignment; only the
+        // discrete jump-off/let-go moments below are true instantaneous impulses.
+        double targetVelocityY;
         if (player.IsClimbing)
         {
-            // Straight up/down movement at a fixed climb speed, gravity already suspended via
-            // Player2D.GravityAffected while IsClimbing is set. Jump-off (letting go of the
-            // ladder entirely) is handled above, alongside the other pose-ladder transitions -
-            // this only runs for an ordinary climb with no exit this frame. Deliberately still a
-            // direct velocity assignment, not a force - climbing/hanging are discrete
-            // state-machine locomotion modes (like the jump-off below), not the continuous
-            // ground-level walk/crawl movement WalkForce drives.
-            velocity.Y = 0;
+            targetVelocityY = 0;
             if (input.IsUpPressed)
             {
-                velocity.Y -= ClimbVerticalSpeed;
+                targetVelocityY -= ClimbVerticalSpeed;
             }
             if (input.IsDownPressed)
             {
-                velocity.Y += ClimbVerticalSpeed;
+                targetVelocityY += ClimbVerticalSpeed;
             }
             // IsGrounded is derived from this frame's SurfaceBottom contact (see Body2D.IsGrounded);
             // clearing it immediately here (rather than waiting for the next collision pass) means
@@ -270,17 +321,27 @@ public class PhysicsSystem
         }
         else if (player.IsHanging)
         {
-            // Held in place vertically (gravity suspended via Player2D.GravityAffected). Letting
-            // go downward is an explicit step of the hang pose ladder above (a second Down
-            // press from the fully-stretched pose); a Jump press from that same pose instead
-            // jumps/swings off (see above) and has already cleared IsHanging and set velocity.Y
-            // by the time this runs, so this branch only still applies to an ordinary hang with
-            // no exit this frame.
-            velocity.Y = 0;
+            targetVelocityY = 0;
             player.RemoveContact(ContactType.SurfaceBottom);
         }
-        else if (input.IsJumpPressed && player.IsGrounded && player.Pose == "Walk" && !stoodUpThisFrame)
+        else
         {
+            // Falls through to here after a climb/hang jump-off above already applied its
+            // instantaneous velocity.Y impulse this same frame (or for an ordinary airborne/
+            // grounded frame with no state-machine transition at all) - targeting the velocity
+            // that already exists is how a zero vertical WalkForce contribution is expressed,
+            // leaving gravity/collision response entirely in charge of vertical motion outside
+            // climbing/hanging.
+            targetVelocityY = velocity.Y;
+        }
+        UpdateWalkForce(player, targetVelocityX, targetVelocityY);
+
+        if (!player.IsClimbing && !player.IsHanging && input.IsJumpPressed && player.IsGrounded && player.Pose == "Walk" && !stoodUpThisFrame)
+        {
+            // A true impulse: an instantaneous Delta-v applied once, on the frame the jump is
+            // pressed, not a target the player's velocity converges toward over subsequent
+            // frames - the same jump-off model as the ladder/hang variants above, just at the
+            // strongest magnitude since it launches off solid ground with both legs planted.
             velocity.Y = -WalkJumpSpeed;
             // Clears IsGrounded immediately so the jump's own frame already shows airborne (jump
             // pose, re-jump gated out) instead of waiting for the next collision pass to notice
@@ -313,20 +374,42 @@ public class PhysicsSystem
 
     /// <summary>
     /// Recomputes <see cref="Player2D.WalkForce"/> as a proportional "motor" force converging
-    /// <paramref name="player"/>'s current horizontal velocity toward <paramref name="targetVelocityX"/>
-    /// (the current walk/crawl/climb-side/hang-side speed the input this frame calls for) -
-    /// mirrors <see cref="MovingEnemy2D.UpdatePatrolDirection"/>'s role for a patrolling enemy, but
-    /// proportional to the remaining speed gap (scaled by <see cref="Player2D.WalkForceMultiplier"/>) rather than
-    /// a fixed-direction force, so the player still promptly reaches and then holds the target
-    /// speed - the "no acceleration/friction" ground feel from the old direct-assignment model -
-    /// instead of accelerating indefinitely or oscillating around it. Mass-scaled like every other
-    /// force here, so a body with no resolved material (<see cref="Body2D.Mass"/> of 0, treated as
-    /// mass 1) still walks at the ordinary rate.
+    /// <paramref name="player"/>'s current velocity toward (<paramref name="targetVelocityX"/>,
+    /// <paramref name="targetVelocityY"/>) - the walk/crawl/climb/hang speed the current input
+    /// calls for - mirrors <see cref="MovingEnemy2D.UpdatePatrolDirection"/>'s role for a
+    /// patrolling enemy, but proportional to the remaining speed gap (scaled by
+    /// <see cref="Player2D.WalkForceMultiplier"/>, reduced by <see cref="AirControlMultiplier"/>
+    /// while airborne) rather than a fixed-direction force, so the
+    /// player still promptly reaches and then holds the target speed while grounded - the "no
+    /// acceleration/friction" ground feel from the old direct-assignment model - instead of
+    /// accelerating indefinitely or oscillating around it, while a jump instead carries over its
+    /// launch horizontal speed and only gently steers thereafter. Applies to both axes uniformly: horizontally this
+    /// drives walking/crawling/climbing's side-step/hanging's shimmy exactly as before, and
+    /// vertically it now also drives climbing's up/down motion and holding position while
+    /// hanging - both are sustained, ongoing locomotion for as long as they're engaged, just like
+    /// walking, so they share the same continuous force model rather than a bespoke direct
+    /// velocity assignment. Outside climbing/hanging, <paramref name="targetVelocityY"/> is passed
+    /// in equal to the player's own current vertical velocity (see the call site in <see cref="Step"/>),
+    /// which collapses the vertical component to exactly zero so gravity/collision response
+    /// (falling, landing, jump arcs - all true impulses/forces of their own) are entirely
+    /// unaffected by this motor. Mass-scaled like every other force here, so a body with no
+    /// resolved material (<see cref="Body2D.Mass"/> of 0, treated as mass 1) still walks at the
+    /// ordinary rate.
     /// </summary>
-    private static void UpdateWalkForce(Player2D player, double targetVelocityX)
+    private static void UpdateWalkForce(Player2D player, double targetVelocityX, double targetVelocityY)
     {
         var mass = player.Mass > 0 ? player.Mass : 1.0;
-        player.WalkForce = new Vector2D((targetVelocityX - player.Velocity.X) * mass * player.WalkForceMultiplier, 0);
+        // Horizontal strength is cut to AirControlMultiplier while airborne (see its own doc
+        // comment) so a jump carries over whatever horizontal speed the player left the ground
+        // with - including a moving platform's carried speed - rather than that speed being
+        // snapped away toward the absolute walk-speed target within a single frame by the full
+        // ground motor. Vertical strength is left untouched: it already targets the player's own
+        // current Velocity.Y while airborne (see the call site in Step), so it contributes ~0
+        // regardless and gravity/jump impulses remain entirely in charge of vertical motion.
+        var horizontalMultiplier = player.IsGrounded ? player.WalkForceMultiplier : player.WalkForceMultiplier * AirControlMultiplier;
+        player.WalkForce = new Vector2D(
+            (targetVelocityX - player.Velocity.X) * mass * horizontalMultiplier,
+            (targetVelocityY - player.Velocity.Y) * mass * player.WalkForceMultiplier);
     }
 
     /// <summary>

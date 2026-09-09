@@ -39,27 +39,21 @@ public class CollisionSystem
 
     /// <summary>
     /// World-space size (in cells) of one broad-phase spatial-grid bucket - see
-    /// <see cref="BuildSpatialGrid"/>/<see cref="GetCandidates"/>. Chosen comfortably larger than
-    /// a typical body/platform's own footprint so most bodies span only one or two buckets rather
-    /// than dozens, while still being small enough that a handful of nearby objects (not the
-    /// entire level) are gathered as candidates for any one body.
+    /// <see cref="SpatialGrid{T}"/>. Chosen comfortably larger than a typical body/platform's own
+    /// footprint so most bodies span only one or two buckets rather than dozens, while still
+    /// being small enough that a handful of nearby objects (not the entire level) are gathered as
+    /// candidates for any one body.
     /// </summary>
     private const double GridCellSize = 4.0;
 
     /// <summary>Reused across frames to avoid an allocation every call for what is normally a tiny list.</summary>
     private readonly List<IPhysicsBody> _movingBodies = [];
 
-    /// <summary>Reused across frames for the solids broad-phase grid built once per <see cref="Resolve"/> call.</summary>
-    private readonly Dictionary<(int X, int Y), List<Body2D>> _solidsGrid = [];
+    /// <summary>Broad-phase spatial grid over this frame's static, non-passable solids - see <see cref="SpatialGrid{T}"/>.</summary>
+    private readonly SpatialGrid<Body2D> _solidsGrid = new(GridCellSize);
 
-    /// <summary>Reused across frames for the moving-bodies broad-phase grid built once per <see cref="Resolve"/> call.</summary>
-    private readonly Dictionary<(int X, int Y), List<IPhysicsBody>> _movingBodiesGrid = [];
-
-    /// <summary>Reused per query to avoid a fresh allocation for every single candidate lookup.</summary>
-    private readonly HashSet<Body2D> _candidateSolidsBuffer = [];
-
-    /// <summary>Reused per query to avoid a fresh allocation for every single candidate lookup.</summary>
-    private readonly HashSet<IPhysicsBody> _candidateMovingBuffer = [];
+    /// <summary>Broad-phase spatial grid over this frame's moving bodies - see <see cref="SpatialGrid{T}"/>.</summary>
+    private readonly SpatialGrid<IPhysicsBody> _movingBodiesGrid = new(GridCellSize);
 
     /// <summary>
     /// A placeholder <see cref="Body2D"/> representing the world's own floor/walls/ceiling for
@@ -86,15 +80,9 @@ public class CollisionSystem
     /// </summary>
     private HashSet<(Body2D Hazard, IPhysicsBody Body)> _activeHazardContacts = [];
 
-    /// <summary>
-    /// TEMPORARY dev/testing toggle - when false, <see cref="GetCandidateSolids"/> and
-    /// <see cref="GetCandidateMovingBodies"/> skip the spatial grid entirely and return every
-    /// solid/moving body in the level unfiltered, so the broad phase's effect can be compared
-    /// live against brute-force pairing without a rebuild. See docs/Decisions.md and
-    /// <see cref="Input.InputState.IsToggleBroadPhasePressed"/>. Defaults to true (broad phase on)
-    /// - the normal, always-on behavior before this toggle existed.
-    /// </summary>
-    public bool BroadPhaseEnabled { get; set; } = true;
+    // ---------------------------------------------------------------------------------------
+    // Per-frame orchestration
+    // ---------------------------------------------------------------------------------------
 
     /// <summary>
     /// Resolves all collision for one frame.
@@ -131,7 +119,6 @@ public class CollisionSystem
 
         ResolveClimbingAndHanging(world);
 
-
         // Body2D.IsPassable, checked directly and generically rather than by excluding specific
         // categories/types one at a time. Collectables and hazards default to passable (see
         // World2D.LoadAsync), a plain wall can opt into being passable too (e.g. a level-design
@@ -141,9 +128,12 @@ public class CollisionSystem
 
         // Broad phase: bucket solids into a spatial grid once per frame so each moving body only
         // has to test collision against nearby solids, not every solid in the level - see
-        // BuildSolidsGrid/GetCandidateSolids and docs/Decisions.md.
-        BuildSolidsGrid(solids);
-        BuildMovingBodiesGrid(_movingBodies);
+        // SpatialGrid<T> and docs/Decisions.md. Everything from here through GetCandidates below
+        // is broad phase only (whole-AABB/bucket reasoning); the actual per-rectangle/
+        // per-character narrow-phase tests happen afterward, inside ResolveAgainstSolid/
+        // ResolveBodyPair and the TryFindDeepestOverlap/HasCharacterOverlap methods they call.
+        _solidsGrid.Rebuild(solids, body => body.Position, body => body.Size);
+        _movingBodiesGrid.Rebuild(_movingBodies, body => body.Position, body => body.Size);
 
         foreach (var body in _movingBodies)
         {
@@ -176,124 +166,33 @@ public class CollisionSystem
         ResolveHazardsAndCollectables(world);
     }
 
-    /// <summary>
-    /// The spatial-grid bucket coordinate a body's current AABB (its overall <see cref="Vector2D"/>
-    /// position/size, not its individual collision rects) spans - returns every bucket the body's
-    /// bounding box overlaps, since a body near a bucket boundary can span more than one.
-    /// </summary>
-    private static IEnumerable<(int X, int Y)> GetOverlappingCells(Vector2D position, Vector2D size)
-    {
-        var minX = (int)Math.Floor(position.X / GridCellSize);
-        var maxX = (int)Math.Floor((position.X + size.X) / GridCellSize);
-        var minY = (int)Math.Floor(position.Y / GridCellSize);
-        var maxY = (int)Math.Floor((position.Y + size.Y) / GridCellSize);
-
-        for (var x = minX; x <= maxX; x++)
-        {
-            for (var y = minY; y <= maxY; y++)
-            {
-                yield return (x, y);
-            }
-        }
-    }
+    // ---------------------------------------------------------------------------------------
+    // Broad phase: nearby-candidate lookup only (see SpatialGrid<T>) - no rectangle/character
+    // testing happens here, that's all narrow phase, further down this file.
+    // ---------------------------------------------------------------------------------------
 
     /// <summary>
-    /// Rebuilds <see cref="_solidsGrid"/> from scratch for this frame's <paramref name="solids"/>
-    /// list - static bodies never move mid-frame, but the set of which solids exist can change
-    /// between frames (spawned/removed), so this is cheap enough to just redo every <see cref="Resolve"/>
-    /// call rather than trying to incrementally maintain it.
+    /// The broad-phase candidate solids for <paramref name="body"/> this frame - the spatial-grid
+    /// bucket contents (see <see cref="SpatialGrid{T}"/>), not every solid in the level.
     /// </summary>
-    private void BuildSolidsGrid(IReadOnlyList<Body2D> solids)
-    {
-        foreach (var bucket in _solidsGrid.Values)
-        {
-            bucket.Clear();
-        }
+    private IEnumerable<Body2D> GetCandidateSolids(IPhysicsBody body) =>
+        _solidsGrid.GetCandidates(body.Position, body.Size);
 
-        foreach (var solid in solids)
-        {
-            foreach (var cell in GetOverlappingCells(solid.Position, solid.Size))
-            {
-                if (!_solidsGrid.TryGetValue(cell, out var bucket))
-                {
-                    bucket = [];
-                    _solidsGrid[cell] = bucket;
-                }
-
-                bucket.Add(solid);
-            }
-        }
-    }
-
-    /// <summary>Same as <see cref="BuildSolidsGrid"/>, but for this frame's moving bodies (used for moving-body-vs-moving-body pairing).</summary>
-    private void BuildMovingBodiesGrid(IReadOnlyList<IPhysicsBody> movingBodies)
-    {
-        foreach (var bucket in _movingBodiesGrid.Values)
-        {
-            bucket.Clear();
-        }
-
-        foreach (var movingBody in movingBodies)
-        {
-            foreach (var cell in GetOverlappingCells(movingBody.Position, movingBody.Size))
-            {
-                if (!_movingBodiesGrid.TryGetValue(cell, out var bucket))
-                {
-                    bucket = [];
-                    _movingBodiesGrid[cell] = bucket;
-                }
-
-                bucket.Add(movingBody);
-            }
-        }
-    }
-
-    /// <summary>
-    /// The distinct set of solids sharing at least one spatial-grid bucket with <paramref name="body"/>
-    /// this frame - the broad-phase candidate set that <see cref="ResolveAgainstSolid"/> is then
-    /// actually run against, instead of every solid in the level.
-    /// </summary>
-    private IEnumerable<Body2D> GetCandidateSolids(IPhysicsBody body)
-    {
-        _candidateSolidsBuffer.Clear();
-        foreach (var cell in GetOverlappingCells(body.Position, body.Size))
-        {
-            if (!_solidsGrid.TryGetValue(cell, out var bucket))
-            {
-                continue;
-            }
-
-            foreach (var solid in bucket)
-            {
-                _candidateSolidsBuffer.Add(solid);
-            }
-        }
-
-        return _candidateSolidsBuffer;
-    }
-
-    /// <summary>Same as <see cref="GetCandidateSolids"/>, but for other moving bodies (including <paramref name="body"/> itself, filtered out by the caller).</summary>
+    /// <summary>Same as <see cref="GetCandidateSolids"/>, but for other moving bodies (excluding <paramref name="body"/> itself).</summary>
     private IEnumerable<IPhysicsBody> GetCandidateMovingBodies(IPhysicsBody body)
     {
-        _candidateMovingBuffer.Clear();
-        foreach (var cell in GetOverlappingCells(body.Position, body.Size))
+        foreach (var other in _movingBodiesGrid.GetCandidates(body.Position, body.Size))
         {
-            if (!_movingBodiesGrid.TryGetValue(cell, out var bucket))
+            if (!ReferenceEquals(other, body))
             {
-                continue;
-            }
-
-            foreach (var other in bucket)
-            {
-                if (!ReferenceEquals(other, body))
-                {
-                    _candidateMovingBuffer.Add(other);
-                }
+                yield return other;
             }
         }
-
-        return _candidateMovingBuffer;
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Narrow phase: climbing/hanging
+    // ---------------------------------------------------------------------------------------
 
     /// <summary>
     /// Sets <see cref="IClimberBody.IsTouchingClimbable"/>/<see cref="IHangerBody.IsTouchingHangable"/>
@@ -317,6 +216,7 @@ public class CollisionSystem
     private static void ResolveClimbingAndHanging(World2D world)
     {
         var climbables = world.Objects.Where(body => body.IsStatic && body.IsClimbable).ToList();
+
         var hangables = world.Objects.Where(body => body.IsStatic && body.IsHangable).ToList();
 
         foreach (var body in world.Objects)
@@ -423,6 +323,10 @@ public class CollisionSystem
     /// than one material always dominating outright regardless of the other.
     /// </summary>
     private static double Combine(double a, double b) => (a + b) / 2.0;
+
+    // ---------------------------------------------------------------------------------------
+    // Narrow phase: hazards/collectables
+    // ---------------------------------------------------------------------------------------
 
     /// <summary>
     /// Any <see cref="IPhysicsBody"/> overlapping any <see cref="IHazardBody"/> is a hazard hit,
@@ -544,6 +448,10 @@ public class CollisionSystem
         return false;
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Narrow phase: world bounds and static-solid resolution
+    // ---------------------------------------------------------------------------------------
+
     /// <summary>
     /// Keeps a body's bounding box within the world's cell grid, reflecting velocity on
     /// whichever axis it would otherwise cross an edge. The player never actually has a
@@ -612,7 +520,7 @@ public class CollisionSystem
     /// case) the reference frame's own velocity is zero, so this reduces to exactly the same
     /// result as before.
     /// </summary>
-    private void ResolveAgainstSolid(IPhysicsBody body, Body2D solid)
+    private static void ResolveAgainstSolid(IPhysicsBody body, Body2D solid)
     {
         // A body's collision shape can be made up of several rectangles that don't all have the
         // same width/offset (e.g. the player's narrower "head" rect above its wider "torso"
@@ -664,7 +572,7 @@ public class CollisionSystem
     /// <see cref="ApplyFriction"/> formula already used against stationary terrain.
     /// </remarks>
     /// <returns>True if this rect landed on top of the solid, false otherwise (including no overlap at all).</returns>
-    private bool ResolveRectAgainstSolid(IPhysicsBody body, double restitution, double friction, Vector2D solidVelocity, Body2D solid, Rect2D bodyRect)
+    private static bool ResolveRectAgainstSolid(IPhysicsBody body, double restitution, double friction, Vector2D solidVelocity, Body2D solid, Rect2D bodyRect)
     {
         if (!TryFindDeepestOverlap([bodyRect], solid.CollisionRects, out var deepestBodyRect, out var bestSolidRect, (Body2D)body, solid))
         {
@@ -766,6 +674,11 @@ public class CollisionSystem
             return false;
         }
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Narrow phase: shared primitives (friction, deepest-overlap search, character-level test)
+    // used by both the solid-resolution and moving-body-pair paths above/below.
+    // ---------------------------------------------------------------------------------------
 
     /// <summary>
     /// Damps a tangential (along-surface) relative velocity component using proper Coulomb
@@ -989,6 +902,10 @@ public class CollisionSystem
         return bodyTop >= otherRect.Top;
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Narrow phase: moving-body-vs-moving-body resolution
+    // ---------------------------------------------------------------------------------------
+
     /// <summary>
     /// Resolves a collision between two moving bodies (e.g. the player and the bouncing ball) -
     /// the one pairing that previously fell through the cracks entirely, since each body was
@@ -1001,7 +918,7 @@ public class CollisionSystem
     /// independently reflecting its own velocity. The tangential velocity component gets the same
     /// friction damping used against solids.
     /// </summary>
-    private void ResolveBodyPair(IPhysicsBody a, IPhysicsBody b)
+    private static void ResolveBodyPair(IPhysicsBody a, IPhysicsBody b)
     {
         if (!TryFindDeepestOverlap(a.CollisionRects, b.CollisionRects, out var deepestRectA, out var bestRectB, (Body2D)a, (Body2D)b))
         {

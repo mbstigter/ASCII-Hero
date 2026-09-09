@@ -2,6 +2,135 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## Player facing now driven by raw move-input intent, not velocity-relative-to-surface
+
+- **Replaced `Player2D`'s velocity-relative-to-platform facing rule with a
+  new shared `Body2D.MoveIntentX` field** (-1/0/+1: -1 left, 0 none/holding
+  position, +1 right), set once per frame by whatever drives a body's own
+  movement decisions - `PhysicsSystem.Step` sets it directly from
+  `InputState.IsLeftPressed`/`IsRightPressed` for the player, and
+  `MovingEnemy2D.UpdatePatrolDirection` sets it from its own
+  `_patrolMovingRight` patrol-direction flag. Both `Player2D.UpdatePose` and
+  `MovingEnemy2D.UpdatePose` now resolve horizontal facing through the same
+  shared `Body2D.ResolveHorizontalFacing()` (reading `MoveIntentX`), rather
+  than the player and the enemy each computing facing from velocity via two
+  separately-maintained rules. A short-lived earlier attempt at fixing the
+  same player-only bug added a `GroundVelocityXThisFrame` snapshot (captured
+  before a same-frame jump-off cleared the grounded contact) so facing could
+  still subtract the platform's carry after leaving it - this has been
+  removed/superseded, as has the enemy's original
+  `Velocity.X - GetSurfaceVelocityX()` facing rule.
+- **Root cause of "facing takes the moving platform's direction on jumping
+  off while standing still":** the previous player rule resolved facing
+  from `Velocity.X - GetSurfaceVelocityX()`. The moment the player leaves
+  the platform (jumping, or just walking off the edge), the
+  platform-velocity term drops to 0 (no more grounded contact), but
+  `Velocity.X` itself still carries the platform's speed for a frame (or
+  longer while airborne, since nothing re-zeroes horizontal velocity just
+  because contact was lost) - so the subtraction stops canceling it out and
+  the leftover platform speed gets misread as walking intent. The
+  snapshot-based attempt only patched the single jump-off frame; the same
+  misreport still happened on every subsequent airborne frame, and on any
+  other way of leaving a platform (walking off the edge, being pushed off)
+  that wasn't a jump at all. The enemy's original rule had the same latent
+  flaw, just never surfaced as a reported bug because patrol AI never jumps.
+- **Why intent instead of chasing velocity further, and why share it:**
+  velocity is downstream of physics (gravity, platform carry, impulses,
+  residual momentum) and isn't a reliable proxy for "which way is this body
+  trying to go" once more than one force can act on it. Input/AI-decision
+  intent is simple, always available, and immune to whatever the body
+  happens to be standing on or drifting through. The player's raw key state
+  and the enemy's patrol-direction flag were already conceptually the same
+  "which way am I trying to go" signal, just expressed inconsistently (a
+  method taking three possible values vs. a single-direction boolean flag,
+  with no matching `_patrolMovingLeft`); lifting the concept onto `Body2D`
+  as one `MoveIntentX` field/one `ResolveHorizontalFacing()` rule removes
+  that duplication and keeps any future `IPosedBody` consistent by
+  construction rather than by convention.
+
+## Jump preserves horizontal momentum via reduced (not zero) air-control force
+
+- **Added `PhysicsSystem.AirControlMultiplier` (0.15), applied to
+  `UpdateWalkForce`'s horizontal component only while the player is not
+  `IsGrounded`.** Grounded horizontal input still uses the full
+  `Player2D.WalkForceMultiplier` "motor" strength for immediate
+  responsiveness; airborne input uses that multiplier scaled down to 15%.
+- **Problem:** jump-off itself was already a correct instantaneous Δv on
+  `Velocity.Y` only - `Velocity.X` was never reset at the moment of
+  jumping, so any horizontal speed (including a moving platform's carried
+  speed via `Body2D.GetSurfaceVelocityX`) was technically preserved for
+  one instant. But `UpdateWalkForce` runs every single frame regardless of
+  grounded state, and its target once airborne is the absolute (non-platform)
+  walk speed; with the full ground-strength motor still applied in the air,
+  that target was reached almost immediately, snapping away the carried
+  speed within about one frame and making every jump look like a straight
+  vertical hop regardless of run-up or platform speed.
+- **Why a reduced multiplier rather than removing airborne walk force
+  entirely:** removing it would leave the player with zero ability to
+  steer mid-air, which reads as unresponsive/floaty and removes a
+  standard platformer feel (adjusting a jump's landing spot with
+  left/right while airborne). A small air-control force keeps that
+  steering available while letting existing horizontal velocity - jump
+  run-up speed or platform carry alike - decay/adjust gradually over the
+  arc of the jump instead of snapping, which is both the more physically
+  honest behavior and the fix for the reported issue.
+- **Follow-up fix: releasing the horizontal key mid-air still killed
+  momentum almost instantly, regardless of how low `AirControlMultiplier`
+  was set.** Root cause: `targetVelocityX`'s no-input fallback was
+  `groundVelocityX` (via `Body2D.GetSurfaceVelocityX`), which is always 0
+  once airborne (no more grounded contact to report a platform's speed
+  from) - so with no key held, `UpdateWalkForce` was still actively
+  motoring the player toward a standstill, just more weakly; over a short
+  jump's airborne time even a weak motor converges close enough to 0 to
+  look instantaneous. Fixed in `Step` by special-casing "airborne, not
+  climbing/hanging, no horizontal key pressed" to target the player's own
+  current `Velocity.X` instead of `groundVelocityX`, which makes
+  `UpdateWalkForce`'s horizontal component collapse to exactly zero net
+  force - true undriven momentum - rather than a still-nonzero pull toward
+  0. Grounded no-input behavior (decelerating to a stop, or holding still
+  relative to a moving platform) is deliberately left untouched, since
+  "stop on release" is the intended ground feel; only the airborne case
+  needed to become pure inertia.
+
+## Climbing/hanging converted to continuous force; jump-off variants confirmed as true impulses
+
+- **`Player2D.WalkForce`/`IWalkForceBody` is no longer horizontal-only.**
+  `PhysicsSystem.UpdateWalkForce` now computes both axes of the same
+  proportional "motor" force, and `Player2D.WalkForce` carries a vertical
+  component while climbing (converging toward the up/down speed the input
+  calls for) or hanging (converging toward exactly zero, holding position
+  since gravity is suspended). Outside those two states the target Y is
+  simply the body's own current velocity, so the vertical term collapses to
+  zero and gravity/collision response are unaffected - existing Walk/Crawl/
+  Climb-side/Hang-side horizontal behavior is unchanged.
+- **Rationale: climbing and hanging are sustained, ongoing locomotion for as
+  long as they're engaged, exactly like walking/crawling - there is no
+  principled reason for them to be modeled differently.** The previous split
+  (direct velocity assignment for climb/hang, force-based convergence for
+  walk/crawl) was an artifact of incremental delivery, not a real physical
+  distinction: nothing about gripping a ladder rung or a pipe makes the
+  resulting motion fundamentally different in kind from gripping the
+  ground with your feet. Converting them to the same mass-scaled
+  force-convergence model unifies all sustained player locomotion under one
+  mechanism and one shared "muscle power" gain (`WalkForceMultiplier`),
+  rather than every locomotion mode needing its own bespoke code path.
+- **Jump-off and jump-off variants (standing jump, ladder jump-off, hang
+  swing-off) remain, and are now explicitly documented as, true one-time
+  impulses - an instantaneous `Delta-v` applied once on the triggering frame,
+  not a target to converge toward.** This is the genuine physical
+  distinction: a real jump/push-off is over in a single instant (the leg or
+  arm extends and releases contact), unlike the continuous, ongoing muscular
+  effort of sustained walking/climbing/hanging. `WalkJumpSpeed` >
+  `ClimbJumpSpeed` > `HangJumpSpeed` was already graded by how much of the
+  body's own leverage backs the push-off (both feet planted on solid ground
+  strongest; one/both hands on a ladder rung weaker; swinging free from a
+  single pipe/rope grip weakest) and is unchanged by this refactor.
+- **No changes to `CollisionSystem`, gravity, or the jump-off speed
+  constants were needed** - the existing impulse-based normal/friction
+  response, contact-state model, and platform-carry logic already generalize
+  correctly to a body whose velocity is now converged toward a target on
+  both axes rather than just one.
+
 ## `MovingEnemy`'s ini parser now accepts `PatrolInitialDirectionY`, reserved for future vertical patrol
 
 - **`MovingEnemy2D` gained a `PatrolInitialDirectionDown` property and a

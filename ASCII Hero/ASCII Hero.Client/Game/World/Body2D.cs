@@ -199,6 +199,20 @@ public abstract class Body2D
     public bool IsStatic { get; protected init; }
 
     /// <summary>
+    /// This frame's raw horizontal move/patrol intent (-1 = left, 0 = none/holding position,
+    /// +1 = right), owned and set by whatever drives this body's own movement decisions - the
+    /// player's input (<see cref="Player2D"/>, from <c>InputState.IsLeftPressed</c>/
+    /// <c>IsRightPressed</c>) or an AI's patrol direction (<see cref="MovingEnemy2D"/>, from its
+    /// own patrol-direction flag) - and read generically by <see cref="ResolveHorizontalFacing()"/>.
+    /// Deliberately independent of <see cref="IPhysicsBody.Velocity"/>: velocity is downstream of
+    /// physics (platform carry, residual momentum, impulses) and is not a reliable proxy for
+    /// "which way is this body trying to go" once more than one force can act on it, whereas intent
+    /// is simple, always available, and immune to whatever the body happens to be standing on or
+    /// drifting through.
+    /// </summary>
+    public double MoveIntentX { get; set; }
+
+    /// <summary>
     /// Whether a static body blocks movement. Defaults to false, so an ordinary <c>IsStatic</c>
     /// body (a platform, wall) still blocks by default via <see cref="Physics.CollisionSystem"/>'s
     /// <c>solids</c> filter, which only checks this flag directly - never a body's concrete type
@@ -454,13 +468,25 @@ public abstract class Body2D
     }
 
     /// <summary>
-    /// Resolves a left/right <see cref="Facing"/> from a horizontal velocity, the shared rule used
-    /// by every horizontally-facing body (the player while walking/crawling/hanging, and any
-    /// <see cref="IPosedBody"/> moving body such as <see cref="MovingEnemy2D"/>) so this mapping is
-    /// defined exactly once rather than re-implemented per body type.
+    /// Resolves a left/right <see cref="Facing"/> from a raw horizontal velocity value. Prefer the
+    /// parameterless <see cref="ResolveHorizontalFacing()"/> overload (reads <see cref="MoveIntentX"/>)
+    /// for anything that decides its own on-screen facing - this overload remains only for
+    /// <see cref="ResolveVerticalFacing"/>'s equivalent vertical case (climbing has no separate
+    /// "intent" concept of its own; its vertical velocity IS its intent, set directly from
+    /// up/down input) and any other genuinely velocity-derived facing need.
     /// </summary>
     public static Facing ResolveHorizontalFacing(double velocityX) =>
         velocityX < 0 ? Facing.Left : velocityX > 0 ? Facing.Right : Facing.Idle;
+
+    /// <summary>
+    /// Resolves a left/right <see cref="Facing"/> from this body's own <see cref="MoveIntentX"/> -
+    /// the shared rule used by every horizontally-facing body (<see cref="Player2D"/> while
+    /// walking/crawling/hanging, and any <see cref="IPosedBody"/> moving body such as
+    /// <see cref="MovingEnemy2D"/>) so this mapping is defined exactly once rather than
+    /// re-implemented per body type. Deliberately intent-based rather than velocity-based - see
+    /// <see cref="MoveIntentX"/>'s own doc comment for why.
+    /// </summary>
+    public Facing ResolveHorizontalFacing() => ResolveHorizontalFacing(MoveIntentX);
 
     /// <summary>
     /// The horizontal velocity of whichever solid this body currently rests on top of (see
