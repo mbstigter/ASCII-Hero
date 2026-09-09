@@ -463,6 +463,33 @@ public abstract class Body2D
         velocityX < 0 ? Facing.Left : velocityX > 0 ? Facing.Right : Facing.Idle;
 
     /// <summary>
+    /// The horizontal velocity of whichever solid this body currently rests on top of (see
+    /// <see cref="Physics.ContactType.SurfaceBottom"/>), or 0 if not grounded or resting on
+    /// stationary terrain. This is the reference frame a resting/patrolling/walking body's own
+    /// *intent* (its target speed, or whether it is holding still) should be judged relative to -
+    /// a body standing still with zero walk/patrol intent while carried along by a fast-moving
+    /// platform has an absolute <see cref="Velocity"/>.X matching the platform's own speed, which
+    /// would otherwise misreport as "walking"/"patrolling" in that direction (see
+    /// <see cref="ResolveHorizontalFacing"/>) or fight the platform's carry as if it were an
+    /// unwanted push (see <see cref="MovingEnemy2D.UpdatePatrolDirection"/>). Picks the first
+    /// grounded contact that is itself an <see cref="IPhysicsBody"/> with a real velocity (e.g.
+    /// <see cref="KinematicObject2D"/>); ordinary stationary terrain has none, so this falls back
+    /// to 0 exactly as it would without a moving platform involved at all.
+    /// </summary>
+    public double GetSurfaceVelocityX()
+    {
+        foreach (var solid in GetContactingBodies(Physics.ContactType.SurfaceBottom))
+        {
+            if (solid is IPhysicsBody solidBody)
+            {
+                return solidBody.Velocity.X;
+            }
+        }
+
+        return 0.0;
+    }
+
+    /// <summary>
     /// Resolves an up/down <see cref="Facing"/> from a vertical velocity - the vertical
     /// counterpart to <see cref="ResolveHorizontalFacing"/>, used by any body whose pose faces
     /// along the Y axis instead of X (e.g. the player's "Climb" pose, whose idle-vs-arm-over-arm

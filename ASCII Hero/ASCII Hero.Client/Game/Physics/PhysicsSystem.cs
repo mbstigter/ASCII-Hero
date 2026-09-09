@@ -232,7 +232,7 @@ public class PhysicsSystem
         // platform's own velocity every single frame - the two forces fighting is what made the
         // player appear unable to ride a horizontally moving platform at all. Climbing/hanging
         // have no such platform-carry concept, so their target speed stays absolute.
-        var groundVelocityX = player.IsClimbing || player.IsHanging ? 0.0 : GetGroundVelocityX(player);
+        var groundVelocityX = player.IsClimbing || player.IsHanging ? 0.0 : player.GetSurfaceVelocityX();
         var targetVelocityX = groundVelocityX;
         if (input.IsLeftPressed)
         {
@@ -309,29 +309,6 @@ public class PhysicsSystem
                     break;
             }
         }
-    }
-
-    /// <summary>
-    /// The horizontal velocity of whichever solid <paramref name="player"/> currently rests on
-    /// top of (<see cref="ContactType.SurfaceBottom"/>), or 0 if not grounded or resting on
-    /// stationary terrain - the reference frame <see cref="UpdateWalkForce"/>'s target velocity is
-    /// expressed relative to, so standing still on a moving platform doesn't fight the platform's
-    /// own carry (see the remarks where this is called in <see cref="Step"/>). Picks the first
-    /// grounded contact that is itself an <see cref="IPhysicsBody"/> with a real velocity (e.g.
-    /// <see cref="KinematicObject2D"/>); ordinary stationary terrain has none, so this falls back
-    /// to 0 exactly as before this fix.
-    /// </summary>
-    private static double GetGroundVelocityX(Player2D player)
-    {
-        foreach (var solid in player.GetContactingBodies(ContactType.SurfaceBottom))
-        {
-            if (solid is IPhysicsBody solidBody)
-            {
-                return solidBody.Velocity.X;
-            }
-        }
-
-        return 0.0;
     }
 
     /// <summary>

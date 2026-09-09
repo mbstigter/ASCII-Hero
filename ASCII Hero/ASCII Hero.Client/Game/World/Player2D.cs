@@ -129,7 +129,12 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody, 
             : IsHanging ? (IsClambering ? "Clamber" : "Hang")
             : !IsGrounded ? "Jump"
             : Pose;
-        var facing = IsClimbing ? ResolveVerticalFacing(Velocity.Y) : ResolveHorizontalFacing(Velocity.X);
+        // Facing (while not climbing) is resolved from velocity *relative to whatever solid is
+        // carrying this body* (see Body2D.GetSurfaceVelocityX), not raw absolute Velocity.X -
+        // otherwise standing still with zero walk intent on a fast-moving platform would report
+        // as walking/facing in the platform's direction of travel, since the platform's own carry
+        // is baked into the absolute velocity.
+        var facing = IsClimbing ? ResolveVerticalFacing(Velocity.Y) : ResolveHorizontalFacing(Velocity.X - GetSurfaceVelocityX());
         SetPose(Sprite, resolvedPose, facing);
     }
 }

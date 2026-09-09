@@ -184,20 +184,33 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
         }
 
         var mass = Mass > 0 ? Mass : 1.0;
-        var targetVelocityX = (_patrolMovingRight ? 1.0 : -1.0) * PatrolCruiseSpeed;
+        // Target speed (and the force converging toward it) is expressed relative to whatever
+        // solid this body currently rests on (see Body2D.GetSurfaceVelocityX) - mirroring
+        // PhysicsSystem.Step's own player-side groundVelocityX fix - rather than an absolute
+        // world-frame speed. Without this, a fast horizontal platform's own carry is baked into
+        // this body's absolute Velocity.X, so the patrol force (aimed at an absolute target
+        // speed) would spend part of its "muscle power" fighting the platform's own motion every
+        // frame instead of just walking across it, letting the body slide relative to the
+        // platform's surface instead of patrolling it at a steady cruise speed.
+        var surfaceVelocityX = GetSurfaceVelocityX();
+        var targetVelocityX = surfaceVelocityX + (_patrolMovingRight ? 1.0 : -1.0) * PatrolCruiseSpeed;
         var forceX = (targetVelocityX - Velocity.X) * mass * PatrolForceMultiplier;
         PatrolForce = new Vector2D(forceX, 0);
     }
 
     /// <summary>
     /// Resolves and applies this enemy's pose (see <see cref="IPosedBody"/>) from its own
-    /// now-integrated <see cref="Velocity"/>.X, via the same shared
+    /// now-integrated <see cref="Velocity"/>.X *relative to whatever solid it currently rests on*
+    /// (see <see cref="Body2D.GetSurfaceVelocityX"/>), via the same shared
     /// <see cref="Body2D.ResolveHorizontalFacing"/> rule <see cref="Player2D"/> uses - a body with
     /// no matching pose (<c>Sprite.Poses</c> null, e.g. a MovingEnemy asset that hasn't
-    /// authored left/right clips) simply no-ops here (see <see cref="Body2D.SetPose"/>).
+    /// authored left/right clips) simply no-ops here (see <see cref="Body2D.SetPose"/>). Resolving
+    /// against absolute Velocity.X alone would flip facing to match whichever direction a
+    /// fast-moving platform happens to be carrying this body, even while its own patrol intent
+    /// hasn't changed.
     /// </summary>
     public void UpdatePose()
     {
-        SetPose(Sprite, Pose, ResolveHorizontalFacing(Velocity.X));
+        SetPose(Sprite, Pose, ResolveHorizontalFacing(Velocity.X - GetSurfaceVelocityX()));
     }
 }

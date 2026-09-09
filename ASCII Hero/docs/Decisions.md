@@ -2,6 +2,41 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## Facing-with-intent and platform-relative patrol convergence (two of the three deferred grip/facing fixes)
+
+- **New shared `Body2D.GetSurfaceVelocityX()`**, generalizing what used to
+  be `PhysicsSystem`'s private, player-only `GetGroundVelocityX`: the
+  horizontal velocity of whichever solid this body currently rests on top
+  of (`ContactType.SurfaceBottom`), or 0 if not grounded or resting on
+  stationary terrain. Moved onto `Body2D` (rather than staying
+  player-specific) so `MovingEnemy2D` can use the exact same reference-frame
+  concept `PhysicsSystem.UpdateWalkForce`'s target speed already relied on
+  for the player.
+- **Fixes "facing direction flipping with platform direction":** both
+  `Player2D.UpdatePose` and `MovingEnemy2D.UpdatePose` now resolve
+  horizontal facing from `Velocity.X - GetSurfaceVelocityX()` instead of
+  raw absolute `Velocity.X`. A body standing/patrolling with zero
+  horizontal intent while carried along by a fast-moving platform previously
+  had that platform's own speed baked directly into its absolute velocity,
+  so `ResolveHorizontalFacing` would flip it to face (and, for the player,
+  visually imply walking) in the platform's direction of travel even though
+  its own intent hadn't changed; resolving against the platform-relative
+  velocity isolates the body's own motion from the ride.
+- **Fixes "enemy sliding on fast horizontal platforms":** `MovingEnemy2D.
+  UpdatePatrolDirection`'s target velocity is now `GetSurfaceVelocityX() +-
+  PatrolCruiseSpeed` rather than an absolute `+-PatrolCruiseSpeed` - mirroring
+  `PhysicsSystem.Step`'s existing `groundVelocityX` fix for the player's own
+  `WalkForce`. Previously the patrol force converged toward an absolute
+  world-frame speed, so a fast platform's own carry meant part of the
+  enemy's "muscle power" was spent fighting (or being fought by) the
+  platform's own motion every frame instead of purely walking across its
+  surface, letting the enemy visibly slide relative to the platform instead
+  of holding a steady cruise speed over it.
+- **Third deferred item (a broader structural review of `CollisionSystem`'s
+  broad-phase code) intentionally not bundled into this entry:** it's a
+  code-quality/structure pass, not a behavioral fix like the two above, and
+  deserves its own focused review rather than being folded in here.
+
 ## Enemy patrol cruise-speed model; overridable player/body mass, friction, and walk tuning
 
 - **`MovingEnemy2D` patrol motion converted from constant-thrust force to a
