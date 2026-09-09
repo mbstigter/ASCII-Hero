@@ -70,6 +70,18 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
     public double PatrolForceMultiplier { get; set; } = DefaultPatrolForceMultiplier;
 
     /// <summary>
+    /// Reserved for a future vertically-patrolling <see cref="MovingEnemy2D"/> (mirroring
+    /// <see cref="KinematicObject2D"/>'s independent per-axis patrol) - stores the ini
+    /// <c>PatrolInitialDirectionY</c> ("Up"/"Down") override, if any, so level authors can already
+    /// pin a vertical starting heading in their <c>.ini</c> files without it being silently
+    /// dropped. Not yet read/applied anywhere: <see cref="MovingEnemy2D"/> only patrols
+    /// horizontally today (see <see cref="PatrolMinX"/>/<see cref="PatrolMaxX"/>/
+    /// <see cref="UpdatePatrolDirection"/>), so this has no behavioral effect until vertical
+    /// patrol is actually implemented.
+    /// </summary>
+    public bool? PatrolInitialDirectionDown { get; set; }
+
+    /// <summary>
     /// The target horizontal speed (in world cells/second) this body's patrol force converges
     /// toward and holds - configured per-placement via <see cref="SetPatrol"/>'s
     /// <c>cruiseSpeed</c> parameter (the ini <c>PatrolCruiseSpeed</c> key), defaulting to
@@ -142,9 +154,15 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
     /// overrides that inference - e.g. to make a placement's enemy visibly start off moving toward
     /// the player instead.
     /// </param>
-    public void SetPatrol(double patrolMinX, double patrolMaxX, double forceMultiplier = DefaultPatrolForceMultiplier, double cruiseSpeed = DefaultPatrolCruiseSpeed, bool? initialDirectionRight = null)
+    /// <param name="initialDirectionDown">
+    /// The ini <c>PatrolInitialDirectionY</c> override, if any (see
+    /// <see cref="PatrolInitialDirectionDown"/>) - stored only, not yet acted on, since vertical
+    /// patrol doesn't exist for <see cref="MovingEnemy2D"/> yet.
+    /// </param>
+    public void SetPatrol(double patrolMinX, double patrolMaxX, double forceMultiplier = DefaultPatrolForceMultiplier, double cruiseSpeed = DefaultPatrolCruiseSpeed, bool? initialDirectionRight = null, bool? initialDirectionDown = null)
     {
         IsPatrolling = true;
+        PatrolInitialDirectionDown = initialDirectionDown;
         PatrolMinX = patrolMinX;
         PatrolMaxX = patrolMaxX;
         PatrolForceMultiplier = forceMultiplier;

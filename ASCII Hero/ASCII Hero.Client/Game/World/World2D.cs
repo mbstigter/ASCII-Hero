@@ -341,6 +341,13 @@ public class World2D
                 var patrolInitialDirectionRight = objectSection.TryGetValue("PatrolInitialDirectionX", out var patrolDirectionText)
                     ? (bool?)string.Equals(patrolDirectionText, "Right", StringComparison.OrdinalIgnoreCase)
                     : null;
+                // PatrolInitialDirectionY ("Up"/"Down") is parsed here too for a future
+                // vertically-patrolling MovingEnemy2D (see MovingEnemy2D.PatrolInitialDirectionDown)
+                // - stored on the spawned enemy but not yet acted on, since MovingEnemy2D only
+                // patrols horizontally today.
+                var patrolInitialDirectionDownEnemy = objectSection.TryGetValue("PatrolInitialDirectionY", out var patrolDirectionYTextEnemy)
+                    ? (bool?)string.Equals(patrolDirectionYTextEnemy, "Down", StringComparison.OrdinalIgnoreCase)
+                    : null;
 
                 // Patrol (Kind = KinematicObject only) - independent per-axis bounds/speed, unlike
                 // MovingEnemy's single X-only range above: PatrolMinY/PatrolMaxY let a platform
@@ -470,7 +477,8 @@ public class World2D
                                 patrolMaxXOverride ?? world.WidthCells - movingEnemy.Size.X,
                                 patrolForceOverride ?? MovingEnemy2D.DefaultPatrolForceMultiplier,
                                 patrolCruiseSpeedOverride ?? MovingEnemy2D.DefaultPatrolCruiseSpeed,
-                                patrolInitialDirectionRight);
+                                patrolInitialDirectionRight,
+                                patrolInitialDirectionDownEnemy);
                         }
                         world.Objects.Add(movingEnemy);
                         movingBody = movingEnemy;

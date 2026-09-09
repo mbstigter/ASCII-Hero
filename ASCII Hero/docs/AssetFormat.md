@@ -785,7 +785,9 @@ rather than accelerating forever - see docs/Decisions.md); `PatrolCruiseSpeed`
 enemy patrols once it gets there; `PatrolInitialDirectionX` (`Left` or
 `Right`) overrides which way it starts heading the instant the level loads,
 in place of the default inference (toward whichever patrol bound is farther
-from its spawn position):
+from its spawn position). `PatrolInitialDirectionY` (`Up` or `Down`) is also
+parsed and stored, ready for a future vertically-patrolling `MovingEnemy`,
+but has no effect yet - `MovingEnemy` only patrols horizontally today:
 
 ```ini
 [FastGoblin]

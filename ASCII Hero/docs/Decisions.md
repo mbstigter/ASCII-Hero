@@ -2,6 +2,21 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## `MovingEnemy`'s ini parser now accepts `PatrolInitialDirectionY`, reserved for future vertical patrol
+
+- **`MovingEnemy2D` gained a `PatrolInitialDirectionDown` property and a
+  matching `SetPatrol` parameter, and `World2D.LoadAsync` now parses
+  `PatrolInitialDirectionY` (`Up`/`Down`) for `Kind = MovingEnemy` placements,
+  same as it already did for `Kind = KinematicObject`.** `MovingEnemy2D` has
+  no vertical patrol behavior yet (it only has `PatrolMinX`/`PatrolMaxX`/
+  `UpdatePatrolDirection`, all X-axis only), so this value is stored but not
+  yet read/applied anywhere - purely groundwork so level authors can already
+  set the key in their `.ini` files (see `Enemies_objects.ini`'s `SnakeOne`
+  section for a commented-out example) without it being silently dropped,
+  and so a later vertical-patrol implementation is a drop-in rather than
+  requiring another ini-parsing change. docs/AssetFormat.md was updated to
+  note the key is accepted but currently a no-op.
+
 ## `PatrolInitialDirectionX`/`Y` values changed from `Min`/`Max` to `Left`/`Right` and `Up`/`Down`; `MovingEnemy` key renamed for consistency
 
 - **`KinematicObject`'s `PatrolInitialDirectionX`/`PatrolInitialDirectionY`
