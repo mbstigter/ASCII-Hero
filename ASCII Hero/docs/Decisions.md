@@ -2,6 +2,166 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## Enemy patrol cruise-speed model; overridable player/body mass, friction, and walk tuning
+
+- **`MovingEnemy2D` patrol motion converted from constant-thrust force to a
+  cruise-speed convergence model, matching how the player's own walk force
+  already worked.** Previously `PatrolForce` (a fixed-direction, mass-scaled
+  force) was applied every frame with no target speed, so it behaved as
+  uncapped thrust and enemies would accelerate indefinitely - this became
+  clearly visible as a regression once other physics changes made frame
+  timing/force integration more consistent. `MovingEnemy2D` now has a
+  `PatrolCruiseSpeed` property (default `DefaultPatrolCruiseSpeed = 6.0`
+  cells/second) as the actual steady-state target speed, and
+  `PatrolForceMultiplier` (still defaulting to `60`, still authored via the
+  `PatrolForce` ini key) is reinterpreted as "muscle power" - a force *gain*
+  proportional to the remaining gap between current and target velocity
+  (`(targetVelocityX - Velocity.X) * mass * PatrolForceMultiplier`), the
+  exact same shape as `PhysicsSystem.UpdateWalkForce`'s player-side motor
+  force. This is a closer, more realistic parallel between player and enemy
+  locomotion, and fixes the runaway-acceleration bug as a side effect of
+  giving patrol motion an actual target speed to converge on.
+- **`Body2D.Mass` made independently overridable**, rather than always being
+  computed as `Density * Size.X * Size.Y`. That computed value remains the
+  default (a reasonable 2D-volume proxy per the entry below), but an object
+  type's ini section may now set an explicit `Mass` key when the default
+  would be unrealistic for a body's actual shape/weight (e.g. a small but
+  very heavy or very light prop). Applies uniformly to the player and to any
+  other spawned body.
+- **Per-object-type `Friction` override added**, independent of `Material`/
+  `Restitution` (which were already independently overridable). Lets one
+  object type deviate from its resolved material's default grip (e.g. an icy
+  patch of an otherwise-ordinary platform) without needing a dedicated
+  near-duplicate material.
+- **Per-object-type `Density` override added**, for the same reason and in
+  the same style as `Friction`/`Restitution` above - independent of
+  `Material`, and feeding into `Mass`'s density-times-footprint default the
+  same way the resolved material's own density normally would (unless `Mass`
+  is itself overridden too). Motivating case: a body whose effective density
+  legitimately differs from its shared material's, or changes per-instance/
+  at runtime (e.g. water that's been heated) - not yet used by any shipped
+  world, but added alongside the other three physical overrides for
+  consistency/completeness now rather than as a later one-off addition.
+- **Player-only "muscle power"/cruising-speed overrides added**, mirroring
+  the enemy-side concepts above: `Player2D.WalkForceMultiplier` (default
+  `PhysicsSystem.DefaultWalkForceMultiplier = 40.0`) is the player's own force
+  gain toward its target speed (previously a private, non-overridable
+  constant on `PhysicsSystem`), and `Player2D.WalkSpeed`/`CrawlSpeed`
+  (defaults `PhysicsSystem.DefaultWalkSpeed = 12.0`/`DefaultCrawlSpeed = 6.0`)
+  are the target ground speeds for standing/walking vs. crouched/crawling
+  poses, authored via the same-named optional keys in the `Player` ini
+  section. Deliberately named `WalkForceMultiplier` rather than the earlier
+  `WalkForceGain`, to be the exact same name (modulo the `Walk`/`Patrol`
+  prefix) as `MovingEnemy2D.PatrolForceMultiplier`, since both represent
+  identically-shaped "muscle power" concepts - a mass-scaled force gain
+  converging velocity toward a target speed. Only one such multiplier exists
+  for the player (there is no separate `CrawlForceMultiplier`) because
+  Climb/Hang are direct velocity-assignment locomotion modes, not
+  force-based, so `WalkForceMultiplier` is shared by both Walk and Crawl (the
+  only two force-driven poses) with nothing left over for a second
+  multiplier to apply to.
+  Considered but rejected: leaving these as engine-wide constants only -
+  per-level/per-character tuning (e.g. a heavier or weaker player variant)
+  is a natural extension of the existing per-object-type `Material`/
+  `Restitution`/`Mass`/`Friction` override pattern, so exposing them the same
+  way was the more consistent choice.
+
+## Pose terminology consistency; MultiRect/broad-phase-toggle removal; landing jitter accepted as-is; grip/facing fixes planned
+
+- **`Stance` renamed to `Pose` everywhere it meant the named visual/body
+  state** (walk/crawl/jump/climb/hang/etc.), matching the already-existing
+  `Player2D.UpdatePose()`/`IPosedBody.UpdatePose()` naming that had been
+  introduced without the rest of the codebase following suit: `SpriteAsset.
+  Stances`/`DefaultStance`/`StanceDefinition` became `Poses`/`DefaultPose`/
+  `PoseDefinition`, `SpriteLoader.ParseStances` became `ParsePoses`,
+  `Body2D.SetPose`'s `stance` parameter/docs, `Player2D.Stance`,
+  `MovingEnemy2D.Stance`, the `[Stances]` asset-file section (now
+  `[Poses]`), and all doc/docs/AssetFormat.md references were updated to
+  match. Purely a naming pass - no behavior changed.
+- **Legacy `MultiRect` narrow phase and the `N`/`B` debug toggles removed**
+  now that `CharacterGrid` narrow phase (actual rendered-character overlap,
+  not just merged collision-rect overlap) and the spatial-grid broad phase
+  have both proven out as the correct, permanent behavior (see the entry
+  below and the "Contact-tracking..." entry further down): `NarrowPhaseMode`
+  (the enum and `CollisionSystem.NarrowPhaseMode` property) is gone -
+  `TryFindDeepestOverlap` now always applies the character-grid check
+  when both owning bodies are supplied, unconditionally. `CollisionSystem.
+  BroadPhaseEnabled` is gone - `GetCandidateSolids`/`GetCandidateMovingBodies`
+  always consult the spatial grid; the never-filtered brute-force fallback
+  lists were dead code once the toggle was removed. `InputState.
+  IsToggleNarrowPhasePressed`/`IsToggleBroadPhasePressed`, `GameLoop`'s
+  matching edge-trigger fields, and the top-right `R`/`C` + `1`/`0` HUD
+  debug label are all removed as a result - they existed solely to compare
+  the two approaches live, which is no longer needed now that only one
+  approach exists for each phase.
+- **Player landing jitter (brief visual settle when landing) accepted as a
+  known, low-priority cosmetic quirk, not a bug to fix now:** may be
+  revisited later, or simply designed around at the level-design stage
+  (e.g. avoiding hard, high-speed vertical landings right at a scripted
+  camera/timing beat). No code change tracks this; this note is the only
+  record of the decision to leave it alone for now.
+- **Enemy `PatrolSpeedX`/`PatrolSpeedY` intentionally not added for
+  `MovingEnemy2D`:** since `MovingEnemy2D` is force-based (like the
+  player's own `WalkForce`), the correct authoring control for patrol
+  speed is `PatrolForce` in the object's settings file, not a direct speed
+  key - adding a speed key would reintroduce the same direct-velocity-
+  assignment pattern the force/mass rewrite deliberately replaced.
+- **Enemy sliding on fast horizontal platforms, and facing direction
+  flipping with platform direction, identified as real (if low-severity)
+  defects with proposed fixes** - see the follow-up plan messages for the
+  concrete approach for each; not yet implemented as of this entry.
+
+## Player force/mass movement rewrite + full impulse-based normal force (both axes); temporary narrow/broad-phase debug toggles
+
+- **Completes the deferred "Player force/mass movement rewrite" from the
+  entry below:** the player no longer moves via direct velocity
+  assignment. `Player2D` implements a new `IWalkForceBody` (mirrors
+  `IPatrolBody` for a patrolling enemy) exposing `WalkForce`, a
+  horizontal-only mass-scaled "motor" force computed each frame by
+  `PhysicsSystem.UpdateWalkForce` as proportional to the remaining gap
+  between the player's current `Velocity.X` and whichever target
+  walk/crawl/climb-side/hang-side speed this frame's input calls for.
+  `PhysicsSystem.Step` now dispatches the player through the same
+  `StepMovingBodyWithForces` every other body already used (patrol force,
+  gravity), rather than a separate `StepMovingBody` direct-assignment
+  path - that older method and the player-only switch case were removed
+  entirely. Climb/hang vertical velocity and the jump-off velocity itself
+  remain direct assignments on purpose: those are discrete state-machine
+  locomotion modes (like a scripted teleport), not the continuous
+  ground-level walk/crawl locomotion `WalkForce` drives.
+- **Full impulse-based normal-force response, both axes, solids included:**
+  `ResolveRectAgainstSolid`'s velocity response for landing-on-top,
+  underside, and left/right-edge collisions was rewritten to properly
+  reflect the body's velocity relative to an infinite-mass solid along the
+  contact normal (consistent with `ResolveNormalImpulse`'s existing
+  mover-vs-mover math, generalized to an infinite-mass second body), then
+  apply real Coulomb friction (`ApplyCoulombFriction`) to the tangential
+  component - capped by the normal impulse magnitude just resolved at that
+  same contact, rather than the old flat "multiply by `1 - friction`"
+  approximation (`ApplyFriction`, now solid/solid-vs-solid removed but
+  still used by `ResolveBodyPair`'s remaining flat friction case). This
+  made the last two grounding hacks provably redundant and they were
+  deleted outright: `CollisionSystem._groundedSolids`, the player-only
+  horizontal platform-carry block at the top of `Resolve`, and
+  `MaintainVerticalGroundedContact` (the vertical re-seat hack) are gone -
+  a resting body (including the player) now stays glued to a moving
+  platform on both axes purely through the same velocity-matching +
+  landing-snap response every other body already relied on, with no
+  special-casing. `CollisionSystem.Resolve` no longer needs a
+  `deltaSeconds` parameter as a result.
+- **Temporary debug toggles for comparing collision modes live:** `N`
+  cycles `CollisionSystem.NarrowPhaseMode` between `MultiRect` and
+  `CharacterGrid`; `B` toggles `CollisionSystem.BroadPhaseEnabled`, which
+  (when false) makes `GetCandidateSolids`/`GetCandidateMovingBodies` fall
+  back to the full unfiltered solids/movers lists instead of consulting
+  the spatial grid, rather than removing the grid machinery itself. Both
+  are edge-triggered in `GameLoop.OnPlayingFrameAsync` (mirroring
+  `PhysicsSystem`'s own stance-key edge-triggering) and reflected by a
+  single top-right HUD label showing `R`/`C` (narrow-phase mode) followed
+  by `1`/`0` (broad-phase on/off) - explicitly called out as temporary in
+  code comments, to be removed once the two approaches are no longer
+  being actively compared.
+
 ## Contact-tracking + impulse-based normal force redesign planned; supersedes "no separate normal force" decision
 
 - **Supersedes the earlier "No separate constraint-solver normal force

@@ -23,7 +23,7 @@ public interface IHangerBody : IPhysicsBody
     /// Whether the body is actually hanging from a pipe/rope right now - engaged by
     /// <see cref="Physics.PhysicsSystem"/> as soon as <see cref="IsTouchingHangable"/>, held until
     /// the body leaves the hangable surface or explicitly lets go (a second Down press from the
-    /// fully-stretched pose - see <see cref="IsClambering"/> and the hang stance ladder in
+    /// fully-stretched pose - see <see cref="IsClambering"/> and the hang pose ladder in
     /// <see cref="Physics.PhysicsSystem.Step"/>).
     /// </summary>
     bool IsHanging { get; set; }
@@ -36,7 +36,7 @@ public interface IHangerBody : IPhysicsBody
     /// pulls into this compact pose (mirroring Crawl on the ground) and Down extends back out to
     /// the fully-stretched hang (mirroring Walk) - a further Down from there lets go entirely
     /// instead of crouching further, since fully stretched is already the least-attached pose.
-    /// See the hang stance ladder in <see cref="Physics.PhysicsSystem.Step"/> for the full
+    /// See the hang pose ladder in <see cref="Physics.PhysicsSystem.Step"/> for the full
     /// transition logic.
     /// </summary>
     bool IsClambering { get; set; }

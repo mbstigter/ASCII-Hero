@@ -137,7 +137,7 @@ public static class WorldCatalog
     /// Reads the ordered list of every world available to play from <c>Global/Worlds.ini</c> (see
     /// docs/AssetFormat.md §4.4) - an explicit, authored manifest rather than a directory listing,
     /// since Blazor WebAssembly has no way to enumerate `wwwroot`'s contents at runtime (the same
-    /// reasoning as the authored, not filesystem-inferred, `[Stances]` clip list).
+    /// reasoning as the authored, not filesystem-inferred, `[Poses]` clip list).
     /// </summary>
     public static async Task<IReadOnlyList<string>> LoadWorldNamesAsync(IAssetFileProvider fileProvider)
     {

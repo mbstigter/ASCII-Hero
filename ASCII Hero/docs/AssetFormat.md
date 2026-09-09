@@ -344,26 +344,26 @@ the loading step differ.
 is authored one cell wide with `TileAxis = Horizontal`, `BrickWall` is authored
 one cell tall with `TileAxis = Vertical`.
 
-### 2.6 Stances and facing (`[Stances]`)
+### 2.6 Poses and facing (`[Poses]`)
 
 Some assets — the player, and later any NPC that visibly changes posture or
 direction — need more than one whole-body pose, each of which can also face
-`Idle` (its neutral pose - facing the viewer for a stance that moves
-horizontally, or whatever a stance's own neutral direction is otherwise, e.g.
+`Idle` (its neutral orientation - facing the viewer for a pose that moves
+horizontally, or whatever a pose's own neutral direction is otherwise, e.g.
 facing the ladder while climbing), or one of four directions: `Left`/`Right`
 (horizontal - walking, crawling, jumping, hanging), `Up`/`Down` (vertical -
 climbing), or any combination of all four at once (e.g. swimming, which can
 move in all four directions). This is a second, orthogonal axis on top of
 everything in §2.1-§2.5: whichever clip is currently selected for the active
-stance/facing combination still authors its own frames, `EmptyChar`,
+pose/facing combination still authors its own frames, `EmptyChar`,
 materials, and its own resolved `[Animation]`/`[Animation.{clipName}]` timing
-exactly as described above — a stance/facing pair is simply *which clip* is
+exactly as described above — a pose/facing pair is simply *which clip* is
 currently active, not a new kind of clip content.
 
-Declared via an optional `[Stances]` section in `settings.ini`:
+Declared via an optional `[Poses]` section in `settings.ini`:
 
 ```ini
-[Stances]
+[Poses]
 Default = Walk
 Walk = walk_idle, walk_left, walk_right
 Crawl = crawl_idle, crawl_left, crawl_right
@@ -371,61 +371,61 @@ Climb = climb_idle, climb_up, climb_down
 Swim = swim_idle, swim_left, swim_right, swim_up, swim_down
 ```
 
-- Each non-`Default` key names a stance (`Walk`, `Crawl`, ...); its value is a
+- Each non-`Default` key names a pose (`Walk`, `Crawl`, ...); its value is a
   comma-separated list of clip names, in any order. Which `Facing` each clip
   is for is read from **the clip name's own trailing suffix** -
   `_idle`/`_left`/`_right`/`_up`/`_down` - not from its position in the list;
-  a clip with none of these suffixes is treated as `Idle`. A stance lists only
-  the facings it actually has art for: just `_left`/`_right` for a stance
+  a clip with none of these suffixes is treated as `Idle`. A pose lists only
+  the facings it actually has art for: just `_left`/`_right` for a pose
   that only ever moves sideways (walking), just `_up`/`_down` for one that
   only ever moves vertically (climbing), or all four directional suffixes at
-  once for a stance that can move any of the four ways (swimming). Any facing
-  a stance doesn't list falls back to that stance's `_idle` clip.
-- `Default` names the stance active at spawn (required whenever `[Stances]`
+  once for a pose that can move any of the four ways (swimming). Any facing
+  a pose doesn't list falls back to that pose's `_idle` clip.
+- `Default` names the pose active at spawn (required whenever `[Poses]`
   is present at all).
 - Every clip named here is an ordinary clip following the normal
-  `{AssetName}_{clipName}_*` file-naming convention (§2) - `[Stances]` only
+  `{AssetName}_{clipName}_*` file-naming convention (§2) - `[Poses]` only
   adds grouping metadata on top of clips that already exist; it introduces no
   new file-naming rule, and a clip's suffix is simply the tail end of its
   already-required name.
-- `[Stances]` is entirely optional. Assets that don't declare it behave
+- `[Poses]` is entirely optional. Assets that don't declare it behave
   exactly as before: whatever single clip a placement/spawn requests (e.g.
   `Clip = idle` in a world's `objects.ini`) is the only clip ever shown, with
-  no stance/facing switching at all.
-- Frame counts are independent per clip - a stance's `Idle` clip can have three
+  no pose/facing switching at all.
+- Frame counts are independent per clip - a pose's `Idle` clip can have three
   frames (e.g. a subtle idle head-turn) while its directional clips have two
   frames each (e.g. a walk cycle), or one frame (a static crouched pose).
-  Nothing about `[Stances]` requires matching frame counts across facings or
-  across stances.
-- Switching stance/facing at runtime re-derives the object's size and
+  Nothing about `[Poses]` requires matching frame counts across facings or
+  across poses.
+- Switching pose/facing at runtime re-derives the object's size and
   collision shape from whichever clip's frame is now active, the same way any
   other clip/frame switch already does - with no special pre-transition
   validation needed anywhere in the format or the loader.
-- **Every clip's frame(s) across an entire stance set (every stance, every
+- **Every clip's frame(s) across an entire pose set (every pose, every
   facing) should share the same width and height.** `Position` is a body's
   top-left corner and is *not* adjusted when a clip switch changes frame
-  size - only `Size`/collision shape are re-derived. A stance authored with a
+  size - only `Size`/collision shape are re-derived. A pose authored with a
   genuinely smaller/larger box than the rest (e.g. a shorter `Crawl` pose)
   will visibly float above the ground (shrink) or sink into it (grow) instead
   of keeping its feet planted, since the top-left corner staying fixed moves
   the *bottom* edge. Convey a "shorter"/"crouched" pose by leaving authored
   rows blank (as `Player_crawl_*` does - a full-height box with an empty top
   row) rather than by actually authoring a smaller grid.
-- For an asset whose stance set is dictated by code rather than purely by
+- For an asset whose pose set is dictated by code rather than purely by
   world design (the player being the main example - `PhysicsSystem`/its
-  capability interfaces can put it into any stance it supports, e.g.
+  capability interfaces can put it into any pose it supports, e.g.
   `Clamber` as soon as a hangable surface is grabbed while crawling), every
-  stance the code can produce must have a matching entry in `[Stances]`, and
+  pose the code can produce must have a matching entry in `[Poses]`, and
   every clip listed there must have at least its `_characters.txt` file (the
   matching `_foregroundcolors.txt`/`_backgroundcolors.txt` layers stay
   optional per §2.3). There is no generic fallback (e.g. defaulting to some
-  idle clip) for a missing stance or clip - it is a hard load/runtime error
-  by design, since a code-driven stance silently rendering wrong (or not at
+  idle clip) for a missing pose or clip - it is a hard load/runtime error
+  by design, since a code-driven pose silently rendering wrong (or not at
   all) would be a much worse failure mode than a loud, immediate crash during
   asset authoring/QA.
 
 Note the two different naming conventions used by this format, both
-intentional and unrelated: **a `[Stances]` clip list is authored in any
+intentional and unrelated: **a `[Poses]` clip list is authored in any
 order, each clip's own name suffix (`_idle`/`_left`/`_right`/`_up`/`_down`)
 saying which facing it's for**, while **a single clip's own multi-frame
 `_characters.txt` for a Left/Idle/Right-style animation (e.g.
@@ -436,9 +436,9 @@ sequence for a symmetric `PingPong` head-turn to bounce through.
 ### 2.7 Organizing clips into subfolders (`[ClipFolders]`)
 
 A simple asset (`Pipe`, `BrickWall`) has only one or two clips and is happiest
-kept as a flat folder of files. A busy multi-stance asset (`Player`, and any
-future NPC with many poses) accumulates many files per stance and reads more
-clearly split into one subfolder per stance. Both are supported by the same
+kept as a flat folder of files. A busy multi-pose asset (`Player`, and any
+future NPC with many poses) accumulates many files per pose and reads more
+clearly split into one subfolder per pose. Both are supported by the same
 loader, with **no change to how a world's `_objects.ini` references the
 asset or any of its clips** - callers keep asking for a clip by its plain name
 (`walk_idle`, `hang_left`, ...) exactly as before; only the on-disk layout
@@ -469,7 +469,7 @@ crawl = Crawl
   whole asset. `{AssetName}_settings.ini` itself always stays in the asset's
   root folder regardless of `[ClipFolders]`.
 - This is purely a file-organization convenience — it has no effect on
-  `[Stances]`, `[Animation.{clipName}]`, tiling, or anything else described
+  `[Poses]`, `[Animation.{clipName}]`, tiling, or anything else described
   above, all of which keep referring to clips by their plain name.
 
 `Player` is the reference busy asset using this: `Player_settings.ini` (and its
@@ -605,7 +605,7 @@ Since this is a Blazor WebAssembly app with no server-side directory listing,
 the set of available worlds cannot be discovered by scanning
 `wwwroot/Assets/Worlds/` at runtime - it is an explicit, authored manifest
 (`Global/Worlds.ini`, §4.4), the same "authored list, not inferred from the
-filesystem" approach `[Stances]` already uses for a sprite's clips.
+filesystem" approach `[Poses]` already uses for a sprite's clips.
 
 ### 3.3 Object placement codes
 
@@ -660,6 +660,20 @@ specifies which sprite asset/clip to spawn and any additional per-type propertie
 Per-instance overrides (e.g. one specific enemy with a custom patrol range) can use
 a dedicated numbered code (`E1`) with its own `[E1]` section, falling back to a
 shared template section for common properties.
+
+Throughout the rest of this section, "an object type" (or "a section") means
+one `[SectionName]` block in a world's `{WorldName}_objects.ini` (e.g.
+`[Goblin]` above), not one specific occurrence in the level. Every key
+described below (`Material`, `Friction`, `Mass`, `Restitution`, `PatrolForce`,
+`WalkSpeed`, etc.) is set once per section and therefore applies to every
+cell in `{WorldName}_objects.txt` that uses that section's code - placing the
+same code at five different spots spawns five bodies that all share that one
+section's tuning. To give one specific occurrence its own values instead
+(e.g. one particular goblin patrolling faster than all the others), author
+it under its own numbered code/section (the `E1`-style per-instance override
+just above) rather than editing the shared section - that one numbered
+section is then itself "an object type" in the sense used below, just one
+used by only a single occurrence.
 
 There is no placement-time frame-selection key — a clip's starting/static frame is
 always controlled asset-wide via `[Animation] DefaultFrame` in the asset's own
@@ -763,9 +777,12 @@ PatrolMaxX = 35
 ```
 
 Two further optional keys tune the patrol force itself rather than its
-range: `PatrolForce` (a number, default `60`) scales how strongly - and so
-how fast, mass-scaled like gravity rather than an instant snap to some
-target speed - this enemy patrols; `PatrolInitialDirection` (`Left` or
+range: `PatrolForce` (a number, default `60`) scales how strongly - i.e. how
+"strong" this enemy is, its "muscle power" - it accelerates toward its
+cruising speed (mass-scaled like gravity, converging on that target speed
+rather than accelerating forever - see docs/Decisions.md); `PatrolCruiseSpeed`
+(cells/second, default `6`) is that target speed itself, i.e. how fast this
+enemy patrols once it gets there; `PatrolInitialDirection` (`Left` or
 `Right`) overrides which way it starts heading the instant the level loads,
 in place of the default inference (toward whichever patrol bound is farther
 from its spawn position):
@@ -777,6 +794,7 @@ Clip = idle
 Kind = MovingEnemy
 Patrol = true
 PatrolForce = 90
+PatrolCruiseSpeed = 10
 PatrolInitialDirection = Right
 ```
 
@@ -813,9 +831,9 @@ PatrolMaxY = 18
 PatrolSpeedY = 6
 ```
 
-Any placement (the `Player` section, or a non-static object) may also set
+Any object type (the `Player` section, or a non-static object) may also set
 `CameraTarget = true` to have the camera follow that body instead of the
-player. If no placement sets it, the camera defaults to following the player;
+player. If no section sets it, the camera defaults to following the player;
 if more than one does, the last one loaded (in top-to-bottom, left-to-right
 grid scan order) wins:
 
@@ -827,7 +845,33 @@ Kind = DynamicObject
 CameraTarget = true
 ```
 
-Any placement may also override its spawned body's material and/or color away
+The `Player` section may additionally override its own "muscle power" and
+target ground speeds, the same concepts `MovingEnemy`'s `PatrolForce`/
+`PatrolCruiseSpeed` expose for a patrolling enemy - deliberately the same
+key/property name (`ForceMultiplier`) for both, since they are the exact same
+"force gain converging toward a target speed" concept either way:
+`WalkForceMultiplier` (a number, default from
+`PhysicsSystem.DefaultWalkForceMultiplier`) scales how strongly the player
+accelerates toward its target speed; `WalkSpeed`/`CrawlSpeed` (cells/second,
+defaulting from `PhysicsSystem.DefaultWalkSpeed`/`DefaultCrawlSpeed`) are the
+target ground speeds while standing/walking vs. crouched/crawling,
+respectively. Only one force multiplier exists for the player (covering both
+Walk and Crawl) rather than a separate one per pose, because Climb/Hang are
+direct velocity-assignment locomotion modes, not force-based, so there is
+nothing else for a second multiplier to apply to. All three keys are optional
+and independent of one another:
+
+```ini
+[Player]
+Asset = Hero
+Clip = idle
+Kind = Player
+WalkForceMultiplier = 55 ; Default = PhysicsSystem.DefaultWalkForceMultiplier (40)
+WalkSpeed = 16 ; Default = PhysicsSystem.DefaultWalkSpeed (12)
+CrawlSpeed = 8 ; Default = PhysicsSystem.DefaultCrawlSpeed (6)
+```
+
+Any object type may also override its spawned body's material and/or color away
 from what its sprite asset would otherwise resolve to on its own (its
 `DefaultMaterial`/per-cell `_materials.txt`, and `DefaultForegroundColor`/
 `DefaultBackgroundColor`/per-cell `_foregroundcolors.txt`/`_backgroundcolors.txt`
@@ -852,24 +896,50 @@ ForegroundColor = Y
 ```
 
 - **`Material`** — the material name (see `Global/Materials.ini`) this
-  placement's Density/Friction resolve from, in place of the spawned body's
-  own resolved `MaterialName`. `Restitution` is a separate, independently
-  overridable key (see above) rather than being tied to `Material`.
+  section's Density/Friction/Restitution resolve from, in place of the
+  spawned body's own resolved `MaterialName`. `Friction`/`Restitution`/
+  `Density` below are each separate, independently overridable keys rather
+  than being tied to `Material`.
+- **`Friction`** — overrides this section's resolved material's `Friction`
+  outright, independent of `Material`/`Restitution`/`Density` (e.g. an icy
+  patch of an otherwise-ordinary `Steel` platform, without needing a
+  dedicated near-duplicate material just for that one type).
+- **`Restitution`** — likewise overrides the resolved material's bounciness
+  outright, independent of `Material`/`Friction`/`Density` (see the
+  `DynamicObject` example earlier in this section).
+- **`Density`** — likewise overrides the resolved material's density
+  outright, independent of `Material`/`Friction`/`Restitution` (e.g. a body
+  whose effective density differs from its shared material's for just this
+  one type, or changes per-instance/at runtime — think water that's been
+  heated). Feeds into `Mass`'s density-times-footprint default the same way
+  the material's own density normally would (see `Mass` below), unless
+  `Mass` is itself also overridden.
+- **`Mass`** — overrides the spawned body's default mass, which is otherwise
+  always `Density * width * height` (a simple 2D-volume proxy — see
+  docs/Decisions.md; that `Density` is itself this section's own resolved
+  Density above, whether from `Material`/the sprite's default or a `Density`
+  override). `Mass` only replaces the *combination* of that density with
+  this body's on-screen footprint - use it when that 2D-volume proxy would
+  be unrealistic for a particular body's actual shape/weight (e.g. a small
+  but very heavy prop, or a large but hollow/light one), the same way
+  `Friction`/`Restitution`/`Density` above let this one type deviate from
+  its resolved material's other physical defaults.
+  Applies to `Player` too, not just non-player object types.
 - **`ForegroundColor`**/**`BackgroundColor`** — a single-character color code
   (see `Global/Colors.ini`), the highest-precedence tier in
   `WorldRenderer`'s color-resolution chain after the cell's own per-cell code:
-  per-cell layer file &gt; this placement's override &gt; the sprite asset's own
+  per-cell layer file &gt; this section's override &gt; the sprite asset's own
   `[Colors]` default &gt; the level's own `[Colors]` default (§3, above) &gt; a
-  hardcoded engine fallback. Absent means this placement has no per-instance
-  override and the chain continues to the asset default unchanged.
+  hardcoded engine fallback. Absent means this object type has no override
+  and the chain continues to the asset default unchanged.
 
-Any non-`Player` placement may also set `Passable`, `Climbable`, and/or
+Any non-`Player` object type may also set `Passable`, `Climbable`, and/or
 `Hangable` (each default `false`, except `Passable` which defaults to `true`
 for `Kind = StaticEnemy`/`Collectable`) to control how it interacts with
 moving bodies, independent of its `Kind`:
 
 - **`Passable`** — if `true`, the object never blocks movement even though it
-  is otherwise solid terrain (e.g. a wall placement used as a level design
+  is otherwise solid terrain (e.g. a wall type used as a level design
   "secret passage"). `StaticEnemy`/`Collectable` default to `true` since
   neither has ever blocked movement (a hazard is meant to be walked into, a
   collectable is picked up on contact) — this default simply keeps that
@@ -968,7 +1038,7 @@ Order = Level1, TestMovement, TestPhysics
   selectable; removing a name here hides that world from selection without
   needing to delete its files.
 - This is the same "authored list, not inferred from the filesystem"
-  approach `[Stances]` uses for a sprite's clips — Blazor WebAssembly has no
+  approach `[Poses]` uses for a sprite's clips — Blazor WebAssembly has no
   way to list `wwwroot`'s directory contents at runtime, so the set of
   worlds can't simply be discovered by scanning `Assets/Worlds/`.
 

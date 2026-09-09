@@ -219,16 +219,27 @@ The live game state and the entity types that make it up.
 
 ### Physics
 
-- **`PhysicsSystem`** - applies player input to horizontal velocity and
-  jumping, applies gravity to any `IGravityAffected` body, and integrates
-  position from velocity for every `IPhysicsBody` each frame. The player
-  still moves via direct velocity assignment from input; every other moving
-  body integrates instead via a per-frame mass-scaled force accumulator
-  (`StepMovingBodyWithForces` - gravity as `mass * world.Gravity`, plus, for
-  any `IPatrolBody`, its own patrol force, converted to acceleration via
-  `a = F / mass`, then integrated into velocity), which is numerically
+- **`PhysicsSystem`** - resolves player jump/stance/pose input, applies
+  gravity to any `IGravityAffected` body, and integrates position from
+  velocity for every `IPhysicsBody` each frame, all via one shared per-frame
+  mass-scaled force accumulator (`StepMovingBodyWithForces` - gravity as
+  `mass * world.Gravity`, plus, for any `IPatrolBody`, its own patrol force,
+  and for any `IWalkForceBody`, its own walk force, converted to acceleration
+  via `a = F / mass`, then integrated into velocity), which is numerically
   identical to a direct gravity-velocity add for a gravity-only body but is
-  the extension point for any further non-gravity force source. Also resolves
+  the extension point for any further force source. The player's own
+  ground-level walk/crawl (and climb/hang side-step) locomotion is one such
+  force source: `Player2D` implements `IWalkForceBody`, and each frame
+  `PhysicsSystem.UpdateWalkForce` recomputes its `WalkForce` as a
+  proportional "motor" force converging `Velocity.X` toward whichever
+  walk/crawl/climb-side/hang-side target speed the current input calls for -
+  mirroring `IPatrolBody.PatrolForce`'s role for a patrolling enemy, just
+  proportional to the remaining speed gap rather than a fixed direction, so
+  the player still reaches (and then holds) the target speed promptly
+  without overshooting or oscillating. Climb/hang vertical velocity, and the
+  ground/climb/hang jump-off impulses themselves, remain direct velocity
+  assignments on purpose - those are discrete state-machine locomotion modes,
+  not the continuous ground-level movement `WalkForce` drives. Also resolves
   the player's stance (Walk/Crawl, toggled by input) and pose (which swaps to
   a visual-only "Jump" pose while airborne, independent of the underlying
   stance). Also engages/disengages `IsClimbing`/`IsHanging` (on any
@@ -283,42 +294,30 @@ The live game state and the entity types that make it up.
   type-based value. Solid-collision response (`ResolveRectAgainstSolid`)
   treats the solid's own velocity (real for a kinematic body like
   `KinematicObject2D`, zero for ordinary stationary terrain) as the
-  collision's reference frame - bounce/friction math runs on the other
-  body's velocity relative to the solid, then the solid's velocity is added
-  back - so a moving platform naturally drags a resting rider along via
-  friction (more so for a grippy material, less for a slick one) using the
-  exact same formulas as stationary terrain. Combined with `PhysicsSystem`
-  integrating that velocity into `Position` before `Resolve` runs each frame,
-  plus the landing-snap correction above always running against the
-  platform's current (already-moved) position, this ordinarily carries a
-  resting rider vertically. But a platform displacing downward farther in
-  one frame than the body's own velocity-matched fall keeps up with can
-  still briefly lose all rect overlap before either mechanism runs;
-  `CollisionSystem.MaintainVerticalGroundedContact` permanently closes that
-  gap by directly re-seating a still-grounded body (`IsGrounded` still true
-  from last frame) that is remembered (`_groundedSolids`) to be standing on
-  a *moving* solid flush onto that solid's current top surface - provided
-  it still overlaps horizontally - before this frame's ordinary landing
-  check runs. Being a direct position assignment rather than an additive
-  velocity/position delta, this cannot double-count with the mechanisms
-  above (an earlier attempt that instead added a `solidVelocity.Y *
-  deltaSeconds` delta caused visible up/down jitter - see
-  docs/Decisions.md); it also skips a body that jumped this same frame
-  (already not `IsGrounded`) or a `DynamicObject2D` bouncing off ordinary
-  stationary terrain (solid velocity zero). Horizontally, by contrast, the
-  player's `Velocity.X` is overwritten directly from input every frame
-  (`PhysicsSystem.Step`), so that same friction-based matching never gets a
-  chance to act for the player specifically (every other body still
-  carries horizontally for free via it); `CollisionSystem` works around
-  this with a **temporary hack**, sharing the same `_groundedSolids`
-  dictionary: at the start of the next `Resolve(world, deltaSeconds)` call
-  it shifts *the player's* `Position.X` (only) by the remembered solid's
-  `Velocity.X * deltaSeconds` before the ordinary overlap check runs (a
-  no-op against stationary terrain). This is explicitly flagged in code to
-  be deleted once player movement becomes force/mass-based instead of
-  direct velocity assignment (see the deferred TODO on `PhysicsSystem.Step`),
-  at which point the same velocity-matching used by every other body will
-  carry the player horizontally too, with no special-casing needed.
+  collision's reference frame - the normal-relative velocity response and
+  friction both run on the other body's velocity relative to the solid, then
+  the solid's velocity is added back - so a moving platform naturally drags
+  a resting rider along via friction (more so for a grippy material, less
+  for a slick one) using the exact same formulas as stationary terrain. The
+  normal-relative response is a genuine impulse-based reflection (matching
+  `ResolveNormalImpulse`'s mover-vs-mover math, generalized to an
+  infinite-mass second body), and the tangential (along-surface) component
+  is damped via real Coulomb friction (`ApplyCoulombFriction`) - capped by
+  the magnitude of the normal impulse just applied at that same contact
+  (`|f| <= mu * N`, expressed in velocity terms since impulses here are
+  resolved per-frame rather than as a continuous force), rather than the
+  old flat "multiply by `1 - friction`" approximation. Combined with
+  `PhysicsSystem` integrating that velocity into `Position` before `Resolve`
+  runs each frame, this carries a resting rider - the player included, now
+  that its own horizontal velocity is force/mass-driven (see
+  `IWalkForceBody` above) rather than overwritten from input every frame -
+  along a moving platform on both axes with no special-casing: the
+  platform-carry gap this used to leave (a platform displacing farther in
+  one frame than a body's own velocity-matched motion keeps up with) is
+  closed simply by the ordinary landing-snap correction re-running against
+  the platform's current (already-moved) position every frame - no separate
+  re-seat/carry mechanism is needed on either axis (see docs/Decisions.md
+  for the two now-removed workarounds this replaced).
   Moving-body-vs-moving-body resolution
   (`ResolveBodyPair`) splits position correction by relative mass and
   resolves the along-normal velocity response via a standard 1D
@@ -546,9 +545,10 @@ Driven by the browser's `requestAnimationFrame` calling `GameLoop.OnFrame`
 once per frame, with the elapsed time since the last frame (clamped to avoid
 large jumps after e.g. a tab switch):
 
-1. **Physics** - `PhysicsSystem.Step` applies input to the player's velocity
-   and stance/pose, applies gravity to affected bodies, and integrates every
-   moving body's position from its velocity.
+1. **Physics** - `PhysicsSystem.Step` resolves player jump/stance/pose input
+   (feeding the player's own force-based ground/climb/hang locomotion, see
+   `IWalkForceBody` above), applies gravity to affected bodies, and
+   integrates every moving body's position from its accumulated forces.
 2. **Collision** - `CollisionSystem.Resolve` resolves overlaps: moving bodies
    against solid terrain and world bounds, moving bodies against each other,
    hazard/collectable contact (including collector pickups and killer/

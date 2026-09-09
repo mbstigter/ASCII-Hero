@@ -5,19 +5,32 @@ using ASCII_Hero.Client.Game.World;
 namespace ASCII_Hero.Client.Game.Physics;
 
 /// <summary>
-/// Applies horizontal movement input to the player, gravity to any <see cref="IGravityAffected"/>
-/// body, and integrates position from velocity for every <see cref="IPhysicsBody"/> in
-/// <see cref="World2D.Objects"/> each frame. Kinematic bodies move at a constant, predefined
-/// velocity and never receive gravity or input. The player still moves via direct velocity
-/// assignment (see the TODO in <see cref="Step"/>); every other moving body integrates via a
-/// per-frame mass-scaled force accumulator instead (see <see cref="StepMovingBodyWithForces"/>).
+/// Applies gravity to any <see cref="IGravityAffected"/> body, walk-force/patrol-force
+/// contributions, and integrates position from velocity for every <see cref="IPhysicsBody"/> in
+/// <see cref="World2D.Objects"/> each frame via a per-frame mass-scaled force accumulator (see
+/// <see cref="StepMovingBodyWithForces"/>) - the player included (see <see cref="World.IWalkForceBody"/>).
+/// Kinematic bodies move at a constant, predefined velocity and never receive gravity or input.
 /// </summary>
 public class PhysicsSystem
 {
-    private const double WalkSpeed = 12.0;
-    private const double CrawlSpeed = 6.0;
-    private const double ClimbVerticalSpeed = 10.0;
+    /// <summary>Default target ground speed while standing/walking - see <see cref="Player2D.WalkSpeed"/>.</summary>
+    public const double DefaultWalkSpeed = 12.0;
+
+    /// <summary>Default target ground speed while crouched/crawling - see <see cref="Player2D.CrawlSpeed"/>.</summary>
+    public const double DefaultCrawlSpeed = 6.0;
+
+    /// <summary>
+    /// Default magnitude of the mass-scaled horizontal "motor" force applied to converge the
+    /// player's <see cref="Player2D.Velocity"/>.X toward the current target walk/crawl speed (see
+    /// <see cref="UpdateWalkForce"/>) - same name/role as <see cref="MovingEnemy2D.DefaultPatrolForceMultiplier"/>
+    /// for a patrolling enemy, proportional to the remaining speed gap so the player accelerates
+    /// promptly yet still settles at exactly the target speed rather than overshooting it every
+    /// frame. See <see cref="Player2D.WalkForceMultiplier"/>.
+    /// </summary>
+    public const double DefaultWalkForceMultiplier = 40.0;
+
     private const double ClimbHorizontalSpeed = 8.0;
+    private const double ClimbVerticalSpeed = 10.0;
     private const double HangSpeed = 8.0;
     private const double ClamberSpeed = 5.0;
     private const double WalkJumpSpeed = 22.0;
@@ -29,7 +42,7 @@ public class PhysicsSystem
     private bool _wasJumpKeyDown;
 
     /// <summary>
-    /// Set the instant the player jumps off a ladder (see the stance ladder in <see cref="Step"/>),
+    /// Set the instant the player jumps off a ladder (see the pose ladder in <see cref="Step"/>),
     /// and held until <see cref="IClimberBody.IsTouchingClimbable"/> goes false again. Without
     /// this, <see cref="ClimbJumpSpeed"/> is slow enough that the player is still both overlapping
     /// the same ladder and holding Up/Down on the very next frame or two, which would otherwise
@@ -49,9 +62,9 @@ public class PhysicsSystem
         // past/through a passable ladder must never lock movement. Climbing requires a deliberate
         // up/down press while touching one (mirroring the old ConsoleGame2D reference's explicit
         // Climb() trigger) - including mid-jump, there is no grounded requirement, so a ladder can
-        // be grabbed out of the air. Crawling can't climb directly (too low a stance to reach a
-        // rung) - engaging climb requires Stance == "Walk" already, so a crawling player must
-        // first explicitly stand up (the ordinary Crawl->Walk stance toggle below, its own
+        // be grabbed out of the air. Crawling can't climb directly (too low a pose to reach a
+        // rung) - engaging climb requires Pose == "Walk" already, so a crawling player must
+        // first explicitly stand up (the ordinary Crawl->Walk pose toggle below, its own
         // separate key press) before a later press can grab the ladder; there is no combined
         // "stand up and grab on" shortcut. Hanging engages automatically as soon as the surface is
         // touched from underneath, same as that reference project. Both disengage the moment the
@@ -59,12 +72,12 @@ public class PhysicsSystem
         // solid ground (landing on a real floor always takes priority over still nominally
         // overlapping a passable ladder, and a Jump press while climbing lets go and launches -
         // see the climbing movement block below), and hanging additionally yields to an explicit
-        // "let go" or a Jump press (see the hang stance ladder below).
+        // "let go" or a Jump press (see the hang pose ladder below).
         if (player.IsClimbing && (!player.IsTouchingClimbable || player.IsGrounded))
         {
             player.IsClimbing = false;
         }
-        else if (!player.IsClimbing && player.IsTouchingClimbable && player.Stance == "Walk" && !_suppressClimbUntilClear && (input.IsUpPressed || input.IsDownPressed))
+        else if (!player.IsClimbing && player.IsTouchingClimbable && player.Pose == "Walk" && !_suppressClimbUntilClear && (input.IsUpPressed || input.IsDownPressed))
         {
             player.IsClimbing = true;
         }
@@ -93,7 +106,7 @@ public class PhysicsSystem
             // pose (hands and feet both on it) instead of the regular fully-stretched hang -
             // matching whichever pose the player's silhouette already was in the instant before
             // grabbing on, rather than always defaulting to one or the other.
-            player.IsClambering = player.Stance == "Crawl";
+            player.IsClambering = player.Pose == "Crawl";
         }
 
         // Once the player is no longer touching the hangable surface at all (having actually
@@ -104,14 +117,14 @@ public class PhysicsSystem
             player.SuppressHangUntilClear = false;
         }
 
-        // A single, structured up/down stance ladder, deliberately mirroring floor and hanging
+        // A single, structured up/down pose ladder, deliberately mirroring floor and hanging
         // as inverses of each other rather than two unrelated sets of key handling:
         //   Floor:    Up -> Walk (stand up from Crawl); Down -> Crawl (crouch down from Walk)
         //   Hanging:  Up -> Clamber (pull knees up from Hang); Down -> Hang (from Clamber);
         //             Down again (already Hang) -> let go entirely; Jump while Hang -> swing/jump
         //             off entirely instead
         // On the ground, Up always means "become more upright" (Crawl -> Walk) and Down always
-        // means "become more compact" (Walk -> Crawl) - the ordinary stance toggle. Suspended from
+        // means "become more compact" (Walk -> Crawl) - the ordinary pose toggle. Suspended from
         // a pipe/rope, the sense of "up"/"down" is deliberately inverted to match the player's arm
         // position rather than screen direction: Up pulls the knees up into the compact
         // clamber pose (mirroring Crawl), Down extends back out into the normal fully-stretched
@@ -132,13 +145,13 @@ public class PhysicsSystem
         var stoodUpThisFrame = false;
         if (!player.IsClimbing && !player.IsHanging)
         {
-            if (player.Stance == "Walk" && downPressedThisFrame)
+            if (player.Pose == "Walk" && downPressedThisFrame)
             {
-                player.Stance = "Crawl";
+                player.Pose = "Crawl";
             }
-            else if (player.Stance == "Crawl" && upPressedThisFrame)
+            else if (player.Pose == "Crawl" && upPressedThisFrame)
             {
-                player.Stance = "Walk";
+                player.Pose = "Walk";
                 stoodUpThisFrame = true;
             }
         }
@@ -174,7 +187,7 @@ public class PhysicsSystem
                 // off - representing letting go of a pipe/rope while swinging from it, which only
                 // makes sense from the stretched-out pose. Jump alone swings straight upward (e.g.
                 // onto a pipe a little higher); combined with Left/Right it's a diagonal swing,
-                // reusing whichever horizontal speed the player's current stance already grants
+                // reusing whichever horizontal speed the player's current pose already grants
                 // (see the ordinary horizontal-movement block below) rather than a separate one.
                 // Same debounce as the explicit let-go below, so the player can't instantly
                 // re-grab the exact surface they just launched off.
@@ -195,16 +208,13 @@ public class PhysicsSystem
         _wasDownKeyDown = downKeyDown;
         _wasJumpKeyDown = jumpKeyDown;
 
-        var moveSpeed = player.Stance == "Walk" ? WalkSpeed : CrawlSpeed;
+        var moveSpeed = player.Pose == "Walk" ? player.WalkSpeed : player.CrawlSpeed;
 
-        // TODO: Player movement is currently driven directly by velocity assignment from input,
-        // unlike every other body (DynamicObject2D/MovingEnemy2D), which now move via a mass-scaled
-        // force accumulator (see StepMovingBodyWithForces). Revisit this to apply player movement
-        // as a force causing acceleration instead, consistent with the rest of the physics model,
-        // as part of a future physics engine refinement - deliberately deferred/out of scope for
-        // now (see docs/Decisions.md).
-
-        // Horizontal movement is directly driven by input (no acceleration/friction for milestone 1).
+        // Horizontal movement is driven by a mass-scaled "motor" force converging the player's
+        // velocity toward the target walk/crawl/climb/hang speed (see UpdateWalkForce and
+        // IWalkForceBody), summed into the net force alongside gravity by
+        // StepMovingBodyWithForces - consistent with every other body's force-based movement
+        // (see MovingEnemy2D.PatrolForce) rather than a bespoke direct velocity-assignment path.
         // While climbing a ladder, horizontal input still applies (at a slower, deliberate side
         // speed) so the player can step off sideways onto an adjacent floor or ladder rather than
         // only ever being able to leave via a jump; while hanging from a pipe/bar, lateral
@@ -214,22 +224,35 @@ public class PhysicsSystem
         var horizontalSpeed = player.IsClimbing ? ClimbHorizontalSpeed
             : player.IsHanging ? (player.IsClambering ? ClamberSpeed : HangSpeed)
             : moveSpeed;
-        velocity.X = 0;
+        // Target velocity is expressed relative to whatever solid the player is currently
+        // grounded on (see GetGroundVelocityX) rather than an absolute world-frame speed: without
+        // this, standing still on a moving platform would target world-frame velocity 0, and
+        // WalkForce (scaled by WalkForceMultiplier, deliberately strong so input feels responsive)
+        // would then fight CollisionSystem's friction-based drag pulling the player toward the
+        // platform's own velocity every single frame - the two forces fighting is what made the
+        // player appear unable to ride a horizontally moving platform at all. Climbing/hanging
+        // have no such platform-carry concept, so their target speed stays absolute.
+        var groundVelocityX = player.IsClimbing || player.IsHanging ? 0.0 : GetGroundVelocityX(player);
+        var targetVelocityX = groundVelocityX;
         if (input.IsLeftPressed)
         {
-            velocity.X -= horizontalSpeed;
+            targetVelocityX -= horizontalSpeed;
         }
         if (input.IsRightPressed)
         {
-            velocity.X += horizontalSpeed;
+            targetVelocityX += horizontalSpeed;
         }
+        UpdateWalkForce(player, targetVelocityX);
 
         if (player.IsClimbing)
         {
             // Straight up/down movement at a fixed climb speed, gravity already suspended via
             // Player2D.GravityAffected while IsClimbing is set. Jump-off (letting go of the
-            // ladder entirely) is handled above, alongside the other stance-ladder transitions -
-            // this only runs for an ordinary climb with no exit this frame.
+            // ladder entirely) is handled above, alongside the other pose-ladder transitions -
+            // this only runs for an ordinary climb with no exit this frame. Deliberately still a
+            // direct velocity assignment, not a force - climbing/hanging are discrete
+            // state-machine locomotion modes (like the jump-off below), not the continuous
+            // ground-level walk/crawl movement WalkForce drives.
             velocity.Y = 0;
             if (input.IsUpPressed)
             {
@@ -248,7 +271,7 @@ public class PhysicsSystem
         else if (player.IsHanging)
         {
             // Held in place vertically (gravity suspended via Player2D.GravityAffected). Letting
-            // go downward is an explicit step of the hang stance ladder above (a second Down
+            // go downward is an explicit step of the hang pose ladder above (a second Down
             // press from the fully-stretched pose); a Jump press from that same pose instead
             // jumps/swings off (see above) and has already cleared IsHanging and set velocity.Y
             // by the time this runs, so this branch only still applies to an ordinary hang with
@@ -256,7 +279,7 @@ public class PhysicsSystem
             velocity.Y = 0;
             player.RemoveContact(ContactType.SurfaceBottom);
         }
-        else if (input.IsJumpPressed && player.IsGrounded && player.Stance == "Walk" && !stoodUpThisFrame)
+        else if (input.IsJumpPressed && player.IsGrounded && player.Pose == "Walk" && !stoodUpThisFrame)
         {
             velocity.Y = -WalkJumpSpeed;
             // Clears IsGrounded immediately so the jump's own frame already shows airborne (jump
@@ -267,12 +290,6 @@ public class PhysicsSystem
 
         player.Velocity = velocity;
 
-        // Pose resolution itself lives on Player2D.UpdatePose (see IPosedBody), called here
-        // explicitly since the player doesn't yet go through the generic force-based dispatch
-        // (StepMovingBodyWithForces) every other IPosedBody does - once it moves there,
-        // PhysicsSystem calling UpdatePose becomes unnecessary here entirely.
-        player.UpdatePose();
-
         foreach (var body in world.Objects)
         {
             switch (body)
@@ -281,15 +298,6 @@ public class PhysicsSystem
                     // Predefined motion (optionally per-axis patrol), no gravity/force
                     // integration - see KinematicObject2D.Move.
                     kinematicObject.Move(deltaSeconds);
-                    break;
-
-                // The player keeps its existing direct velocity-assignment model (see the TODO
-                // above and docs/Decisions.md) rather than the force accumulator below - it is
-                // deliberately excluded from this round of force-based movement, so it is matched
-                // first, ahead of the generic IGravityAffected/IPhysicsBody cases every other body
-                // falls into.
-                case Player2D playerBody:
-                    StepMovingBody(world, playerBody, playerBody.GravityAffected, deltaSeconds);
                     break;
 
                 case IGravityAffected gravityAffected:
@@ -303,20 +311,45 @@ public class PhysicsSystem
         }
     }
 
-    private static void StepMovingBody(World2D world, IPhysicsBody body, bool gravityAffected, double deltaSeconds)
+    /// <summary>
+    /// The horizontal velocity of whichever solid <paramref name="player"/> currently rests on
+    /// top of (<see cref="ContactType.SurfaceBottom"/>), or 0 if not grounded or resting on
+    /// stationary terrain - the reference frame <see cref="UpdateWalkForce"/>'s target velocity is
+    /// expressed relative to, so standing still on a moving platform doesn't fight the platform's
+    /// own carry (see the remarks where this is called in <see cref="Step"/>). Picks the first
+    /// grounded contact that is itself an <see cref="IPhysicsBody"/> with a real velocity (e.g.
+    /// <see cref="KinematicObject2D"/>); ordinary stationary terrain has none, so this falls back
+    /// to 0 exactly as before this fix.
+    /// </summary>
+    private static double GetGroundVelocityX(Player2D player)
     {
-        var velocity = body.Velocity;
-
-        if (gravityAffected)
+        foreach (var solid in player.GetContactingBodies(ContactType.SurfaceBottom))
         {
-            velocity.Y += world.Gravity * deltaSeconds;
+            if (solid is IPhysicsBody solidBody)
+            {
+                return solidBody.Velocity.X;
+            }
         }
 
-        body.Velocity = velocity;
+        return 0.0;
+    }
 
-        body.Position = new Vector2D(
-            body.Position.X + velocity.X * deltaSeconds,
-            body.Position.Y + velocity.Y * deltaSeconds);
+    /// <summary>
+    /// Recomputes <see cref="Player2D.WalkForce"/> as a proportional "motor" force converging
+    /// <paramref name="player"/>'s current horizontal velocity toward <paramref name="targetVelocityX"/>
+    /// (the current walk/crawl/climb-side/hang-side speed the input this frame calls for) -
+    /// mirrors <see cref="MovingEnemy2D.UpdatePatrolDirection"/>'s role for a patrolling enemy, but
+    /// proportional to the remaining speed gap (scaled by <see cref="Player2D.WalkForceMultiplier"/>) rather than
+    /// a fixed-direction force, so the player still promptly reaches and then holds the target
+    /// speed - the "no acceleration/friction" ground feel from the old direct-assignment model -
+    /// instead of accelerating indefinitely or oscillating around it. Mass-scaled like every other
+    /// force here, so a body with no resolved material (<see cref="Body2D.Mass"/> of 0, treated as
+    /// mass 1) still walks at the ordinary rate.
+    /// </summary>
+    private static void UpdateWalkForce(Player2D player, double targetVelocityX)
+    {
+        var mass = player.Mass > 0 ? player.Mass : 1.0;
+        player.WalkForce = new Vector2D((targetVelocityX - player.Velocity.X) * mass * player.WalkForceMultiplier, 0);
     }
 
     /// <summary>
@@ -365,6 +398,14 @@ public class PhysicsSystem
         {
             patrolBody.UpdatePatrolDirection();
             netForce += patrolBody.PatrolForce;
+        }
+
+        // The player's ground-level walk/crawl (and climb/hang side-step) locomotion contributes
+        // its own horizontal motor force here - see IWalkForceBody and UpdateWalkForce, called
+        // earlier this frame by Step before this integration runs.
+        if (body is IWalkForceBody walkForceBody)
+        {
+            netForce += walkForceBody.WalkForce;
         }
 
         var acceleration = new Vector2D(netForce.X / mass, netForce.Y / mass);

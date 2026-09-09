@@ -78,32 +78,6 @@ public class CollisionSystem
     }
 
     /// <summary>
-    /// TEMPORARY HACK - remove once the player moves via a mass/force accumulator instead of
-    /// direct velocity assignment (see the TODO on <see cref="Physics.PhysicsSystem.Step"/> and
-    /// docs/Decisions.md). Which solid the player was resting on as of the <em>previous</em>
-    /// frame's <see cref="Resolve"/> call - used solely to carry the player along a moving
-    /// platform's own frame-to-frame *horizontal* displacement (see the top of
-    /// <see cref="Resolve"/>; vertical carry is already handled by ordinary velocity-matching +
-    /// landing-snap and must not be duplicated here) before this frame's ordinary overlap-based
-    /// collision pass re-detects/re-confirms grounding. This dictionary and the shift that reads
-    /// it only exist to work around <c>PhysicsSystem.Step</c> overwriting
-    /// <c>Player2D.Velocity.X</c> from input every frame, which wipes out the friction-based
-    /// horizontal velocity-matching <c>ResolveRectAgainstSolid</c> already applies to every other
-    /// <see cref="IPhysicsBody"/>. Once the player integrates velocity like everything else, that
-    /// same existing velocity-matching will carry the player horizontally for free, this entire
-    /// mechanism becomes redundant, and it - along with every reference to it in this file -
-    /// should be deleted rather than kept "just in case". Currently keyed by
-    /// <see cref="IPhysicsBody"/> for symmetry with how grounding is generally scoped, but in
-    /// practice only ever populated for the player (see the check in <see cref="Resolve"/>) - not
-    /// a property on <see cref="IPhysicsBody"/> itself since no other body needs it, and not
-    /// something any other system reads or sets (unlike <see cref="IPhysicsBody.IsGrounded"/>,
-    /// which genuinely is consulted elsewhere - jump logic, pose selection, etc.). Cleared the
-    /// instant the player is no longer found resting on a solid this frame (see the bottom of
-    /// <see cref="Resolve"/>), so a stale/removed solid is never carried forward.
-    /// </summary>
-    private readonly Dictionary<IPhysicsBody, Body2D> _groundedSolids = [];
-
-    /// <summary>
     /// Hazard/body contact pairs still overlapping as of the frame just resolved. Used so an
     /// ordinary (non-kill) hazard contact's effect fires only on the first frame of a new contact
     /// - a "rising edge" - rather than every single frame the two remain overlapping. Unlike solid
@@ -113,24 +87,19 @@ public class CollisionSystem
     private HashSet<(Body2D Hazard, IPhysicsBody Body)> _activeHazardContacts = [];
 
     /// <summary>
-    /// Which narrow-phase test confirms an AABB overlap once broad phase finds two bodies'
-    /// bounding boxes intersect - see <see cref="NarrowPhaseMode"/>. Defaults to
-    /// <see cref="NarrowPhaseMode.MultiRect"/> (the original, still fully supported behavior);
-    /// switch to <see cref="NarrowPhaseMode.CharacterGrid"/> to additionally require the two
-    /// bodies' actual rendered characters overlap, not merely their merged collision rectangles -
-    /// useful for comparing the two approaches on shapes whose true silhouette isn't a perfect
-    /// rectangle. A runtime-settable property (not a compile-time constant) so it can be toggled
-    /// via a debug/config setting without a rebuild.
+    /// TEMPORARY dev/testing toggle - when false, <see cref="GetCandidateSolids"/> and
+    /// <see cref="GetCandidateMovingBodies"/> skip the spatial grid entirely and return every
+    /// solid/moving body in the level unfiltered, so the broad phase's effect can be compared
+    /// live against brute-force pairing without a rebuild. See docs/Decisions.md and
+    /// <see cref="Input.InputState.IsToggleBroadPhasePressed"/>. Defaults to true (broad phase on)
+    /// - the normal, always-on behavior before this toggle existed.
     /// </summary>
-    public NarrowPhaseMode NarrowPhaseMode { get; set; } = NarrowPhaseMode.MultiRect;
+    public bool BroadPhaseEnabled { get; set; } = true;
 
     /// <summary>
-    /// Resolves all collision for one frame. <paramref name="deltaSeconds"/> is used solely for
-    /// the TEMPORARY player-only horizontal platform-carry hack (see <see cref="_groundedSolids"/>)
-    /// - every other collision response in this class is purely positional/velocity-based and
-    /// doesn't need a time delta of its own.
+    /// Resolves all collision for one frame.
     /// </summary>
-    public void Resolve(World2D world, double deltaSeconds)
+    public void Resolve(World2D world)
     {
         _movingBodies.Clear();
 
@@ -157,79 +126,6 @@ public class CollisionSystem
                 continue;
             }
 
-            // TEMPORARY HACK (see the remarks on _groundedSolids) - carry the player along by its
-            // previously-grounded solid's own horizontal displacement this frame, *before* the
-            // IsGrounded reset/re-detection below runs. Player-only, horizontal-only:
-            // PhysicsSystem.Step overwrites the player's Velocity.X directly from input every
-            // frame (see its own remarks), so the friction-based velocity-matching that
-            // ResolveRectAgainstSolid already applies on landing (nudging the rider's velocity
-            // toward the solid's own) never gets a chance to take effect for the player
-            // horizontally - without this explicit shift, a stationary (no
-            // left/right held) player doesn't move with a horizontally-patrolling platform
-            // underneath it. Every other IPhysicsBody (MovingEnemy2D, DynamicObject2D) moves via
-            // StepMovingBodyWithForces instead, which integrates its own Velocity.X - already
-            // matched to the solid's by ResolveRectAgainstSolid - into Position every frame just
-            // like the player's Velocity.Y does; applying this same shift to those bodies too
-            // would double-count that already-working horizontal carry and made a patrolling
-            // enemy resting on a moving platform (PatrolForce = 0) slide off it instead of staying
-            // put. DELETE THIS ENTIRE BLOCK once the player moves via force/mass integration
-            // instead of direct velocity assignment - at that point the ordinary velocity-matching
-            // used by every other body will carry the player horizontally too, with no
-            // special-casing needed. Deliberately does NOT apply vertically for the same reason,
-            // even for the player: gravity-integrated bodies already track a vertically-moving
-            // solid via that same velocity-matching (their Velocity.Y is nudged toward the
-            // solid's each frame in ResolveRectAgainstSolid, then integrated into Position by
-            // PhysicsSystem *before* this runs), and the very next line below's ordinary landing
-            // check snaps the body flush onto the solid's current (already-moved) top surface
-            // regardless - adding a *second*, independent Position.Y shift here on top of both of
-            // those double-counts the platform's own motion, overshooting the snap and fighting
-            // the following frame's correction, which is exactly what caused the up/down jitter
-            // this replaced. Only applies if the previously-grounded solid is still actually a
-            // real, still-existing body with non-zero horizontal velocity (ordinary stationary
-            // terrain has none, so this is a no-op for the overwhelming common case of resting on
-            // a plain platform/floor).
-            if (movingBody is Player2D
-                && _groundedSolids.TryGetValue(movingBody, out var groundedSolid)
-                && groundedSolid is IPhysicsBody groundedSolidBody)
-            {
-                var solidVelocityX = groundedSolidBody.Velocity.X;
-                if (solidVelocityX != 0)
-                {
-                    movingBody.Position = new Vector2D(
-                        movingBody.Position.X + solidVelocityX * deltaSeconds,
-                        movingBody.Position.Y);
-                }
-            }
-
-            // Permanent (not a hack) counterpart for the vertical axis: re-seat a still-grounded
-            // body flush onto its remembered solid's *current* top surface, provided it still
-            // overlaps that solid horizontally - see MaintainVerticalGroundedContact's own remarks
-            // for why this direct, absolute re-seat (rather than an additive velocity/position
-            // delta, which is what caused the earlier jitter regression) cannot double-count with
-            // the existing velocity-matching + landing-snap collision response below. Gated on
-            // movingBody.IsGrounded still being true: PhysicsSystem.Step already sets it false the
-            // instant a jump (or a climb/hang stance) is initiated, before this Resolve call runs -
-            // without this guard, a player who just jumped off a platform this frame would be
-            // wrongly snapped straight back down onto it for still horizontally overlapping.
-            // Additionally gated on the remembered solid actually being a moving IPhysicsBody with
-            // non-zero velocity: ordinary stationary terrain never has this gap in the first place
-            // (nothing to outrun), and a body with restitution > 0 (e.g. DynamicObject2D's
-            // bouncing ball) still has IsGrounded briefly true the very frame it bounces upward
-            // off of stationary terrain - re-seating it down every such frame regardless of its
-            // now-upward velocity would wrongly cancel every bounce off solid ground.
-            // Uses HadContactLastFrame rather than IsGrounded: this frame's contacts were already
-            // cleared above (SnapshotContactsForNextFrame), so IsGrounded would read false here
-            // regardless - last frame's grounded state is exactly what's needed to decide whether
-            // this maintenance step applies before this frame's own landing check re-establishes
-            // (or doesn't) a fresh SurfaceBottom contact.
-            if (movingBody.HadContactLastFrame(ContactType.SurfaceBottom)
-                && _groundedSolids.TryGetValue(movingBody, out var solidToMaintain)
-                && solidToMaintain is IPhysicsBody solidToMaintainBody
-                && (solidToMaintainBody.Velocity.X != 0 || solidToMaintainBody.Velocity.Y != 0))
-            {
-                MaintainVerticalGroundedContact(movingBody, solidToMaintain);
-            }
-
             _movingBodies.Add(movingBody);
         }
 
@@ -249,27 +145,11 @@ public class CollisionSystem
         BuildSolidsGrid(solids);
         BuildMovingBodiesGrid(_movingBodies);
 
-        // Prune entries for bodies that no longer exist (e.g. a killed enemy removed via
-        // World2D.ApplyPendingRemovals) so this dictionary can't grow unbounded over a long play
-        // session - _movingBodies above already reflects exactly the current, still-alive set of
-        // non-static IPhysicsBody instances in the world.
-        if (_groundedSolids.Count > 0)
-        {
-            foreach (var staleBody in _groundedSolids.Keys.Except(_movingBodies).ToList())
-            {
-                _groundedSolids.Remove(staleBody);
-            }
-        }
-
         foreach (var body in _movingBodies)
         {
-            _groundedSolids.Remove(body);
             foreach (var solid in GetCandidateSolids(body))
             {
-                if (ResolveAgainstSolid(body, solid))
-                {
-                    _groundedSolids[body] = solid;
-                }
+                ResolveAgainstSolid(body, solid);
             }
         }
 
@@ -716,113 +596,11 @@ public class CollisionSystem
     }
 
     /// <summary>
-    /// Re-seats <paramref name="body"/> flush onto <paramref name="solid"/>'s current top surface
-    /// if it still overlaps that solid horizontally - the permanent fix for the discrete-collision
-    /// gap that otherwise briefly drops a resting body when the solid it's standing on displaces
-    /// downward farther in one frame than the body's own (velocity-matched, but not yet
-    /// integrated) fall keeps up with. Called once per moving body, immediately after
-    /// <see cref="_groundedSolids"/> is consulted and before this frame's ordinary
-    /// overlap-based landing check runs (see the top of <see cref="Resolve"/>), using whichever
-    /// solid the body was <em>already</em> confirmed grounded on as of last frame - so this never
-    /// invents a new landing, it only maintains one that already existed.
-    /// </summary>
-    /// <remarks>
-    /// This is a direct, absolute correction of <see cref="Body2D.Position"/>.Y - snapping the
-    /// body's rect flush onto the solid's rect - rather than an additive delta computed from the
-    /// solid's velocity (contrast the player-only horizontal hack above, which had to use a delta
-    /// because it needed to preserve whatever horizontal offset the body had built up while
-    /// walking on the platform). Because this instead *sets* Position.Y outright to a value
-    /// derived purely from the solid's *current* rect - not from wherever the body happened to be
-    /// a moment ago - it cannot double-count or fight the following ordinary collision pass the
-    /// way an additive vertical shift did (see docs/Decisions.md): the ordinary landing check
-    /// below will find the same overlap this produces and simply reconfirm it, a no-op. It is
-    /// also universal (not player-only) since, unlike horizontal, there's no player-input-
-    /// overwrite problem on the vertical axis - gravity affects every body the same way.
-    /// Deliberately checks the body's own <see cref="Body2D.CollisionRects"/> (there can be more
-    /// than one, e.g. the player's head+torso) against the solid's, picking the *lowest*
-    /// (largest-Bottom) horizontally-overlapping body rect rather than simply the first one found:
-    /// <see cref="World.CollisionShapeBuilder.DeriveRectangles"/> orders a multi-rect body's rects
-    /// top-to-bottom (head before torso/legs), so naively using the first match would re-seat the
-    /// body by its head rect - snapping the whole body upward and visibly "hanging" it above the
-    /// surface instead of standing on it. Using the lowest rect mirrors which part of the body
-    /// would actually be resting on the surface, without needing a precise deepest-penetration
-    /// correction (that is <see cref="ResolveRectAgainstSolid"/>'s job, immediately afterward in
-    /// the same frame). If the body has drifted entirely clear of the solid horizontally (walked
-    /// off the edge), no rect pair overlaps and nothing happens here - gravity and the ordinary
-    /// collision pass take back over exactly as they already do for stepping off a stationary
-    /// platform's edge.
-    /// </remarks>
-    private static void MaintainVerticalGroundedContact(IPhysicsBody body, Body2D solid)
-    {
-        var solidRects = solid.CollisionRects;
-        var bodyRects = body.CollisionRects;
-
-        // Track the lowest (feet-side) body rect that overlaps the solid horizontally, along with
-        // the solid rect it overlaps - a multi-rect body (e.g. the player's head+torso shape) must
-        // be re-seated by whichever of its own rects actually rests on the surface (its feet/
-        // torso), not simply the first rect CollisionShapeBuilder.DeriveRectangles happened to
-        // produce (which is ordered top-to-bottom, i.e. head first) - snapping by the head rect
-        // instead pulls the whole body upward by the head/torso height difference, visibly
-        // "hanging" the body from its head above the surface instead of standing on it.
-        var haveMatch = false;
-        var bestBodyRect = default(Rect2D);
-        var bestSolidRect = default(Rect2D);
-
-        for (var bodyRectIndex = 0; bodyRectIndex < bodyRects.Count; bodyRectIndex++)
-        {
-            var bodyRect = bodyRects[bodyRectIndex];
-
-            for (var solidRectIndex = 0; solidRectIndex < solidRects.Count; solidRectIndex++)
-            {
-                var solidRect = solidRects[solidRectIndex];
-
-                // Horizontal overlap only - vertical overlap is irrelevant here (that's exactly
-                // the gap this exists to paper over) and would otherwise wrongly gate on the very
-                // condition this needs to work despite failing.
-                if (bodyRect.Left >= solidRect.Right || bodyRect.Right <= solidRect.Left)
-                {
-                    continue;
-                }
-
-                if (!haveMatch || bodyRect.Bottom > bestBodyRect.Bottom)
-                {
-                    haveMatch = true;
-                    bestBodyRect = bodyRect;
-                    bestSolidRect = solidRect;
-                }
-            }
-        }
-
-        if (!haveMatch)
-        {
-            return;
-        }
-
-        // The collision rect may be offset from the body's own Position (e.g. it excludes
-        // blank sprite cells), so the correction is expressed in terms of that offset,
-        // same as ResolveRectAgainstSolid.
-        var rectOffsetY = bestBodyRect.Y - body.Position.Y;
-
-        // Snapped very slightly *past* flush (bodyRect.Bottom a hair below solidRect.Top,
-        // by HangOverlapEpsilon) rather than exactly flush: Rect2D.Overlaps uses strict
-        // inequalities, so a perfectly flush position (bodyRect.Bottom == solidRect.Top)
-        // produces zero actual overlap. Without this, the very next check this frame -
-        // the ordinary overlap-based landing check just below, which is what's supposed to
-        // reconfirm/refresh _groundedSolids for the next frame - would find no overlap at
-        // all, clear the body's grounded-solid memory, and reopen exactly the fall-through
-        // gap this method exists to close, this time with nothing left to catch it at all.
-        // Same fix, same reasoning as SnapOntoHangable's use of this constant.
-        body.Position = new Vector2D(
-            body.Position.X,
-            bestSolidRect.Top - bestBodyRect.Height - rectOffsetY + HangOverlapEpsilon);
-    }
-
-    /// <summary>
     /// Resolves <paramref name="body"/> against <paramref name="solid"/>, one body collision
     /// rectangle at a time (see <see cref="ResolveRectAgainstSolid"/> for why). The velocity
     /// response uses <paramref name="body"/> and <paramref name="solid"/>'s combined restitution
     /// (see <see cref="Combine"/>) - 0 stops the body dead (e.g. the player's rubber-free flesh
-    /// against most terrain), while anything above 0 reflects velocity to varying degrees of
+    /// against most terrain), while anything above 0 reflects velocity to va
     /// bounce - and applies a friction damping to the tangential velocity component from their
     /// combined friction. Despite the name, <paramref name="solid"/> is any immovable body from
     /// the <c>solids</c> list, not specifically a platform - a wall, crate, or any other static
@@ -834,12 +612,7 @@ public class CollisionSystem
     /// case) the reference frame's own velocity is zero, so this reduces to exactly the same
     /// result as before.
     /// </summary>
-    /// <returns>
-    /// True if any of the body's rects landed on top of this solid (i.e. this solid should be
-    /// remembered as what the body is now grounded on for next frame's carry - see
-    /// <see cref="_groundedSolids"/>), false otherwise.
-    /// </returns>
-    private bool ResolveAgainstSolid(IPhysicsBody body, Body2D solid)
+    private void ResolveAgainstSolid(IPhysicsBody body, Body2D solid)
     {
         // A body's collision shape can be made up of several rectangles that don't all have the
         // same width/offset (e.g. the player's narrower "head" rect above its wider "torso"
@@ -863,16 +636,10 @@ public class CollisionSystem
         // interface here and is implicitly stationary (Vector2D.Zero).
         var solidVelocity = solid is IPhysicsBody solidBody ? solidBody.Velocity : default;
         var rectCount = body.CollisionRects.Count;
-        var landedOnTop = false;
         for (var rectIndex = 0; rectIndex < rectCount; rectIndex++)
         {
-            if (ResolveRectAgainstSolid(body, restitution, friction, solidVelocity, solid, body.CollisionRects[rectIndex]))
-            {
-                landedOnTop = true;
-            }
+            ResolveRectAgainstSolid(body, restitution, friction, solidVelocity, solid, body.CollisionRects[rectIndex]);
         }
-
-        return landedOnTop;
     }
 
     /// <summary>
@@ -899,7 +666,7 @@ public class CollisionSystem
     /// <returns>True if this rect landed on top of the solid, false otherwise (including no overlap at all).</returns>
     private bool ResolveRectAgainstSolid(IPhysicsBody body, double restitution, double friction, Vector2D solidVelocity, Body2D solid, Rect2D bodyRect)
     {
-        if (!TryFindDeepestOverlap([bodyRect], solid.CollisionRects, out var deepestBodyRect, out var bestSolidRect, (Body2D)body, solid, NarrowPhaseMode))
+        if (!TryFindDeepestOverlap([bodyRect], solid.CollisionRects, out var deepestBodyRect, out var bestSolidRect, (Body2D)body, solid))
         {
             return false;
         }
@@ -936,17 +703,24 @@ public class CollisionSystem
         {
             if (overlapTopBest < overlapBottomBest)
             {
-                // Landing on top of the solid. Friction damps the tangential (horizontal)
-                // relative velocity component every frame the body rests here - see
-                // ApplyFriction - so a grippy surface (e.g. Concrete) settles sliding motion
-                // faster than a slick one, and (for a moving platform) drags the rider along
-                // toward matching the platform's own horizontal velocity instead of toward zero.
+                // Landing on top of the solid. The normal (vertical) response is an impulse-based
+                // reflection against an infinite-mass solid (see ResolveNormalImpulse's remarks -
+                // for one finite mass and one infinite mass this reduces to exactly reflecting the
+                // body's own normal-relative velocity by the combined restitution, since the solid
+                // absorbs the reaction impulse without moving). The tangential (horizontal)
+                // relative velocity is then damped by proper Coulomb friction (see
+                // ApplyCoulombFriction), capped by the normal impulse magnitude just applied here -
+                // so a grippy surface (e.g. Concrete) can fully arrest sliding motion in one frame
+                // while a slick one (e.g. Ice) barely slows it, and (for a moving platform) drags
+                // the rider along toward matching the platform's own horizontal velocity instead
+                // of toward zero, exactly as before.
                 var newRectBottom = bestSolidRect.Top;
                 body.Position = new Vector2D(
                     body.Position.X,
                     newRectBottom - deepestBodyRect.Height - rectOffsetY);
+                var normalImpulseMagnitude = Math.Abs(relativeVelocity.Y) * (1.0 + restitution);
                 body.Velocity = new Vector2D(
-                    solidVelocity.X + ApplyFriction(relativeVelocity.X, friction),
+                    solidVelocity.X + ApplyCoulombFriction(relativeVelocity.X, normalImpulseMagnitude, friction),
                     solidVelocity.Y + -relativeVelocity.Y * restitution);
                 // Every IPhysicsBody implementation in this codebase is a Body2D (see
                 // Body2D.AddContact); recording the reciprocal SurfaceTop contact on the solid
@@ -957,7 +731,8 @@ public class CollisionSystem
             }
 
             {
-                // Hitting the underside of the solid.
+                // Hitting the underside of the solid - same impulse-based normal response as
+                // landing on top, just along the opposite vertical surface.
                 body.Position = new Vector2D(
                     body.Position.X,
                     bestSolidRect.Bottom - rectOffsetY);
@@ -981,11 +756,36 @@ public class CollisionSystem
                     bestSolidRect.Right - rectOffsetX,
                     body.Position.Y);
             }
+            // Same impulse-based normal response, this time along the horizontal axis; the
+            // vertical (tangential) relative velocity is Coulomb-damped exactly like the
+            // horizontal one is when landing on top, capped by this contact's own normal impulse.
+            var normalImpulseMagnitude = Math.Abs(relativeVelocity.X) * (1.0 + restitution);
             body.Velocity = new Vector2D(
                 solidVelocity.X + -relativeVelocity.X * restitution,
-                solidVelocity.Y + ApplyFriction(relativeVelocity.Y, friction));
+                solidVelocity.Y + ApplyCoulombFriction(relativeVelocity.Y, normalImpulseMagnitude, friction));
             return false;
         }
+    }
+
+    /// <summary>
+    /// Damps a tangential (along-surface) relative velocity component using proper Coulomb
+    /// friction, clamped by the normal impulse that was just applied at this same contact -
+    /// replacing the old flat "multiply by <c>1 - friction</c>" approximation. <paramref name="normalImpulseMagnitudePerMass"/>
+    /// is <c>|change in normal-relative-velocity|</c> from the impulse that just resolved this
+    /// contact (see the normal-force remarks on <see cref="ResolveRectAgainstSolid"/>) - the
+    /// maximum tangential speed change friction may cause this frame is <paramref name="friction"/>
+    /// times that (mirroring the classic <c>|f| &lt;= mu * N</c> Coulomb constraint, expressed in
+    /// velocity terms since impulses/normal-force here are resolved per-frame rather than as a
+    /// continuous force - see docs/Decisions.md). If the tangential relative velocity is already
+    /// smaller than that cap, it is cancelled entirely (static friction - a resting body doesn't
+    /// keep sliding forever at some fraction of its speed); otherwise it is reduced by exactly the
+    /// capped amount (kinetic friction), never overshooting past zero or reversing direction.
+    /// </summary>
+    private static double ApplyCoulombFriction(double tangentialRelativeVelocity, double normalImpulseMagnitudePerMass, double friction)
+    {
+        var maxFrictionDelta = Math.Clamp(friction, 0.0, 1.0) * normalImpulseMagnitudePerMass;
+        var delta = Math.Clamp(tangentialRelativeVelocity, -maxFrictionDelta, maxFrictionDelta);
+        return tangentialRelativeVelocity - delta;
     }
 
     /// <summary>
@@ -1009,24 +809,21 @@ public class CollisionSystem
     /// (with both rects left default) if no rectangle pair overlaps at all.
     /// </summary>
     /// <param name="ownerA">
-    /// The body <paramref name="aRects"/> belongs to, or null. Only needed when <paramref name="mode"/>
-    /// is <see cref="NarrowPhaseMode.CharacterGrid"/> - see <see cref="HasCharacterOverlap"/>.
-    /// Callers that never pass <see cref="NarrowPhaseMode.CharacterGrid"/> may omit both owners.
+    /// The body <paramref name="aRects"/> belongs to, or null. When both owners are supplied, a
+    /// rectangle pair must also pass the character-grid refinement (see
+    /// <see cref="HasCharacterOverlap"/>) - requiring the two bodies' actual rendered characters
+    /// to overlap, not merely their merged collision rectangles - before it is accepted. Callers
+    /// that don't care about that distinction (e.g. <see cref="SnapOntoHangable"/>) may omit both
+    /// owners to skip it.
     /// </param>
     /// <param name="ownerB">See <paramref name="ownerA"/>, for <paramref name="bRects"/>.</param>
-    /// <param name="mode">
-    /// Which narrow-phase test accepts a rectangle-pair overlap - see <see cref="NarrowPhaseMode"/>.
-    /// Defaults to <see cref="NarrowPhaseMode.MultiRect"/> (rectangle overlap alone is sufficient)
-    /// for callers (e.g. <see cref="SnapOntoHangable"/>) that don't care about the distinction.
-    /// </param>
     private static bool TryFindDeepestOverlap(
         IReadOnlyList<Rect2D> aRects,
         IReadOnlyList<Rect2D> bRects,
         out Rect2D bestA,
         out Rect2D bestB,
         Body2D? ownerA = null,
-        Body2D? ownerB = null,
-        NarrowPhaseMode mode = NarrowPhaseMode.MultiRect)
+        Body2D? ownerB = null)
     {
         bestA = default;
         bestB = default;
@@ -1042,11 +839,10 @@ public class CollisionSystem
                     continue;
                 }
 
-                // Character-grid mode additionally requires the two bodies' actual rendered
-                // (non-empty) characters to overlap somewhere within this rectangle pair's
-                // intersection, not just the merged rectangles themselves - see HasCharacterOverlap.
-                if (mode == NarrowPhaseMode.CharacterGrid
-                    && ownerA is not null && ownerB is not null
+                // Additionally requires the two bodies' actual rendered (non-empty) characters to
+                // overlap somewhere within this rectangle pair's intersection, not just the merged
+                // collision rectangles themselves - see HasCharacterOverlap.
+                if (ownerA is not null && ownerB is not null
                     && !HasCharacterOverlap(ownerA, ownerB, rectA, rectB))
                 {
                     continue;
@@ -1107,10 +903,19 @@ public class CollisionSystem
         {
             for (var gridX = gridLeft; gridX < gridRight; gridX++)
             {
-                var localAX = gridX - (int)Math.Floor(ownerA.Position.X);
-                var localAY = gridY - (int)Math.Floor(ownerA.Position.Y);
-                var localBX = gridX - (int)Math.Floor(ownerB.Position.X);
-                var localBY = gridY - (int)Math.Floor(ownerB.Position.Y);
+                // gridX/gridY are integer world-cell coordinates, but Position is a continuous
+                // (fractional) world coordinate - e.g. a body resting mid-fall or drifting off a
+                // whole-cell boundary has a non-zero fractional Position. The correct local grid
+                // index is floor(worldCell - Position), NOT worldCell - floor(Position): those two
+                // differ by exactly one whenever Position has a nonzero fractional part (which is
+                // effectively always), silently shifting every character lookup by a full row/
+                // column and making CharacterGrid mode misdetect (or entirely miss) overlaps that
+                // MultiRect mode gets right - this was the cause of falling through platforms and
+                // jittery vertical motion in CharacterGrid mode.
+                var localAX = (int)Math.Floor(gridX - ownerA.Position.X);
+                var localAY = (int)Math.Floor(gridY - ownerA.Position.Y);
+                var localBX = (int)Math.Floor(gridX - ownerB.Position.X);
+                var localBY = (int)Math.Floor(gridY - ownerB.Position.Y);
 
                 if (localAX < 0 || localAX >= aWidth || localAY < 0 || localAY >= aHeight ||
                     localBX < 0 || localBX >= bWidth || localBY < 0 || localBY >= bHeight)
@@ -1198,7 +1003,7 @@ public class CollisionSystem
     /// </summary>
     private void ResolveBodyPair(IPhysicsBody a, IPhysicsBody b)
     {
-        if (!TryFindDeepestOverlap(a.CollisionRects, b.CollisionRects, out var deepestRectA, out var bestRectB, (Body2D)a, (Body2D)b, NarrowPhaseMode))
+        if (!TryFindDeepestOverlap(a.CollisionRects, b.CollisionRects, out var deepestRectA, out var bestRectB, (Body2D)a, (Body2D)b))
         {
             return;
         }

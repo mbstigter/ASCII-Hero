@@ -269,6 +269,26 @@ public class World2D
                 var restitutionOverride = objectSection.TryGetValue("Restitution", out var restitutionText) && IniValueParser.TryParseDouble(restitutionText, out var parsedRestitution)
                     ? (double?)parsedRestitution
                     : null;
+                // Mass/Friction/Density mirror Restitution above: absent means "use whatever the
+                // spawned body's resolved material/computed footprint provides", only an explicit
+                // ini value overrides that. Mass lets this object type replace the density-times-
+                // footprint default (see Body2D.Mass) when that 2D-volume proxy would be
+                // unrealistic for its actual shape/weight; Friction lets this object type override
+                // its material's default grip independent of any other type sharing that
+                // material; Density lets this object type override its material's default density
+                // outright (e.g. a body whose effective density changes at runtime/per-instance,
+                // like boiling water) while still inheriting that material's Friction/Restitution
+                // and (unless Mass is also set) still having Mass computed from this overridden
+                // Density rather than the material's own.
+                var massOverride = objectSection.TryGetValue("Mass", out var massText) && IniValueParser.TryParseDouble(massText, out var parsedMass)
+                    ? (double?)parsedMass
+                    : null;
+                var frictionOverride = objectSection.TryGetValue("Friction", out var frictionText) && IniValueParser.TryParseDouble(frictionText, out var parsedFriction)
+                    ? (double?)parsedFriction
+                    : null;
+                var densityOverride = objectSection.TryGetValue("Density", out var densityText) && IniValueParser.TryParseDouble(densityText, out var parsedDensity)
+                    ? (double?)parsedDensity
+                    : null;
                 // Lets a placement spawn its asset with a different material than the asset's own
                 // DefaultMaterial/per-cell material layer (e.g. re-using the one Ball asset to
                 // test Rubber vs. Steel-ball behavior in TestPhysics) without needing a second,
@@ -303,12 +323,18 @@ public class World2D
                 var patrolMaxXOverride = objectSection.TryGetValue("PatrolMaxX", out var patrolMaxXText) && IniValueParser.TryParseDouble(patrolMaxXText, out var parsedPatrolMaxX)
                     ? (double?)parsedPatrolMaxX
                     : null;
-                // PatrolForce lets a placement tune how strongly (and so how fast, mass-scaled
-                // like gravity) this enemy patrols, defaulting to MovingEnemy2D's own default when
-                // unset. PatrolInitialDirection ("Left"/"Right") overrides which way it starts
-                // heading, instead of the default inference toward whichever bound is farther.
+                // PatrolForce lets a placement tune how strongly (and so how quickly it reaches
+                // its cruising speed, mass-scaled like gravity) this enemy patrols, defaulting to
+                // MovingEnemy2D's own default when unset. PatrolCruiseSpeed sets the actual
+                // steady-state patrol speed the force converges to and holds, also defaulting to
+                // MovingEnemy2D's own default when unset. PatrolInitialDirection ("Left"/"Right")
+                // overrides which way it starts heading, instead of the default inference toward
+                // whichever bound is farther.
                 var patrolForceOverride = objectSection.TryGetValue("PatrolForce", out var patrolForceText) && IniValueParser.TryParseDouble(patrolForceText, out var parsedPatrolForce)
                     ? (double?)parsedPatrolForce
+                    : null;
+                var patrolCruiseSpeedOverride = objectSection.TryGetValue("PatrolCruiseSpeed", out var patrolCruiseSpeedText) && IniValueParser.TryParseDouble(patrolCruiseSpeedText, out var parsedPatrolCruiseSpeed)
+                    ? (double?)parsedPatrolCruiseSpeed
                     : null;
                 var patrolInitialDirectionRight = objectSection.TryGetValue("PatrolInitialDirection", out var patrolDirectionText)
                     ? (bool?)string.Equals(patrolDirectionText, "Right", StringComparison.OrdinalIgnoreCase)
@@ -365,9 +391,28 @@ public class World2D
                         world.Player.Position = position;
                         world.Player.EffectClipName = effectClipName;
                         var playerMaterial = world.Materials.Get(materialOverride ?? world.Player.MaterialName);
-                        world.Player.Density = playerMaterial.Density;
-                        world.Player.Friction = playerMaterial.Friction;
+                        world.Player.Density = densityOverride ?? playerMaterial.Density;
+                        world.Player.Friction = frictionOverride ?? playerMaterial.Friction;
                         world.Player.Restitution = restitutionOverride ?? playerMaterial.Restitution;
+                        if (massOverride is not null)
+                        {
+                            world.Player.Mass = massOverride.Value;
+                        }
+                        // Player-only "muscle power"/cruising-speed overrides - default to
+                        // PhysicsSystem's own constants (see Player2D.WalkForceMultiplier/WalkSpeed/
+                        // CrawlSpeed) unless this world's Player section sets its own.
+                        if (objectSection.TryGetValue("WalkForceMultiplier", out var walkForceMultiplierText) && IniValueParser.TryParseDouble(walkForceMultiplierText, out var parsedWalkForceMultiplier))
+                        {
+                            world.Player.WalkForceMultiplier = parsedWalkForceMultiplier;
+                        }
+                        if (objectSection.TryGetValue("WalkSpeed", out var walkSpeedOverrideText) && IniValueParser.TryParseDouble(walkSpeedOverrideText, out var parsedWalkSpeedOverride))
+                        {
+                            world.Player.WalkSpeed = parsedWalkSpeedOverride;
+                        }
+                        if (objectSection.TryGetValue("CrawlSpeed", out var crawlSpeedOverrideText) && IniValueParser.TryParseDouble(crawlSpeedOverrideText, out var parsedCrawlSpeedOverride))
+                        {
+                            world.Player.CrawlSpeed = parsedCrawlSpeedOverride;
+                        }
                         if (IsCameraTarget(objectSection))
                         {
                             world.CameraTarget = world.Player;
@@ -416,6 +461,7 @@ public class World2D
                                 patrolMinXOverride ?? 0.0,
                                 patrolMaxXOverride ?? world.WidthCells - movingEnemy.Size.X,
                                 patrolForceOverride ?? MovingEnemy2D.DefaultPatrolForceMultiplier,
+                                patrolCruiseSpeedOverride ?? MovingEnemy2D.DefaultPatrolCruiseSpeed,
                                 patrolInitialDirectionRight);
                         }
                         world.Objects.Add(movingEnemy);
@@ -452,15 +498,24 @@ public class World2D
                 spawnedBody.BackColorOverride = backColorOverride;
 
                 // Density/Friction always come from the spawned body's own resolved material
-                // (see Body2D.MaterialName/ApplyFrame) unless this placement's ini section
+                // (see Body2D.MaterialName/ApplyFrame) unless this object type's ini section
                 // overrides it via Material (e.g. TestPhysics re-using the Ball asset with
-                // different materials); Restitution does too, unless separately overridden via
-                // Restitution (e.g. TestMovement's "weightless, perfectly elastic" placeholder
-                // ball tuning).
+                // different materials); Restitution/Friction/Density/Mass can each be
+                // independently overridden too - Restitution (e.g. TestMovement's "weightless,
+                // perfectly elastic" placeholder ball tuning), Friction (grip independent of the
+                // shared material), Density (this one object type's density independent of the
+                // shared material, e.g. a body whose effective density changes per-instance/at
+                // runtime), and Mass (replacing the density-times-footprint default when that 2D-
+                // volume proxy would be unrealistic for this body's actual shape/weight - computed
+                // from the overridden Density above when Mass itself isn't also overridden).
                 var material = world.Materials.Get(materialOverride ?? spawnedBody.MaterialName);
-                spawnedBody.Density = material.Density;
-                spawnedBody.Friction = material.Friction;
+                spawnedBody.Density = densityOverride ?? material.Density;
+                spawnedBody.Friction = frictionOverride ?? material.Friction;
                 spawnedBody.Restitution = restitutionOverride ?? material.Restitution;
+                if (massOverride is not null)
+                {
+                    spawnedBody.Mass = massOverride.Value;
+                }
 
                 if (movingBody is not null && IsCameraTarget(objectSection))
                 {

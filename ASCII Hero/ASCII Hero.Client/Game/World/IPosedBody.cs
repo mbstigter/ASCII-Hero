@@ -1,7 +1,7 @@
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>
-/// A physics body that resolves and applies its own sprite pose (stance + facing, see
+/// A physics body that resolves and applies its own sprite pose (pose name + facing, see
 /// <see cref="Body2D.SetPose(Assets.SpriteAsset, string, Assets.Facing)"/>) once per frame, rather
 /// than that decision being made externally - mirrors how <see cref="IPatrolBody"/> lets a body
 /// own its own patrol-direction decision while <see cref="Physics.PhysicsSystem"/> merely calls it
@@ -15,7 +15,7 @@ namespace ASCII_Hero.Client.Game.World;
 public interface IPosedBody : IPhysicsBody
 {
     /// <summary>
-    /// Recomputes and applies this body's current pose (stance + facing) from its own
+    /// Recomputes and applies this body's current pose (pose name + facing) from its own
     /// now-integrated state (typically <see cref="IPhysicsBody.Velocity"/>). Called once per frame
     /// after position/velocity integration.
     /// </summary>

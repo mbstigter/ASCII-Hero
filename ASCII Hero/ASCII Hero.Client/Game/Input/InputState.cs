@@ -26,7 +26,7 @@ public class InputState
     /// <summary>Explicit jump/action input - always its own dedicated key, never doubling as
     /// <see cref="IsUpPressed"/> (unlike some platformers' convention of treating them as
     /// equivalent), so contexts needing both a directional "up" and a separate "action" input at
-    /// the same time (e.g. the hang stance ladder: Up pulls into Clamber, Jump swings/jumps
+    /// the same time (e.g. the hang pose ladder: Up pulls into Clamber, Jump swings/jumps
     /// off) can always tell them apart - including on the ground, where Up alone no longer jumps.
     /// "Player 1" (arrow keys) uses <c>Space</c>; "Player 2" (WASD) uses <c>ControlLeft</c> as its
     /// own equivalent jump key, positioned next to WASD the same way Space sits next to the arrow
@@ -34,6 +34,6 @@ public class InputState
     public bool IsJumpPressed => IsPressed("Space") || IsPressed("ControlLeft");
 
     /// <summary>Dev/testing shortcut - abandons the current world and returns to the world-select
-    /// screen, regardless of which stance/mode is active. See docs/Decisions.md.</summary>
+    /// screen, regardless of which pose/mode is active. See docs/Decisions.md.</summary>
     public bool IsEscapePressed => IsPressed("Escape");
 }

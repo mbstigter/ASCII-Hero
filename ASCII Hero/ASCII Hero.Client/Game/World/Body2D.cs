@@ -274,7 +274,11 @@ public abstract class Body2D
     /// <summary>
     /// Relative mass per world-cell "volume", resolved from <see cref="MaterialName"/> via
     /// <see cref="World.World2D.Materials"/> once this body is placed into a level (see
-    /// <see cref="World.World2D.LoadAsync"/>). Defaults to 0 until resolved.
+    /// <see cref="World.World2D.LoadAsync"/>). Defaults to 0 until resolved, but an object type's
+    /// ini section may instead set an explicit <c>Density</c> override to depart from its resolved
+    /// material's density outright (e.g. a body whose effective density changes per-instance or at
+    /// runtime, like water that's been heated) while still inheriting that material's other
+    /// properties.
     /// </summary>
     public double Density { get; set; }
 
@@ -290,14 +294,22 @@ public abstract class Body2D
 
     /// <summary>
     /// This body's mass, used by <see cref="Physics.CollisionSystem"/>'s impulse resolution and
-    /// (for non-player bodies) <see cref="Physics.PhysicsSystem"/>'s force integration:
-    /// <see cref="Density"/> times the body's current footprint area (<see cref="Size"/>'s width
-    /// times height) - the simplest reasonable 2D proxy for volume, per docs/Decisions.md. Static
-    /// bodies are always treated as effectively immovable regardless of this value (gated by
-    /// <see cref="IsStatic"/>, not by mass), so a static placement's mass is never actually used
-    /// in collision math.
+    /// (for non-player bodies) <see cref="Physics.PhysicsSystem"/>'s force integration. Defaults
+    /// to <see cref="Density"/> times the body's current footprint area (<see cref="Size"/>'s
+    /// width times height) - the simplest reasonable 2D proxy for volume, per docs/Decisions.md -
+    /// but a placement may instead set an explicit <c>Mass</c> ini override (see
+    /// <see cref="World.World2D.LoadAsync"/>) when the density-times-footprint default would be
+    /// unrealistic for that body's actual shape/weight. Static bodies are always treated as
+    /// effectively immovable regardless of this value (gated by <see cref="IsStatic"/>, not by
+    /// mass), so a static placement's mass is never actually used in collision math.
     /// </summary>
-    public double Mass => Density * Size.X * Size.Y;
+    public double Mass
+    {
+        get => _massOverride ?? Density * Size.X * Size.Y;
+        set => _massOverride = value;
+    }
+
+    private double? _massOverride;
 
     /// <summary>The clip currently being displayed/collided against (e.g. "idle").</summary>
     public SpriteClip Clip { get; private set; } = null!;
@@ -409,22 +421,22 @@ public abstract class Body2D
     }
 
     /// <summary>
-    /// Switches this body to display/collide as the clip for the given stance/facing pair (see
+    /// Switches this body to display/collide as the clip for the given pose/facing pair (see
     /// docs/AssetFormat.md §2.6), re-deriving Size and collision rectangles from that clip's
-    /// active frame exactly like <see cref="SetFrame"/> - a stance with a different silhouette
-    /// (e.g. a shorter "Crawl" stance) is picked up automatically, with no separate pre-transition
-    /// collision check required. No-ops if <paramref name="sprite"/> declares no matching stance
-    /// (preserving single-clip behavior for assets without <c>[Stances]</c>), or if the resolved
+    /// active frame exactly like <see cref="SetFrame"/> - a pose with a different silhouette
+    /// (e.g. a shorter "Crawl" pose) is picked up automatically, with no separate pre-transition
+    /// collision check required. No-ops if <paramref name="sprite"/> declares no matching pose
+    /// (preserving single-clip behavior for assets without <c>[Poses]</c>), or if the resolved
     /// clip is already active (avoiding resetting that clip's own animation timer every call).
     /// </summary>
-    public void SetPose(SpriteAsset sprite, string stance, Facing facing)
+    public void SetPose(SpriteAsset sprite, string pose, Facing facing)
     {
-        if (sprite.Stances is null || !sprite.Stances.TryGetValue(stance, out var stanceDef))
+        if (sprite.Poses is null || !sprite.Poses.TryGetValue(pose, out var poseDef))
         {
             return;
         }
 
-        var clipName = stanceDef.GetClipName(facing);
+        var clipName = poseDef.GetClipName(facing);
         if (Sprite == sprite && Clip is not null && string.Equals(Clip.Name, clipName, StringComparison.OrdinalIgnoreCase))
         {
             return;
@@ -452,8 +464,8 @@ public abstract class Body2D
 
     /// <summary>
     /// Resolves an up/down <see cref="Facing"/> from a vertical velocity - the vertical
-    /// counterpart to <see cref="ResolveHorizontalFacing"/>, used by any body whose stance faces
-    /// along the Y axis instead of X (e.g. the player's "Climb" stance, whose idle-vs-arm-over-arm
+    /// counterpart to <see cref="ResolveHorizontalFacing"/>, used by any body whose pose faces
+    /// along the Y axis instead of X (e.g. the player's "Climb" pose, whose idle-vs-arm-over-arm
     /// distinction is a movement direction read from velocity, not a sideways-facing one).
     /// </summary>
     public static Facing ResolveVerticalFacing(double velocityY) =>

@@ -16,13 +16,21 @@ namespace ASCII_Hero.Client.Game.World;
 public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected, IPatrolBody, IPosedBody, IEffectTrigger, IKillableBody
 {
     /// <summary>
-    /// Default magnitude of the mass-scaled horizontal force applied while patrolling, tuned to
-    /// produce a gentle, readable patrol speed rather than an instant snap to some target
-    /// velocity - mirrors how <see cref="Physics.PhysicsSystem.StepMovingBodyWithForces"/> already
-    /// scales gravity by mass rather than assigning velocity directly. Used by <see cref="SetPatrol"/>
-    /// when a placement doesn't set its own <c>PatrolForce</c> (see docs/AssetFormat.md).
+    /// Default "muscle power" - the mass-scaled force gain applied to converge this body's
+    /// horizontal velocity toward <see cref="PatrolCruiseSpeed"/> (see <see cref="UpdatePatrolDirection"/>)
+    /// - same name/role as <see cref="Physics.PhysicsSystem"/>'s own player-side <c>WalkForceMultiplier</c>. Used by
+    /// <see cref="SetPatrol"/> when a placement doesn't set its own <c>PatrolForce</c> (see
+    /// docs/AssetFormat.md).
     /// </summary>
     public const double DefaultPatrolForceMultiplier = 60.0;
+
+    /// <summary>
+    /// Default patrol cruising speed (in world cells/second), used by <see cref="SetPatrol"/> when
+    /// a placement doesn't set its own <c>PatrolCruiseSpeed</c> (see docs/AssetFormat.md). Chosen
+    /// to feel comparable to the player's own <c>CrawlSpeed</c> - a readable, deliberate pace
+    /// rather than a full walking sprint.
+    /// </summary>
+    public const double DefaultPatrolCruiseSpeed = 6.0;
 
     /// <summary>
     /// How close (in world cells) this body's left edge must get to a patrol bound before turning
@@ -51,23 +59,35 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
     public Vector2D PatrolForce { get; private set; }
 
     /// <summary>
-    /// Magnitude of the mass-scaled horizontal force this body applies while patrolling (see
-    /// <see cref="UpdatePatrolDirection"/>) - configured per-placement via <see cref="SetPatrol"/>'s
-    /// <c>forceMultiplier</c> parameter (the ini <c>PatrolForce</c> key), defaulting to
-    /// <see cref="DefaultPatrolForceMultiplier"/> so existing placements that don't set it are
-    /// unaffected. Higher values produce a faster (but still mass-scaled, not instant) patrol
-    /// speed, exactly like a stronger gravity would fall faster.
+    /// "Muscle power" - the mass-scaled force gain this body applies to converge its velocity
+    /// toward <see cref="PatrolCruiseSpeed"/> while patrolling (see <see cref="UpdatePatrolDirection"/>)
+    /// - configured per-placement via <see cref="SetPatrol"/>'s <c>forceMultiplier</c> parameter
+    /// (the ini <c>PatrolForce</c> key), defaulting to <see cref="DefaultPatrolForceMultiplier"/> so
+    /// existing placements that don't set it are unaffected. Higher values reach the cruising
+    /// speed sooner (a stronger "motor"), but no longer change the cruising speed itself - see
+    /// <see cref="PatrolCruiseSpeed"/> for that.
     /// </summary>
     public double PatrolForceMultiplier { get; set; } = DefaultPatrolForceMultiplier;
 
     /// <summary>
-    /// Current stance (see <see cref="Player2D.Stance"/> for the equivalent player-side member).
-    /// Only one stance exists today ("Move", with idle/left/right facing clips - see
+    /// The target horizontal speed (in world cells/second) this body's patrol force converges
+    /// toward and holds - configured per-placement via <see cref="SetPatrol"/>'s
+    /// <c>cruiseSpeed</c> parameter (the ini <c>PatrolCruiseSpeed</c> key), defaulting to
+    /// <see cref="DefaultPatrolCruiseSpeed"/>. Mirrors the player's own fixed walk/crawl speeds -
+    /// unlike <see cref="PatrolForceMultiplier"/> (how strongly/quickly it gets there), this is
+    /// what actually caps the steady-state patrol speed, preventing the unbounded acceleration a
+    /// constant-thrust-only force would otherwise produce.
+    /// </summary>
+    public double PatrolCruiseSpeed { get; set; } = DefaultPatrolCruiseSpeed;
+
+    /// <summary>
+    /// Current pose (see <see cref="Player2D.Pose"/> for the equivalent player-side member).
+    /// Only one pose exists today ("Move", with idle/left/right facing clips - see
     /// <see cref="UpdatePose"/>), but kept as a settable member rather than a hardcoded literal so
-    /// a future MovingEnemy asset with multiple stances (e.g. a distinct "Attack" pose) doesn't
+    /// a future MovingEnemy asset with multiple poses (e.g. a distinct "Attack" pose) doesn't
     /// need a new mechanism.
     /// </summary>
-    public string Stance { get; set; } = "Move";
+    public string Pose { get; set; } = "Move";
 
     /// <summary>
     /// Optional clip name (on this instance's own <see cref="Body2D.Sprite"/>) to play as a
@@ -107,8 +127,12 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
     /// <param name="patrolMinX">Left bound of the patrol range, in world cells.</param>
     /// <param name="patrolMaxX">Right bound of the patrol range, in world cells.</param>
     /// <param name="forceMultiplier">
-    /// Patrol force magnitude (see <see cref="PatrolForceMultiplier"/>); defaults to
+    /// Patrol force gain / "muscle power" (see <see cref="PatrolForceMultiplier"/>); defaults to
     /// <see cref="DefaultPatrolForceMultiplier"/> if not given.
+    /// </param>
+    /// <param name="cruiseSpeed">
+    /// Target patrol cruising speed (see <see cref="PatrolCruiseSpeed"/>); defaults to
+    /// <see cref="DefaultPatrolCruiseSpeed"/> if not given.
     /// </param>
     /// <param name="initialDirectionRight">
     /// Which direction to start heading in. If null (the default), starts heading toward
@@ -118,12 +142,13 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
     /// overrides that inference - e.g. to make a placement's enemy visibly start off moving toward
     /// the player instead.
     /// </param>
-    public void SetPatrol(double patrolMinX, double patrolMaxX, double forceMultiplier = DefaultPatrolForceMultiplier, bool? initialDirectionRight = null)
+    public void SetPatrol(double patrolMinX, double patrolMaxX, double forceMultiplier = DefaultPatrolForceMultiplier, double cruiseSpeed = DefaultPatrolCruiseSpeed, bool? initialDirectionRight = null)
     {
         IsPatrolling = true;
         PatrolMinX = patrolMinX;
         PatrolMaxX = patrolMaxX;
         PatrolForceMultiplier = forceMultiplier;
+        PatrolCruiseSpeed = cruiseSpeed;
         // Start heading toward whichever bound is farther, so a body spawned near one end
         // immediately patrols across the full range instead of instantly hitting the near bound
         // and turning back within the first frame or two - unless the caller explicitly requested
@@ -133,13 +158,16 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
 
     /// <summary>
     /// Flips <see cref="_patrolMovingRight"/> once within <see cref="PatrolTurnThreshold"/> of the
-    /// current target bound, then recomputes <see cref="PatrolForce"/> toward the (possibly new)
-    /// target - ported from the old ConsoleGame2D reference project's linear-patrol direction
-    /// logic, adapted to contribute a force rather than assign velocity directly. Facing/animation
-    /// is deliberately not decided here - see <see cref="UpdatePose"/>, which runs after this
-    /// frame's force is actually integrated into <see cref="Velocity"/>, so the sprite reflects
-    /// this frame's resolved motion rather than the direction this (pre-integration) force is
-    /// merely heading toward.
+    /// current target bound, then recomputes <see cref="PatrolForce"/> as a proportional "motor"
+    /// force converging this body's horizontal velocity toward <see cref="PatrolCruiseSpeed"/> in
+    /// the (possibly new) direction - mirrors <see cref="Physics.PhysicsSystem"/>'s own player-side
+    /// <c>UpdateWalkForce</c>, so patrol force behaves the same way the player's walk force does:
+    /// strong while far from the target speed, tapering to zero once reached, rather than a
+    /// constant thrust that would otherwise accelerate this body indefinitely. Facing/animation is
+    /// deliberately not decided here - see <see cref="UpdatePose"/>, which runs after this frame's
+    /// force is actually integrated into <see cref="Velocity"/>, so the sprite reflects this
+    /// frame's resolved motion rather than the direction this (pre-integration) force is merely
+    /// heading toward.
     /// </summary>
     public void UpdatePatrolDirection()
     {
@@ -156,7 +184,8 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
         }
 
         var mass = Mass > 0 ? Mass : 1.0;
-        var forceX = (_patrolMovingRight ? 1.0 : -1.0) * mass * PatrolForceMultiplier;
+        var targetVelocityX = (_patrolMovingRight ? 1.0 : -1.0) * PatrolCruiseSpeed;
+        var forceX = (targetVelocityX - Velocity.X) * mass * PatrolForceMultiplier;
         PatrolForce = new Vector2D(forceX, 0);
     }
 
@@ -164,11 +193,11 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
     /// Resolves and applies this enemy's pose (see <see cref="IPosedBody"/>) from its own
     /// now-integrated <see cref="Velocity"/>.X, via the same shared
     /// <see cref="Body2D.ResolveHorizontalFacing"/> rule <see cref="Player2D"/> uses - a body with
-    /// no matching stance (<c>Sprite.Stances</c> null, e.g. a MovingEnemy asset that hasn't
+    /// no matching pose (<c>Sprite.Poses</c> null, e.g. a MovingEnemy asset that hasn't
     /// authored left/right clips) simply no-ops here (see <see cref="Body2D.SetPose"/>).
     /// </summary>
     public void UpdatePose()
     {
-        SetPose(Sprite, Stance, ResolveHorizontalFacing(Velocity.X));
+        SetPose(Sprite, Pose, ResolveHorizontalFacing(Velocity.X));
     }
 }

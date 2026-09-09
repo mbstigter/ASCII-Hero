@@ -29,16 +29,16 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         var defaultFrameDurationSeconds = ParseFrameDurationSeconds(settings.TryGetValue("Animation", "FrameDurationSeconds"));
         var defaultAnimationMode = ParseAnimationMode(settings.TryGetValue("Animation", "Mode"));
         var defaultDefaultFrame = ParseDefaultFrame(settings.TryGetValue("Animation", "DefaultFrame"));
-        var (stances, defaultStance) = ParseStances(settings.Section("Stances"));
+        var (poses, defaultPose) = ParsePoses(settings.Section("Poses"));
         var clipFolders = ParseClipFolders(settings.Section("ClipFolders"));
 
         var allClipNames = new List<string>(clipNames);
-        if (stances is not null)
+        if (poses is not null)
         {
-            foreach (var stanceDef in stances.Values)
+            foreach (var poseDef in poses.Values)
             {
-                allClipNames.Add(stanceDef.IdleClip);
-                allClipNames.AddRange(stanceDef.DirectionalClips.Values);
+                allClipNames.Add(poseDef.IdleClip);
+                allClipNames.AddRange(poseDef.DirectionalClips.Values);
             }
         }
 
@@ -73,8 +73,8 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             EmptyChar = emptyChar,
             Clips = clips,
             TileAxis = tileAxis,
-            Stances = stances,
-            DefaultStance = defaultStance,
+            Poses = poses,
+            DefaultPose = defaultPose,
             DefaultForeColor = defaultForeColor,
             DefaultBackColor = defaultBackColor,
         };
@@ -180,7 +180,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
     /// <summary>
     /// Parses the optional <c>[ClipFolders]</c> section (see docs/AssetFormat.md §2.7), mapping a
     /// clip-name prefix (e.g. "walk", matching "walk_idle"/"walk_left"/"walk_right") to the
-    /// subfolder its files live in, for sprites busy enough to want to group clips by stance
+    /// subfolder its files live in, for sprites busy enough to want to group clips by pose
     /// instead of keeping every clip's files flat in the asset's root folder. Absent entirely for
     /// simple single-/few-clip assets (e.g. Pipe), which keep the flat layout.
     /// </summary>
@@ -218,18 +218,18 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             : assetFolder;
     }
 
-    private static (IReadOnlyDictionary<string, StanceDefinition>? Stances, string? DefaultStance) ParseStances(
-        IReadOnlyDictionary<string, string> stancesSection)
+    private static (IReadOnlyDictionary<string, PoseDefinition>? Poses, string? DefaultPose) ParsePoses(
+        IReadOnlyDictionary<string, string> posesSection)
     {
-        if (stancesSection.Count == 0)
+        if (posesSection.Count == 0)
         {
             return (null, null);
         }
 
-        var defaultStance = stancesSection.TryGetValue("Default", out var defaultValue) ? defaultValue : null;
-        var stances = new Dictionary<string, StanceDefinition>(StringComparer.OrdinalIgnoreCase);
+        var defaultPose = posesSection.TryGetValue("Default", out var defaultValue) ? defaultValue : null;
+        var poses = new Dictionary<string, PoseDefinition>(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var (key, value) in stancesSection)
+        foreach (var (key, value) in posesSection)
         {
             if (string.Equals(key, "Default", StringComparison.OrdinalIgnoreCase))
             {
@@ -244,7 +244,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
 
             // Each clip name's own trailing suffix (_idle/_left/_right/_up/_down) says which
             // Facing it's for - see docs/AssetFormat.md §2.6 - rather than a fixed slot
-            // position/count, so a stance can freely declare any subset of the five facings it
+            // position/count, so a pose can freely declare any subset of the five facings it
             // actually needs (just Left/Right for walking, just Up/Down for climbing, or all four
             // directions plus Idle for something like swimming).
             string? idleClip = null;
@@ -262,27 +262,27 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
                 }
             }
 
-            // A stance with no clip whose suffix actually resolved to Idle (e.g. an author typo,
-            // or a stance authored with only directional clips) falls back to its first-listed
+            // A pose with no clip whose suffix actually resolved to Idle (e.g. an author typo,
+            // or a pose authored with only directional clips) falls back to its first-listed
             // clip as Idle, so a malformed line still resolves to *something* playable rather than
             // throwing at spawn.
             idleClip ??= clipNames[0];
 
-            stances[key] = new StanceDefinition
+            poses[key] = new PoseDefinition
             {
                 IdleClip = idleClip,
                 DirectionalClips = directionalClips,
             };
         }
 
-        return (stances, defaultStance);
+        return (poses, defaultPose);
     }
 
     /// <summary>
-    /// Resolves which <see cref="Facing"/> a stance's clip name is for, from its own trailing
+    /// Resolves which <see cref="Facing"/> a pose's clip name is for, from its own trailing
     /// suffix (<c>_idle</c>/<c>_left</c>/<c>_right</c>/<c>_up</c>/<c>_down</c>) - see
     /// docs/AssetFormat.md §2.6. A clip with none of these suffixes is treated as
-    /// <see cref="Facing.Idle"/> (the neutral/only pose for a stance that declares just one clip).
+    /// <see cref="Facing.Idle"/> (the neutral/only orientation for a pose that declares just one clip).
     /// </summary>
     private static Facing ResolveFacingFromClipName(string clipName)
     {

@@ -236,7 +236,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
 
         _physics.Step(_world, _input, deltaSeconds);
-        _collision.Resolve(_world, deltaSeconds);
+        _collision.Resolve(_world);
         _world.ApplyPendingRemovals();
         _animation.Update(_world, deltaSeconds);
 
@@ -253,6 +253,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         UIRenderer.AddFrame(glyphs, _hudBox, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         UIRenderer.AddLabel(glyphs, _hudText, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         UIRenderer.AddBar(glyphs, _hudBar, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+
         await canvasBridge.DrawFrameAsync(ViewportWidthPixels, ViewportHeightPixels, glyphs);
     }
 

@@ -72,12 +72,12 @@ public class SpriteClip
 }
 
 /// <summary>
-/// Which way a stance's clip should face: <see cref="Idle"/> is a stance's neutral pose (facing
-/// the viewer for a stance that moves horizontally, or whatever a stance's own neutral direction
+/// Which way a pose's clip should face: <see cref="Idle"/> is a pose's neutral orientation (facing
+/// the viewer for a pose that moves horizontally, or whatever a pose's own neutral direction
 /// is otherwise, e.g. facing the ladder while climbing); <see cref="Left"/>/<see cref="Right"/>/
 /// <see cref="Up"/>/<see cref="Down"/> are directional variants. Unlike a fixed pair of axes, a
-/// stance can freely declare any subset of these five - not just one axis - which is what a
-/// four-directional stance (e.g. swimming) needs. See <see cref="StanceDefinition"/> and
+/// pose can freely declare any subset of these five - not just one axis - which is what a
+/// four-directional pose (e.g. swimming) needs. See <see cref="PoseDefinition"/> and
 /// docs/AssetFormat.md §2.6.
 /// </summary>
 public enum Facing
@@ -90,20 +90,20 @@ public enum Facing
 }
 
 /// <summary>
-/// One named stance (e.g. "Walk", "Crawl", "Climb", "Swim") of a sprite asset, mapping each
+/// One named pose (e.g. "Walk", "Crawl", "Climb", "Swim") of a sprite asset, mapping each
 /// <see cref="Facing"/> to the clip name that should be shown. Built from clip names' own
 /// suffixes (<c>_idle</c>/<c>_left</c>/<c>_right</c>/<c>_up</c>/<c>_down</c>) rather than a fixed
-/// position/count, so a stance can declare any subset of the five facings it actually needs - one
+/// position/count, so a pose can declare any subset of the five facings it actually needs - one
 /// axis (e.g. `Left`/`Right` for walking), the other (e.g. `Up`/`Down` for climbing), or all four
-/// at once (e.g. swimming). Any facing not declared by this stance falls back to
+/// at once (e.g. swimming). Any facing not declared by this pose falls back to
 /// <see cref="IdleClip"/>. See docs/AssetFormat.md §2.6.
 /// </summary>
-public class StanceDefinition
+public class PoseDefinition
 {
     public required string IdleClip { get; init; }
 
     /// <summary>
-    /// Clips for non-idle facings this stance actually declared, keyed by <see cref="Facing"/>
+    /// Clips for non-idle facings this pose actually declared, keyed by <see cref="Facing"/>
     /// (never contains <see cref="Facing.Idle"/> - that's always <see cref="IdleClip"/>).
     /// </summary>
     public IReadOnlyDictionary<Facing, string> DirectionalClips { get; init; } = new Dictionary<Facing, string>();
@@ -140,35 +140,35 @@ public class SpriteAsset
     public char? DefaultBackColor { get; init; }
 
     /// <summary>
-    /// Optional stance/facing metadata (see docs/AssetFormat.md §2.6) mapping each stance name
+    /// Optional pose/facing metadata (see docs/AssetFormat.md §2.6) mapping each pose name
     /// (e.g. "Walk", "Crawl") to the clips shown for its Idle/Left/Right facings. Null for assets
-    /// that don't declare a <c>[Stances]</c> section - such assets only ever show whichever single
-    /// clip was explicitly requested at spawn time, with no stance/facing switching.
+    /// that don't declare a <c>[Poses]</c> section - such assets only ever show whichever single
+    /// clip was explicitly requested at spawn time, with no pose/facing switching.
     /// </summary>
-    public IReadOnlyDictionary<string, StanceDefinition>? Stances { get; init; }
+    public IReadOnlyDictionary<string, PoseDefinition>? Poses { get; init; }
 
-    /// <summary>The stance active at spawn, from <c>[Stances] Default</c>. Null when <see cref="Stances"/> is null.</summary>
-    public string? DefaultStance { get; init; }
+    /// <summary>The pose active at spawn, from <c>[Poses] Default</c>. Null when <see cref="Poses"/> is null.</summary>
+    public string? DefaultPose { get; init; }
 
     public SpriteClip GetClip(string clipName) =>
         Clips.TryGetValue(clipName, out var clip)
             ? clip
             : throw new KeyNotFoundException($"Sprite '{Name}' has no clip named '{clipName}'.");
 
-    /// <summary>Resolves the clip name to show for a given stance/facing, per docs/AssetFormat.md §2.6.</summary>
-    public string GetClipName(string stance, Facing facing)
+    /// <summary>Resolves the clip name to show for a given pose/facing, per docs/AssetFormat.md §2.6.</summary>
+    public string GetClipName(string pose, Facing facing)
     {
-        if (Stances is null)
+        if (Poses is null)
         {
-            throw new KeyNotFoundException($"Sprite '{Name}' has no [Stances] section defined.");
+            throw new KeyNotFoundException($"Sprite '{Name}' has no [Poses] section defined.");
         }
 
-        if (!Stances.TryGetValue(stance, out var stanceDef))
+        if (!Poses.TryGetValue(pose, out var poseDef))
         {
-            throw new KeyNotFoundException($"Sprite '{Name}' has no stance named '{stance}'.");
+            throw new KeyNotFoundException($"Sprite '{Name}' has no pose named '{pose}'.");
         }
 
-        return stanceDef.GetClipName(facing);
+        return poseDef.GetClipName(facing);
     }
 }
 
