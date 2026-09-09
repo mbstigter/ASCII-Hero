@@ -2,6 +2,33 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## `PatrolInitialDirectionX`/`Y` values changed from `Min`/`Max` to `Left`/`Right` and `Up`/`Down`; `MovingEnemy` key renamed for consistency
+
+- **`KinematicObject`'s `PatrolInitialDirectionX`/`PatrolInitialDirectionY`
+  ini values changed from the axis-agnostic `Min`/`Max` to the intuitive
+  `Left`/`Right` (X) and `Up`/`Down` (Y):** `Min`/`Max` was originally chosen
+  because it was a single shared vocabulary that (thanks to the world's
+  top-left-origin, Y-increases-downward coordinate system - see
+  docs/Architecture.md's Coordinate System) correctly meant both
+  `Left`/`Right` on X and `Up`/`Down` on Y at once. In practice that
+  genericness bought nothing, since each key already names its own axis
+  (`...X` vs `...Y`) - forcing the *value* to stay abstract just made it
+  read less intuitively than `MovingEnemy`'s own `Left`/`Right` wording, and
+  would only get more awkward once a vertically-patrolling enemy needs the
+  same Y-axis key. `World2D.LoadAsync`'s parsing now compares
+  `PatrolInitialDirectionX` against `"Right"` and `PatrolInitialDirectionY`
+  against `"Down"` (both still resolving to the same `KinematicObject2D.
+  SetPatrol` `initialDirectionTowardMaxX`/`Y` booleans as before - only the
+  ini-facing spelling changed, not the underlying semantics).
+- **`MovingEnemy`'s own patrol-direction key renamed from
+  `PatrolInitialDirection` to `PatrolInitialDirectionX`**, matching
+  `KinematicObject`'s per-axis naming exactly (still `Left`/`Right` valued,
+  unchanged) - `MovingEnemy2D` has no vertical patrol today, but naming its
+  key `...X` now avoids a second rename later if/when one is added, and
+  makes the two `Kind`s' patrol-direction keys consistent in the meantime.
+  All authored worlds (`Enemies_objects.ini`, `MovingPlatforms_objects.ini`)
+  and docs/AssetFormat.md were updated to match both changes.
+
 ## Facing-with-intent and platform-relative patrol convergence (two of the three deferred grip/facing fixes)
 
 - **New shared `Body2D.GetSurfaceVelocityX()`**, generalizing what used to

@@ -327,7 +327,9 @@ public class World2D
                 // its cruising speed, mass-scaled like gravity) this enemy patrols, defaulting to
                 // MovingEnemy2D's own default when unset. PatrolCruiseSpeed sets the actual
                 // steady-state patrol speed the force converges to and holds, also defaulting to
-                // MovingEnemy2D's own default when unset. PatrolInitialDirection ("Left"/"Right")
+                // MovingEnemy2D's own default when unset. PatrolInitialDirectionX ("Left"/"Right") -
+                // named to match KinematicObject's own per-axis PatrolInitialDirectionX/Y below,
+                // since a future vertically-patrolling enemy would need the same X/Y distinction -
                 // overrides which way it starts heading, instead of the default inference toward
                 // whichever bound is farther.
                 var patrolForceOverride = objectSection.TryGetValue("PatrolForce", out var patrolForceText) && IniValueParser.TryParseDouble(patrolForceText, out var parsedPatrolForce)
@@ -336,7 +338,7 @@ public class World2D
                 var patrolCruiseSpeedOverride = objectSection.TryGetValue("PatrolCruiseSpeed", out var patrolCruiseSpeedText) && IniValueParser.TryParseDouble(patrolCruiseSpeedText, out var parsedPatrolCruiseSpeed)
                     ? (double?)parsedPatrolCruiseSpeed
                     : null;
-                var patrolInitialDirectionRight = objectSection.TryGetValue("PatrolInitialDirection", out var patrolDirectionText)
+                var patrolInitialDirectionRight = objectSection.TryGetValue("PatrolInitialDirectionX", out var patrolDirectionText)
                     ? (bool?)string.Equals(patrolDirectionText, "Right", StringComparison.OrdinalIgnoreCase)
                     : null;
 
@@ -358,15 +360,21 @@ public class World2D
                 var patrolSpeedY = objectSection.TryGetValue("PatrolSpeedY", out var patrolSpeedYText) && IniValueParser.TryParseDouble(patrolSpeedYText, out var parsedPatrolSpeedY)
                     ? parsedPatrolSpeedY
                     : 0.0;
-                // PatrolInitialDirectionX/Y ("Min"/"Max") let a placement explicitly pin which way
-                // a KinematicObject starts heading on that axis, instead of the default inference
-                // toward whichever bound is farther from the spawn position - e.g. so two
-                // platforms sharing the same range can be made to start in opposite phase.
+                // PatrolInitialDirectionX ("Left"/"Right") / PatrolInitialDirectionY ("Up"/"Down")
+                // let a placement explicitly pin which way a KinematicObject starts heading on
+                // that axis, instead of the default inference toward whichever bound is farther
+                // from the spawn position - e.g. so two platforms sharing the same range can be
+                // made to start in opposite phase. Expressed the same intuitive way as
+                // MovingEnemy's own PatrolInitialDirectionX, rather than the more abstract (if
+                // admittedly axis-agnostic) "Min"/"Max" wording used here previously - since each
+                // key already names its own axis, spelling out the value abstractly bought nothing
+                // and only cost readability. Remember Y increases downward (see docs/Architecture.md's
+                // Coordinate System), so "Down" means toward PatrolMaxY, same as "Max" did before.
                 var patrolInitialDirectionTowardMaxX = objectSection.TryGetValue("PatrolInitialDirectionX", out var patrolDirectionXText)
-                    ? (bool?)string.Equals(patrolDirectionXText, "Max", StringComparison.OrdinalIgnoreCase)
+                    ? (bool?)string.Equals(patrolDirectionXText, "Right", StringComparison.OrdinalIgnoreCase)
                     : null;
                 var patrolInitialDirectionTowardMaxY = objectSection.TryGetValue("PatrolInitialDirectionY", out var patrolDirectionYText)
-                    ? (bool?)string.Equals(patrolDirectionYText, "Max", StringComparison.OrdinalIgnoreCase)
+                    ? (bool?)string.Equals(patrolDirectionYText, "Down", StringComparison.OrdinalIgnoreCase)
                     : null;
 
                 // Passable/Climbable/Hangable are plain per-instance flags on Body2D (see its own

@@ -782,7 +782,7 @@ range: `PatrolForce` (a number, default `60`) scales how strongly - i.e. how
 cruising speed (mass-scaled like gravity, converging on that target speed
 rather than accelerating forever - see docs/Decisions.md); `PatrolCruiseSpeed`
 (cells/second, default `6`) is that target speed itself, i.e. how fast this
-enemy patrols once it gets there; `PatrolInitialDirection` (`Left` or
+enemy patrols once it gets there; `PatrolInitialDirectionX` (`Left` or
 `Right`) overrides which way it starts heading the instant the level loads,
 in place of the default inference (toward whichever patrol bound is farther
 from its spawn position):
@@ -795,7 +795,7 @@ Kind = MovingEnemy
 Patrol = true
 PatrolForce = 90
 PatrolCruiseSpeed = 10
-PatrolInitialDirection = Right
+PatrolInitialDirectionX = Right
 ```
 
 A `Kind = KinematicObject` placement (e.g. a moving platform) may likewise set
@@ -807,8 +807,13 @@ both axes may be configured (an axis left unconfigured simply never moves on
 its own). `PatrolSpeedX`/`PatrolSpeedY` are always a positive magnitude, never
 a direction - the initial heading is inferred automatically (toward whichever
 bound is farther from the spawn position) unless overridden by
-`PatrolInitialDirectionX`/`PatrolInitialDirectionY` (`Min` or `Max`), the
-`KinematicObject` equivalent of `MovingEnemy`'s `PatrolInitialDirection`:
+`PatrolInitialDirectionX` (`Left` or `Right`) / `PatrolInitialDirectionY`
+(`Up` or `Down`), the `KinematicObject` equivalent of `MovingEnemy`'s
+`PatrolInitialDirectionX` - spelled out the same intuitive way rather than
+the axis-agnostic `Min`/`Max` wording used here previously, since each key
+name already identifies its own axis. Remember world Y increases downward
+(see docs/Architecture.md's Coordinate System), so `Down` means toward the
+axis's max bound, same as `Up` means toward its min bound:
 
 ```ini
 [HorizontalPlatform]
@@ -819,7 +824,7 @@ Patrol = true
 PatrolMinX = 5
 PatrolMaxX = 24
 PatrolSpeedX = 8
-PatrolInitialDirectionX = Min
+PatrolInitialDirectionX = Left
 
 [VerticalPlatform]
 Asset = SteelPlatform
