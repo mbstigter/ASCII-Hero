@@ -39,6 +39,7 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
     private const double PatrolTurnThreshold = 0.25;
 
     private bool _patrolMovingRight = true;
+    private bool _patrolMovingDown = true;
 
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }
@@ -46,16 +47,27 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
     /// <summary>Whether this enemy is subject to normal world gravity.</summary>
     public bool GravityAffected { get; set; } = true;
 
-    /// <summary>Whether this enemy is currently patrolling (see <see cref="IPatrolBody"/>).</summary>
+    /// <summary>Whether this enemy is currently patrolling on either axis (see <see cref="IPatrolBody"/>).</summary>
     public bool IsPatrolling { get; set; }
 
-    /// <summary>Left bound of the patrol range, in world cells.</summary>
-    public double PatrolMinX { get; set; }
+    /// <summary>Left bound of the horizontal patrol range, in world cells, or null if this body doesn't patrol on the X axis.</summary>
+    public double? PatrolMinX { get; set; }
 
-    /// <summary>Right bound of the patrol range, in world cells.</summary>
-    public double PatrolMaxX { get; set; }
+    /// <summary>Right bound of the horizontal patrol range, in world cells, or null if this body doesn't patrol on the X axis.</summary>
+    public double? PatrolMaxX { get; set; }
 
-    /// <summary>The horizontal-only force this body's patrol currently contributes.</summary>
+    /// <summary>Top bound of the vertical patrol range, in world cells, or null if this body doesn't patrol on the Y axis.</summary>
+    public double? PatrolMinY { get; set; }
+
+    /// <summary>Bottom bound of the vertical patrol range, in world cells, or null if this body doesn't patrol on the Y axis.</summary>
+    public double? PatrolMaxY { get; set; }
+
+    /// <summary>
+    /// The force this body's patrol currently contributes - independently computed per axis (see
+    /// <see cref="UpdatePatrolDirection"/>), so a body configured with both X and Y bounds
+    /// patrols diagonally (each axis bounces between its own bounds on its own schedule) with no
+    /// separate "diagonal mode" needed.
+    /// </summary>
     public Vector2D PatrolForce { get; private set; }
 
     /// <summary>
@@ -70,27 +82,24 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
     public double PatrolForceMultiplier { get; set; } = DefaultPatrolForceMultiplier;
 
     /// <summary>
-    /// Reserved for a future vertically-patrolling <see cref="MovingEnemy2D"/> (mirroring
-    /// <see cref="KinematicObject2D"/>'s independent per-axis patrol) - stores the ini
-    /// <c>PatrolInitialDirectionY</c> ("Up"/"Down") override, if any, so level authors can already
-    /// pin a vertical starting heading in their <c>.ini</c> files without it being silently
-    /// dropped. Not yet read/applied anywhere: <see cref="MovingEnemy2D"/> only patrols
-    /// horizontally today (see <see cref="PatrolMinX"/>/<see cref="PatrolMaxX"/>/
-    /// <see cref="UpdatePatrolDirection"/>), so this has no behavioral effect until vertical
-    /// patrol is actually implemented.
-    /// </summary>
-    public bool? PatrolInitialDirectionDown { get; set; }
-
-    /// <summary>
-    /// The target horizontal speed (in world cells/second) this body's patrol force converges
-    /// toward and holds - configured per-placement via <see cref="SetPatrol"/>'s
-    /// <c>cruiseSpeed</c> parameter (the ini <c>PatrolCruiseSpeed</c> key), defaulting to
+    /// The target horizontal speed (in world cells/second) this body's X-axis patrol force
+    /// converges toward and holds - configured per-placement via <see cref="SetPatrol"/>'s
+    /// <c>cruiseSpeedX</c> parameter (the ini <c>PatrolCruiseSpeed</c> key), defaulting to
     /// <see cref="DefaultPatrolCruiseSpeed"/>. Mirrors the player's own fixed walk/crawl speeds -
     /// unlike <see cref="PatrolForceMultiplier"/> (how strongly/quickly it gets there), this is
     /// what actually caps the steady-state patrol speed, preventing the unbounded acceleration a
     /// constant-thrust-only force would otherwise produce.
     /// </summary>
     public double PatrolCruiseSpeed { get; set; } = DefaultPatrolCruiseSpeed;
+
+    /// <summary>
+    /// The target vertical speed (in world cells/second) this body's Y-axis patrol force converges
+    /// toward and holds - configured per-placement via <see cref="SetPatrol"/>'s
+    /// <c>cruiseSpeedY</c> parameter (the ini <c>PatrolCruiseSpeedY</c> key), defaulting to
+    /// <see cref="DefaultPatrolCruiseSpeed"/>. Independent of <see cref="PatrolCruiseSpeed"/> so a
+    /// diagonally-patrolling body can travel at a different pace on each axis.
+    /// </summary>
+    public double PatrolCruiseSpeedY { get; set; } = DefaultPatrolCruiseSpeed;
 
     /// <summary>
     /// Current pose (see <see cref="Player2D.Pose"/> for the equivalent player-side member).
@@ -132,22 +141,30 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
     }
 
     /// <summary>
-    /// Configures linear patrol between the given world-space X bounds (see
-    /// <see cref="IPatrolBody"/>), optionally overriding the patrol force's strength and/or
-    /// initial direction.
+    /// Configures linear patrol independently on the X and/or Y axis (see <see cref="IPatrolBody"/>) -
+    /// either axis pair left null (both min and max) means that axis simply isn't patrolled, so a
+    /// body configured with both X and Y bounds patrols diagonally, each axis bouncing between its
+    /// own bounds on its own schedule. Optionally overrides the patrol force's strength and/or each
+    /// axis's initial direction.
     /// </summary>
-    /// <param name="patrolMinX">Left bound of the patrol range, in world cells.</param>
-    /// <param name="patrolMaxX">Right bound of the patrol range, in world cells.</param>
-    /// <param name="forceMultiplier">
-    /// Patrol force gain / "muscle power" (see <see cref="PatrolForceMultiplier"/>); defaults to
-    /// <see cref="DefaultPatrolForceMultiplier"/> if not given.
-    /// </param>
-    /// <param name="cruiseSpeed">
-    /// Target patrol cruising speed (see <see cref="PatrolCruiseSpeed"/>); defaults to
+    /// <param name="patrolMinX">Left bound of the horizontal patrol range, or null to not patrol on X.</param>
+    /// <param name="patrolMaxX">Right bound of the horizontal patrol range, or null to not patrol on X.</param>
+    /// <param name="cruiseSpeedX">
+    /// Target horizontal patrol cruising speed (see <see cref="PatrolCruiseSpeed"/>); defaults to
     /// <see cref="DefaultPatrolCruiseSpeed"/> if not given.
     /// </param>
+    /// <param name="patrolMinY">Top bound of the vertical patrol range, or null to not patrol on Y.</param>
+    /// <param name="patrolMaxY">Bottom bound of the vertical patrol range, or null to not patrol on Y.</param>
+    /// <param name="cruiseSpeedY">
+    /// Target vertical patrol cruising speed (see <see cref="PatrolCruiseSpeedY"/>); defaults to
+    /// <see cref="DefaultPatrolCruiseSpeed"/> if not given.
+    /// </param>
+    /// <param name="forceMultiplier">
+    /// Patrol force gain / "muscle power" (see <see cref="PatrolForceMultiplier"/>), shared by
+    /// both axes; defaults to <see cref="DefaultPatrolForceMultiplier"/> if not given.
+    /// </param>
     /// <param name="initialDirectionRight">
-    /// Which direction to start heading in. If null (the default), starts heading toward
+    /// Which way to start heading on the X axis. If null (the default), starts heading toward
     /// whichever bound is farther from the spawn position, so a body spawned near one end still
     /// immediately patrols across the full range instead of instantly hitting the near bound and
     /// turning back within the first frame or two. An explicit value (true = right, false = left)
@@ -155,39 +172,62 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
     /// the player instead.
     /// </param>
     /// <param name="initialDirectionDown">
-    /// The ini <c>PatrolInitialDirectionY</c> override, if any (see
-    /// <see cref="PatrolInitialDirectionDown"/>) - stored only, not yet acted on, since vertical
-    /// patrol doesn't exist for <see cref="MovingEnemy2D"/> yet.
+    /// Which way to start heading on the Y axis. Same semantics as
+    /// <paramref name="initialDirectionRight"/>, but for <see cref="PatrolMinY"/>/<see cref="PatrolMaxY"/>
+    /// (true = toward <see cref="PatrolMaxY"/>/down, false = toward <see cref="PatrolMinY"/>/up).
     /// </param>
-    public void SetPatrol(double patrolMinX, double patrolMaxX, double forceMultiplier = DefaultPatrolForceMultiplier, double cruiseSpeed = DefaultPatrolCruiseSpeed, bool? initialDirectionRight = null, bool? initialDirectionDown = null)
+    public void SetPatrol(
+        double? patrolMinX, double? patrolMaxX, double cruiseSpeedX,
+        double? patrolMinY, double? patrolMaxY, double cruiseSpeedY,
+        double forceMultiplier = DefaultPatrolForceMultiplier,
+        bool? initialDirectionRight = null, bool? initialDirectionDown = null)
     {
-        IsPatrolling = true;
-        PatrolInitialDirectionDown = initialDirectionDown;
         PatrolMinX = patrolMinX;
         PatrolMaxX = patrolMaxX;
+        PatrolCruiseSpeed = cruiseSpeedX;
+        PatrolMinY = patrolMinY;
+        PatrolMaxY = patrolMaxY;
+        PatrolCruiseSpeedY = cruiseSpeedY;
         PatrolForceMultiplier = forceMultiplier;
-        PatrolCruiseSpeed = cruiseSpeed;
+        IsPatrolling = (patrolMinX.HasValue && patrolMaxX.HasValue) || (patrolMinY.HasValue && patrolMaxY.HasValue);
+
         // Start heading toward whichever bound is farther, so a body spawned near one end
         // immediately patrols across the full range instead of instantly hitting the near bound
         // and turning back within the first frame or two - unless the caller explicitly requested
-        // a starting direction instead.
-        _patrolMovingRight = initialDirectionRight ?? (Position.X - patrolMinX <= patrolMaxX - Position.X);
+        // a starting direction instead. Only meaningful (and only computed) when that axis is
+        // actually patrolled.
+        if (patrolMinX.HasValue && patrolMaxX.HasValue)
+        {
+            _patrolMovingRight = initialDirectionRight ?? (Position.X - patrolMinX.Value <= patrolMaxX.Value - Position.X);
+        }
+        if (patrolMinY.HasValue && patrolMaxY.HasValue)
+        {
+            _patrolMovingDown = initialDirectionDown ?? (Position.Y - patrolMinY.Value <= patrolMaxY.Value - Position.Y);
+        }
     }
 
     /// <summary>
-    /// Flips <see cref="_patrolMovingRight"/> once within <see cref="PatrolTurnThreshold"/> of the
-    /// current target bound, then recomputes <see cref="PatrolForce"/> as a proportional "motor"
-    /// force converging this body's horizontal velocity toward <see cref="PatrolCruiseSpeed"/> in
-    /// the (possibly new) direction - mirrors <see cref="Physics.PhysicsSystem"/>'s own player-side
-    /// <c>UpdateWalkForce</c>, so patrol force behaves the same way the player's walk force does:
-    /// strong while far from the target speed, tapering to zero once reached, rather than a
-    /// constant thrust that would otherwise accelerate this body indefinitely. Also sets
-    /// <see cref="Body2D.MoveIntentX"/> from the (possibly just-flipped) patrol heading - <see
-    /// cref="UpdatePose"/> reads it from there rather than from <see cref="Velocity"/>, since
-    /// velocity reflects this body's actual, physically-resolved motion (still converging toward
-    /// the target speed, and subject to platform carry) rather than its plain directional intent.
+    /// Recomputes <see cref="PatrolForce"/> independently per axis, flipping each axis's own
+    /// heading once within <see cref="PatrolTurnThreshold"/> of its current target bound - mirrors
+    /// <see cref="Physics.PhysicsSystem"/>'s own player-side <c>UpdateWalkForce</c>, so patrol
+    /// force behaves the same way the player's walk force does: strong while far from the target
+    /// speed, tapering to zero once reached, rather than a constant thrust that would otherwise
+    /// accelerate this body indefinitely. Also sets <see cref="Body2D.MoveIntentX"/> from the
+    /// (possibly just-flipped) X-axis heading - <see cref="UpdatePose"/> reads it from there rather
+    /// than from <see cref="Velocity"/>, since velocity reflects this body's actual,
+    /// physically-resolved motion (still converging toward the target speed, and subject to
+    /// platform carry) rather than its plain directional intent.
+    ///
+    /// The Y axis applies one extra rule beyond the plain proportional "motor" force: while
+    /// <see cref="GravityAffected"/> and heading up, gravity's own contribution (added separately
+    /// by <see cref="Physics.PhysicsSystem.StepMovingBodyWithForces"/>) is cancelled out here so the
+    /// same proportional gain that already works horizontally can actually reach its target speed
+    /// against a constant opposing pull, instead of asymptoting below it ("fighting gravity to
+    /// climb"). Heading down needs no such adjustment - the plain proportional force already
+    /// naturally lets gravity's own pull carry most of the descent, only correcting once actual
+    /// velocity overshoots the target ("gliding down").
     /// </summary>
-    public void UpdatePatrolDirection()
+    public void UpdatePatrolDirection(double gravity)
     {
         if (!IsPatrolling)
         {
@@ -196,30 +236,62 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
             return;
         }
 
-        var targetX = _patrolMovingRight ? PatrolMaxX : PatrolMinX;
-        if (Math.Abs(Position.X - targetX) <= PatrolTurnThreshold)
+        var mass = Mass > 0 ? Mass : 1.0;
+        double forceX = 0.0;
+        double forceY = 0.0;
+
+        if (PatrolMinX.HasValue && PatrolMaxX.HasValue)
         {
-            _patrolMovingRight = !_patrolMovingRight;
+            var targetX = _patrolMovingRight ? PatrolMaxX.Value : PatrolMinX.Value;
+            if (Math.Abs(Position.X - targetX) <= PatrolTurnThreshold)
+            {
+                _patrolMovingRight = !_patrolMovingRight;
+            }
+
+            // Target speed (and the force converging toward it) is expressed relative to whatever
+            // solid this body currently rests on (see Body2D.GetSurfaceVelocityX) - mirroring
+            // PhysicsSystem.Step's own player-side groundVelocityX fix - rather than an absolute
+            // world-frame speed. Without this, a fast horizontal platform's own carry is baked into
+            // this body's absolute Velocity.X, so the patrol force (aimed at an absolute target
+            // speed) would spend part of its "muscle power" fighting the platform's own motion every
+            // frame instead of just walking across it, letting the body slide relative to the
+            // platform's surface instead of patrolling it at a steady cruise speed.
+            var surfaceVelocityX = GetSurfaceVelocityX();
+            var targetVelocityX = surfaceVelocityX + (_patrolMovingRight ? 1.0 : -1.0) * PatrolCruiseSpeed;
+            forceX = (targetVelocityX - Velocity.X) * mass * PatrolForceMultiplier;
+
+            // Facing intent (see Body2D.MoveIntentX) is simply this patrol's current heading -
+            // an AI has no separate "input" to read, so its patrol direction stands in for intent,
+            // same as Player2D.MoveIntentX stands in for the player's own key state. Set here
+            // (rather than in UpdatePose) since this is where the heading itself is actually
+            // decided/flipped.
+            MoveIntentX = _patrolMovingRight ? 1.0 : -1.0;
+        }
+        else
+        {
+            MoveIntentX = 0.0;
         }
 
-        var mass = Mass > 0 ? Mass : 1.0;
-        // Target speed (and the force converging toward it) is expressed relative to whatever
-        // solid this body currently rests on (see Body2D.GetSurfaceVelocityX) - mirroring
-        // PhysicsSystem.Step's own player-side groundVelocityX fix - rather than an absolute
-        // world-frame speed. Without this, a fast horizontal platform's own carry is baked into
-        // this body's absolute Velocity.X, so the patrol force (aimed at an absolute target
-        // speed) would spend part of its "muscle power" fighting the platform's own motion every
-        // frame instead of just walking across it, letting the body slide relative to the
-        // platform's surface instead of patrolling it at a steady cruise speed.
-        var surfaceVelocityX = GetSurfaceVelocityX();
-        var targetVelocityX = surfaceVelocityX + (_patrolMovingRight ? 1.0 : -1.0) * PatrolCruiseSpeed;
-        var forceX = (targetVelocityX - Velocity.X) * mass * PatrolForceMultiplier;
-        PatrolForce = new Vector2D(forceX, 0);
-        // Facing intent (see Body2D.MoveIntentX) is simply this patrol's current heading -
-        // an AI has no separate "input" to read, so its patrol direction stands in for intent,
-        // same as Player2D.MoveIntentX stands in for the player's own key state. Set here (rather
-        // than in UpdatePose) since this is where the heading itself is actually decided/flipped.
-        MoveIntentX = _patrolMovingRight ? 1.0 : -1.0;
+        if (PatrolMinY.HasValue && PatrolMaxY.HasValue)
+        {
+            var targetY = _patrolMovingDown ? PatrolMaxY.Value : PatrolMinY.Value;
+            if (Math.Abs(Position.Y - targetY) <= PatrolTurnThreshold)
+            {
+                _patrolMovingDown = !_patrolMovingDown;
+            }
+
+            var targetVelocityY = (_patrolMovingDown ? 1.0 : -1.0) * PatrolCruiseSpeedY;
+            forceY = (targetVelocityY - Velocity.Y) * mass * PatrolForceMultiplier;
+
+            if (GravityAffected && !_patrolMovingDown)
+            {
+                // Heading up: cancel gravity's own contribution so this proportional force can
+                // actually reach its target climb speed instead of asymptoting below it.
+                forceY -= mass * gravity;
+            }
+        }
+
+        PatrolForce = new Vector2D(forceX, forceY);
     }
 
     /// <summary>

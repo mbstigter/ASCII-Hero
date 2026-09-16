@@ -41,7 +41,7 @@ public interface IPhysicsBody
     void SnapshotContactsForNextFrame();
 
     /// <summary>The body's collision shape, as one or more rectangles in world space.</summary>
-    IReadOnlyList<Physics.Rect2D> CollisionRects { get; }
+    IReadOnlyList<Physics.Rect> CollisionRects { get; }
 
     /// <summary>
     /// This body's mass (see <see cref="Body2D.Mass"/>), used by

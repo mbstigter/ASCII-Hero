@@ -1,6 +1,6 @@
 using ASCII_Hero.Client.Game.World;
 
-namespace ASCII_Hero.Client.Game.Animation;
+namespace ASCII_Hero.Client.Game.Rendering;
 
 /// <summary>
 /// Updates animation state for every body in the world that has multi-frame clips with animation

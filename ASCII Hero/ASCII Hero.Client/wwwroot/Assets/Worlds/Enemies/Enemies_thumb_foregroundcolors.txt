@@ -1,26 +1,35 @@
                 
+    2           
                 
-                
-    HHHHHHHH    
-                
-                
+      HHHHHH    
+        T     1 
+    HHHHHH      
         T       
 HHHHHHHHHHHHHHHH
 //end
                 
+     2          
                 
-                
-    HHHHHHHH    
-                
-                
+      HHHHHH  1 
        T        
+    HHHHHH      
+         T      
 HHHHHHHHHHHHHHHH
 //end
                 
-                
-                
-    HHHHHHHH    
-                
-                
+      2         
+              1
+      HHHHHH    
       T         
+    HHHHHH      
+          T     
+HHHHHHHHHHHHHHHH
+//end
+                
+       2      1 
+                
+      HHHHHH    
+     T          
+    HHHHHH      
+           T    
 HHHHHHHHHHHHHHHH

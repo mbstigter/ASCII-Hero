@@ -152,13 +152,14 @@ The live game state and the entity types that make it up.
 	`Body2D.IsStatic`). Supports independent optional per-axis back-and-forth
 	patrol (`PatrolMinX`/`PatrolMaxX`/`PatrolSpeedX`,
 	`PatrolMinY`/`PatrolMaxY`/`PatrolSpeedY` - either, both, or neither axis
-	may be configured), a distinct scheme from `IPatrolBody`'s single X-only
-	force-based patrol used by `MovingEnemy2D`, chosen to leave room for a
-	future non-linear (e.g. rectangular-circuit) motion path without
-	redesigning the body.
+	may be configured) at a constant, prescribed velocity - a distinct scheme
+	from `IPatrolBody`'s force-based, gravity-integrated patrol used by
+	`MovingEnemy2D`, chosen to leave room for a future non-linear (e.g.
+	rectangular-circuit) motion path without redesigning the body.
   - `MovingEnemy2D` - an AI-controlled hazard that moves and collides exactly
-	like a `DynamicObject2D`; optionally patrols back and forth along the X
-	axis via `IPatrolBody` (see below), and implements `IPosedBody` to face
+	like a `DynamicObject2D`; optionally patrols back and forth independently
+	on the X and/or Y axis via `IPatrolBody` (see below - a body configured
+	with both axes patrols diagonally), and implements `IPosedBody` to face
 	(and animate through) its sprite's directional clips (e.g. `Snake`'s
 	`move_left`/`move_right`) from its own resolved velocity each frame. Chase
 	behavior is not yet implemented.
@@ -175,11 +176,19 @@ The live game state and the entity types that make it up.
 	(position, velocity, size, grounded state, collision shape).
   - `IGravityAffected` - can optionally opt out of gravity via a
 	`GravityAffected` flag.
-  - `IPatrolBody` - patrols back and forth along the X axis between
-	`PatrolMinX`/`PatrolMaxX` under its own mass-scaled force, recomputed each
-	frame via `UpdatePatrolDirection()` and summed into `PhysicsSystem`'s force
+  - `IPatrolBody` - patrols back and forth independently on the X and/or Y
+	axis between `PatrolMinX`/`PatrolMaxX` and/or `PatrolMinY`/`PatrolMaxY`
+	under its own mass-scaled force, recomputed each frame via
+	`UpdatePatrolDirection(gravity)` and summed into `PhysicsSystem`'s force
 	accumulator alongside gravity (see `MovingEnemy2D`'s `Patrol` placement key,
-	docs/AssetFormat.md §3.4).
+	docs/AssetFormat.md §3.4). A body configured with both axes patrols
+	diagonally - each axis bounces between its own bounds on its own schedule.
+	Vertical patrol applies one further rule when `IGravityAffected` is true:
+	gravity is cancelled while heading up (so the same proportional force that
+	already works horizontally can actually reach its climb target instead of
+	asymptoting below it), but left alone while heading down (so gravity's own
+	pull carries most of the descent, i.e. a controlled glide rather than a
+	symmetric climb/descend force).
   - `IPosedBody` - resolves and applies its own sprite pose (stance +
 	facing) once per frame via `UpdatePose()`, called by `PhysicsSystem` after
 	velocity/position are integrated for the frame (mirroring how a body owns
@@ -394,7 +403,7 @@ The live game state and the entity types that make it up.
   of non-empty cells, then merging vertically-identical runs across rows),
   so collision follows a sprite's real silhouette instead of its full
   bounding box.
-- **`Rect2D`** - a simple axis-aligned rectangle in world cells, used to
+- **`Rect`** - a simple axis-aligned rectangle in world cells, used to
   describe a piece of a body's collision shape and test overlap.
 - **`SpatialGrid<T>`** - a small reusable broad-phase spatial hash grid:
   buckets arbitrary items by the world cells their AABB overlaps, then
@@ -402,17 +411,14 @@ The live game state and the entity types that make it up.
   `CollisionSystem` for both solids and moving bodies; contains no
   collision-specific logic of its own.
 
-### Camera
+### Rendering
 
-- **`Camera2D`** - follows a target's bounding box using a "dead zone": it
+- **`Camera`** - follows a target's bounding box using a "dead zone": it
   only scrolls once the target nears the edge of the current view, and never
   scrolls past the world's own bounds. `SnapTo` immediately centers on a
   target with no smoothing (used once at world load); `Follow` smoothly
   catches up each frame afterward.
-
-### Rendering
-
-- **`WorldRenderer`** - translates the floating-point game world into a flat
+- **`WorldRenderer`**
   list of positioned glyphs (background layer plus every object's active
   frame), resolving each cell's color codes through the palette and
   converting world positions to pixel positions via the camera's current
@@ -453,15 +459,13 @@ The live game state and the entity types that make it up.
   and no `World2D` - it lays out directly in viewport cell coordinates, since
   the selection screen exists before any world is loaded.
 
-### Animation
-
 - **`AnimationSystem`** - advances every body's animation timer once per
   frame (bodies with no animation configured, or a single frame, no-op
   internally) and ticks the lifetime of any `EffectInstance2D`, queuing it
   for removal once its effect finishes playing (unless configured to
   persist).
 
-### Browser / Input
+### Browser
 
 - **`CanvasBridge`** - the sole interop boundary between C# and the browser's
   Canvas/keyboard APIs (via `game-interop.js`). Initializes the canvas and
@@ -578,7 +582,7 @@ large jumps after e.g. a tab switch):
    list mid-iteration.
 4. **Animation** - `AnimationSystem.Update` advances every body's animation
    frame timer and ticks down any active effect's remaining lifetime.
-5. **Camera** - `Camera2D.Follow` smoothly scrolls toward the current camera
+5. **Camera** - `Camera.Follow` smoothly scrolls toward the current camera
    target's position, respecting its dead zone and the world's bounds.
 6. **Render** - `WorldRenderer.BuildFrame` converts the current world and
    camera view into a flat glyph list - culled to the camera's current

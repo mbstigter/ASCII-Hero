@@ -26,7 +26,7 @@ public class CollisionSystem
     /// <summary>
     /// Tiny amount <see cref="SnapOntoHangable"/> pulls the hanger's top edge *above* (i.e. a
     /// smaller Y than) the hangable surface's bottom edge, so the two rectangles remain genuinely
-    /// overlapping - not merely touching - on the very next frame. <see cref="Rect2D.Overlaps"/>
+    /// overlapping - not merely touching - on the very next frame. <see cref="Rect.Overlaps"/>
     /// uses strict inequalities (<c>bodyRect.Top &lt; otherRect.Bottom</c>), so a body snapped to
     /// land exactly flush (top == other's bottom), or worse, pushed slightly past it, has zero (or
     /// negative) actual overlap and <see cref="IHangerBody.IsTouchingHangable"/> would immediately
@@ -572,7 +572,7 @@ public class CollisionSystem
     /// <see cref="ApplyFriction"/> formula already used against stationary terrain.
     /// </remarks>
     /// <returns>True if this rect landed on top of the solid, false otherwise (including no overlap at all).</returns>
-    private static bool ResolveRectAgainstSolid(IPhysicsBody body, double restitution, double friction, Vector2D solidVelocity, Body2D solid, Rect2D bodyRect)
+    private static bool ResolveRectAgainstSolid(IPhysicsBody body, double restitution, double friction, Vector2D solidVelocity, Body2D solid, Rect bodyRect)
     {
         if (!TryFindDeepestOverlap([bodyRect], solid.CollisionRects, out var deepestBodyRect, out var bestSolidRect, (Body2D)body, solid))
         {
@@ -731,10 +731,10 @@ public class CollisionSystem
     /// </param>
     /// <param name="ownerB">See <paramref name="ownerA"/>, for <paramref name="bRects"/>.</param>
     private static bool TryFindDeepestOverlap(
-        IReadOnlyList<Rect2D> aRects,
-        IReadOnlyList<Rect2D> bRects,
-        out Rect2D bestA,
-        out Rect2D bestB,
+        IReadOnlyList<Rect> aRects,
+        IReadOnlyList<Rect> bRects,
+        out Rect bestA,
+        out Rect bestB,
         Body2D? ownerA = null,
         Body2D? ownerB = null)
     {
@@ -791,7 +791,7 @@ public class CollisionSystem
     /// for a solid rectangular sprite, every cell within its own collision rect is already known
     /// non-empty and this always agrees with the plain rectangle test.
     /// </summary>
-    private static bool HasCharacterOverlap(Body2D ownerA, Body2D ownerB, Rect2D rectA, Rect2D rectB)
+    private static bool HasCharacterOverlap(Body2D ownerA, Body2D ownerB, Rect rectA, Rect rectB)
     {
         var left = Math.Max(rectA.Left, rectB.Left);
         var right = Math.Min(rectA.Right, rectB.Right);
@@ -877,7 +877,7 @@ public class CollisionSystem
     /// <paramref name="body"/>'s own collision shape extends above <paramref name="other"/>'s top
     /// edge - the geometric check for "reaching up into a hangable surface from below", and
     /// (symmetrically) for "having just fallen far enough through it from above". Deliberately
-    /// compares the body's own overall topmost edge (the minimum <see cref="Rect2D.Top"/> across
+    /// compares the body's own overall topmost edge (the minimum <see cref="Rect.Top"/> across
     /// *all* of its collision rects) rather than reusing <see cref="TryFindDeepestOverlap"/>'s
     /// per-pair deepest-penetration pick: for a multi-rect body (e.g. the player, whose feet sit
     /// well below its head) the deepest-overlapping pair while falling through a thin pipe is

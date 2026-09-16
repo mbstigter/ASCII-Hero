@@ -338,23 +338,29 @@ public class World2D
                 var patrolCruiseSpeedOverride = objectSection.TryGetValue("PatrolCruiseSpeed", out var patrolCruiseSpeedText) && IniValueParser.TryParseDouble(patrolCruiseSpeedText, out var parsedPatrolCruiseSpeed)
                     ? (double?)parsedPatrolCruiseSpeed
                     : null;
+                // PatrolCruiseSpeedY lets a MovingEnemy's vertical patrol cruise at a different
+                // speed than its horizontal one (PatrolCruiseSpeed); falls back to PatrolCruiseSpeed
+                // itself (then MovingEnemy2D's own default) so a level author patrolling only one
+                // axis, or wanting the same pace on both, doesn't need to repeat the value.
+                var patrolCruiseSpeedYOverride = objectSection.TryGetValue("PatrolCruiseSpeedY", out var patrolCruiseSpeedYText) && IniValueParser.TryParseDouble(patrolCruiseSpeedYText, out var parsedPatrolCruiseSpeedY)
+                    ? (double?)parsedPatrolCruiseSpeedY
+                    : null;
                 var patrolInitialDirectionRight = objectSection.TryGetValue("PatrolInitialDirectionX", out var patrolDirectionText)
                     ? (bool?)string.Equals(patrolDirectionText, "Right", StringComparison.OrdinalIgnoreCase)
                     : null;
-                // PatrolInitialDirectionY ("Up"/"Down") is parsed here too for a future
-                // vertically-patrolling MovingEnemy2D (see MovingEnemy2D.PatrolInitialDirectionDown)
-                // - stored on the spawned enemy but not yet acted on, since MovingEnemy2D only
-                // patrols horizontally today.
+                // PatrolInitialDirectionY ("Up"/"Down") overrides which way a MovingEnemy starts
+                // heading on its vertical patrol, mirroring PatrolInitialDirectionX for the
+                // horizontal axis - see MovingEnemy2D.SetPatrol.
                 var patrolInitialDirectionDownEnemy = objectSection.TryGetValue("PatrolInitialDirectionY", out var patrolDirectionYTextEnemy)
                     ? (bool?)string.Equals(patrolDirectionYTextEnemy, "Down", StringComparison.OrdinalIgnoreCase)
                     : null;
 
-                // Patrol (Kind = KinematicObject only) - independent per-axis bounds/speed, unlike
-                // MovingEnemy's single X-only range above: PatrolMinY/PatrolMaxY let a platform
-                // patrol vertically instead of (or as well as) horizontally, and each axis has its
-                // own speed since a platform's horizontal and vertical travel distances/paces are
-                // often unrelated. An axis with no min/max pair configured simply isn't patrolled
-                // (KinematicObject2D.Move leaves that velocity component untouched).
+                // Patrol range/speed keys shared by both Kind = MovingEnemy and Kind = KinematicObject:
+                // PatrolMinY/PatrolMaxY let a body patrol vertically instead of (or as well as)
+                // horizontally - both MovingEnemy2D and KinematicObject2D support independent
+                // per-axis patrol (a body configured with both X and Y bounds patrols diagonally,
+                // each axis bouncing between its own bounds on its own schedule). An axis with no
+                // min/max pair configured simply isn't patrolled on that axis.
                 var patrolMinYOverride = objectSection.TryGetValue("PatrolMinY", out var patrolMinYText) && IniValueParser.TryParseDouble(patrolMinYText, out var parsedPatrolMinY)
                     ? (double?)parsedPatrolMinY
                     : null;
@@ -472,11 +478,28 @@ public class World2D
                         movingEnemy.EffectPersists = effectPersists;
                         if (patrol)
                         {
+                            // X defaults to the entire world width (this body's left edge sweeping
+                            // from the world's left edge to its right edge) when Patrol is enabled
+                            // without any explicit range - unless the placement configured a
+                            // vertical-only patrol via PatrolMinY/PatrolMaxY with no X override at
+                            // all, in which case this body patrols vertically only rather than
+                            // also silently sweeping the full world width.
+                            var hasExplicitX = patrolMinXOverride.HasValue || patrolMaxXOverride.HasValue;
+                            var hasExplicitY = patrolMinYOverride.HasValue || patrolMaxYOverride.HasValue;
+                            double? enemyPatrolMinX = null;
+                            double? enemyPatrolMaxX = null;
+                            if (hasExplicitX || !hasExplicitY)
+                            {
+                                enemyPatrolMinX = patrolMinXOverride ?? 0.0;
+                                enemyPatrolMaxX = patrolMaxXOverride ?? world.WidthCells - movingEnemy.Size.X;
+                            }
+
                             movingEnemy.SetPatrol(
-                                patrolMinXOverride ?? 0.0,
-                                patrolMaxXOverride ?? world.WidthCells - movingEnemy.Size.X,
-                                patrolForceOverride ?? MovingEnemy2D.DefaultPatrolForceMultiplier,
+                                enemyPatrolMinX, enemyPatrolMaxX,
                                 patrolCruiseSpeedOverride ?? MovingEnemy2D.DefaultPatrolCruiseSpeed,
+                                patrolMinYOverride, patrolMaxYOverride,
+                                patrolCruiseSpeedYOverride ?? patrolCruiseSpeedOverride ?? MovingEnemy2D.DefaultPatrolCruiseSpeed,
+                                patrolForceOverride ?? MovingEnemy2D.DefaultPatrolForceMultiplier,
                                 patrolInitialDirectionRight,
                                 patrolInitialDirectionDownEnemy);
                         }

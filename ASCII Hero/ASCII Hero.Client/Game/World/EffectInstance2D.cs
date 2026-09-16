@@ -1,4 +1,5 @@
 using ASCII_Hero.Client.Game.Assets;
+using ASCII_Hero.Client.Game.Rendering;
 
 namespace ASCII_Hero.Client.Game.World;
 
@@ -62,7 +63,7 @@ public class EffectInstance2D : Body2D
     /// <see cref="IsExpiredAndShouldBeRemoved"/>); if true, just stops decrementing and leaves the
     /// body holding whatever frame its own animation last landed on. Does not duplicate
     /// <see cref="Body2D.AdvanceAnimation"/>'s frame-cycling, which keeps running unchanged via
-    /// <see cref="Animation.AnimationSystem.Update"/>.
+    /// <see cref="AnimationSystem.Update"/>.
     /// </summary>
     public void Tick(double deltaSeconds)
     {

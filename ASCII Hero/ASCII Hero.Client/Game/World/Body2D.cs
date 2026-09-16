@@ -13,7 +13,7 @@ namespace ASCII_Hero.Client.Game.World;
 /// </summary>
 public abstract class Body2D
 {
-    private IReadOnlyList<Rect2D> _localCollisionRects = [];
+    private IReadOnlyList<Rect> _localCollisionRects = [];
     private double _animationElapsedSeconds;
     private int _animationFrameIndex;
     private int _animationDirection = 1;
@@ -336,10 +336,10 @@ public abstract class Body2D
     /// <see cref="Position"/>, not world space). Derived from the active frame's actual grid
     /// data via <see cref="CollisionShapeBuilder"/>, excluding blank/empty cells from physics.
     /// </summary>
-    public IReadOnlyList<Rect2D> LocalCollisionRects => _localCollisionRects;
+    public IReadOnlyList<Rect> LocalCollisionRects => _localCollisionRects;
 
     /// <summary>The body's collision shape translated into world-space rectangles.</summary>
-    public IReadOnlyList<Rect2D> CollisionRects
+    public IReadOnlyList<Rect> CollisionRects
     {
         get
         {

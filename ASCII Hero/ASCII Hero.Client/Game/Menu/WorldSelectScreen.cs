@@ -1,5 +1,5 @@
 using ASCII_Hero.Client.Game.Assets;
-using ASCII_Hero.Client.Game.Input;
+using ASCII_Hero.Client.Game.Browser;
 
 namespace ASCII_Hero.Client.Game.Menu;
 

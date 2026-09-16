@@ -757,14 +757,25 @@ Patrol = true
 ```
 
 A `Kind = MovingEnemy` placement may additionally set `Patrol = true` (default
-`false`) to have it move back and forth along the X axis under its own force
-(mass-scaled, integrated the same way as gravity - see
-docs/Decisions.md), rather than only ever sitting still or moving at a fixed
-`InitialVelocityX`/`Y`. The patrol range defaults to the entire width of the
-world (this body's left edge sweeping from the world's left edge to its
-right edge) - enough to "just patrol the level" with no further authoring -
-but can be narrowed to a specific stretch via `PatrolMinX`/`PatrolMaxX`
-(world-space X, in cells, both optional and independent of each other):
+`false`) to have it move back and forth under its own force (mass-scaled,
+integrated the same way as gravity - see docs/Decisions.md), rather than only
+ever sitting still or moving at a fixed `InitialVelocityX`/`Y`. Patrol can be
+configured independently on the X and/or Y axis - a placement with both axes
+configured patrols diagonally, each axis bouncing between its own bounds on
+its own schedule, with no separate "diagonal mode" needed:
+
+- `PatrolMinX`/`PatrolMaxX` (world-space X, in cells) bound horizontal
+  patrol. If `Patrol = true` and neither is set (and no vertical-only patrol
+  is configured either - see below), the range defaults to the entire width
+  of the world (this body's left edge sweeping from the world's left edge to
+  its right edge) - enough to "just patrol the level" with no further
+  authoring.
+- `PatrolMinY`/`PatrolMaxY` (world-space Y, in cells) bound vertical patrol.
+  Unlike the X axis, there is no "entire world height" default - an enemy
+  patrols vertically only once both are explicitly set. Setting only
+  `PatrolMinY`/`PatrolMaxY` (no `PatrolMinX`/`PatrolMaxX`) makes this enemy
+  patrol vertically only, rather than also silently sweeping the full world
+  width on X.
 
 ```ini
 [CautiousGoblin]
@@ -776,18 +787,21 @@ PatrolMinX = 20
 PatrolMaxX = 35
 ```
 
-Two further optional keys tune the patrol force itself rather than its
-range: `PatrolForce` (a number, default `60`) scales how strongly - i.e. how
+Further optional keys tune the patrol force itself rather than its range:
+`PatrolForce` (a number, default `60`) scales how strongly - i.e. how
 "strong" this enemy is, its "muscle power" - it accelerates toward its
-cruising speed (mass-scaled like gravity, converging on that target speed
-rather than accelerating forever - see docs/Decisions.md); `PatrolCruiseSpeed`
-(cells/second, default `6`) is that target speed itself, i.e. how fast this
-enemy patrols once it gets there; `PatrolInitialDirectionX` (`Left` or
-`Right`) overrides which way it starts heading the instant the level loads,
-in place of the default inference (toward whichever patrol bound is farther
-from its spawn position). `PatrolInitialDirectionY` (`Up` or `Down`) is also
-parsed and stored, ready for a future vertically-patrolling `MovingEnemy`,
-but has no effect yet - `MovingEnemy` only patrols horizontally today:
+cruising speed on either axis (mass-scaled like gravity, converging on that
+target speed rather than accelerating forever - see docs/Decisions.md);
+`PatrolCruiseSpeed` (cells/second, default `6`) is the target horizontal
+speed, i.e. how fast this enemy patrols along X once it gets there;
+`PatrolCruiseSpeedY` (cells/second, defaults to `PatrolCruiseSpeed` if unset)
+is the equivalent target speed for vertical patrol, letting a diagonally- or
+vertically-patrolling enemy cruise at a different pace on each axis;
+`PatrolInitialDirectionX` (`Left` or `Right`) overrides which way it starts
+heading horizontally the instant the level loads, in place of the default
+inference (toward whichever patrol bound is farther from its spawn
+position); `PatrolInitialDirectionY` (`Up` or `Down`) is the equivalent
+override for vertical patrol:
 
 ```ini
 [FastGoblin]
@@ -800,14 +814,45 @@ PatrolCruiseSpeed = 10
 PatrolInitialDirectionX = Right
 ```
 
+```ini
+[FlappingBird]
+Asset = Bird
+Clip = fly_idle
+Kind = MovingEnemy
+GravityAffected = true
+Patrol = true
+PatrolMinY = 4
+PatrolMaxY = 12
+PatrolCruiseSpeedY = 5
+PatrolInitialDirectionY = Up
+```
+
+**Vertical patrol and gravity:** when `GravityAffected = true`, climbing
+(heading toward `PatrolMinY`, i.e. up) and descending (heading toward
+`PatrolMaxY`, i.e. down) are deliberately asymmetric, so a vertically- or
+diagonally-patrolling enemy reads as genuinely fighting gravity to climb
+rather than just being another platform-style mover rotated 90 degrees:
+while heading up, this enemy's own patrol force additionally cancels out
+gravity's pull so it can actually reach its target climb speed instead of
+asymptoting below it; while heading down, no such adjustment is made, so
+gravity's own pull carries most of the descent and the patrol force merely
+corrects once actual velocity overshoots the target speed (a controlled
+glide rather than the enemy fighting its own fall). Set
+`GravityAffected = false` instead for a hovering-insect-style enemy that
+patrols vertically with a fully symmetric climb/descend force and is never
+affected by gravity at all - the same choice already offered for horizontal-
+only patrol.
+
 A `Kind = KinematicObject` placement (e.g. a moving platform) may likewise set
-`Patrol = true`, but with an independent range/speed per axis rather than
-`MovingEnemy`'s single X-only range: `PatrolMinX`/`PatrolMaxX`/`PatrolSpeedX`
-(world-space X, in cells, and cells/second) patrol it horizontally,
+`Patrol = true`, with the same independent-per-axis bounds as `MovingEnemy`
+above: `PatrolMinX`/`PatrolMaxX`/`PatrolSpeedX` (world-space X, in cells, and
+cells/second) patrol it horizontally,
 `PatrolMinY`/`PatrolMaxY`/`PatrolSpeedY` patrol it vertically, and either or
 both axes may be configured (an axis left unconfigured simply never moves on
-its own). `PatrolSpeedX`/`PatrolSpeedY` are always a positive magnitude, never
-a direction - the initial heading is inferred automatically (toward whichever
+its own) - unlike `MovingEnemy`, `KinematicObject`'s horizontal axis has no
+"entire world width" default; both axes are opt-in via explicit bounds only.
+`PatrolSpeedX`/`PatrolSpeedY` are always a positive magnitude, never a
+direction - the initial heading is inferred automatically (toward whichever
 bound is farther from the spawn position) unless overridden by
 `PatrolInitialDirectionX` (`Left` or `Right`) / `PatrolInitialDirectionY`
 (`Up` or `Down`), the `KinematicObject` equivalent of `MovingEnemy`'s
@@ -815,7 +860,10 @@ bound is farther from the spawn position) unless overridden by
 the axis-agnostic `Min`/`Max` wording used here previously, since each key
 name already identifies its own axis. Remember world Y increases downward
 (see docs/Architecture.md's Coordinate System), so `Down` means toward the
-axis's max bound, same as `Up` means toward its min bound:
+axis's max bound, same as `Up` means toward its min bound. Note
+`KinematicObject` moves at a constant, prescribed velocity rather than
+force/gravity integration, so it has no equivalent of `MovingEnemy`'s
+gravity-asymmetric vertical patrol described above:
 
 ```ini
 [HorizontalPlatform]
@@ -828,7 +876,7 @@ PatrolMaxX = 24
 PatrolSpeedX = 8
 PatrolInitialDirectionX = Left
 
-[VerticalPlatform]
+
 Asset = SteelPlatform
 Clip = default
 Kind = KinematicObject

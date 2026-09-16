@@ -1,6 +1,6 @@
 using ASCII_Hero.Client.Game.World;
 
-namespace ASCII_Hero.Client.Game.Camera;
+namespace ASCII_Hero.Client.Game.Rendering;
 
 /// <summary>
 /// A camera that follows a target's bounding box using a "dead zone": it only scrolls once the
@@ -10,7 +10,7 @@ namespace ASCII_Hero.Client.Game.Camera;
 /// left to reveal) can walk right up to the edge of the screen instead of the camera trying
 /// (and failing) to keep it centered.
 /// </summary>
-public class Camera2D
+public class Camera
 {
     /// <summary>Top-left world position visible on screen, in world cells.</summary>
     public Vector2D Position { get; private set; }

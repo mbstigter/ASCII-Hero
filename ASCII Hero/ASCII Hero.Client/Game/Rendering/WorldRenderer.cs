@@ -1,5 +1,4 @@
 using ASCII_Hero.Client.Game.Assets;
-using ASCII_Hero.Client.Game.Camera;
 using ASCII_Hero.Client.Game.World;
 
 namespace ASCII_Hero.Client.Game.Rendering;
@@ -17,7 +16,7 @@ public class WorldRenderer
     public double CellWidthPixels { get; set; } = 16;
     public double CellHeightPixels { get; set; } = 24;
 
-    public List<Glyph> BuildFrame(World2D world, Camera2D camera, double viewportWidthCells, double viewportHeightCells)
+    public List<Glyph> BuildFrame(World2D world, Camera camera, double viewportWidthCells, double viewportHeightCells)
     {
         var glyphs = new List<Glyph>();
 
@@ -45,7 +44,7 @@ public class WorldRenderer
         return glyphs;
     }
 
-    private void AddBackgroundGlyphs(List<Glyph> glyphs, World2D world, Camera2D camera, double viewportWidthCells, double viewportHeightCells)
+    private void AddBackgroundGlyphs(List<Glyph> glyphs, World2D world, Camera camera, double viewportWidthCells, double viewportHeightCells)
     {
         var chars = world.BackgroundChars;
         var height = chars.GetLength(0);
@@ -79,7 +78,7 @@ public class WorldRenderer
         }
     }
 
-    private void AddGameObjectGlyphs(List<Glyph> glyphs, Body2D gameObject, World2D world, Camera2D camera)
+    private void AddGameObjectGlyphs(List<Glyph> glyphs, Body2D gameObject, World2D world, Camera camera)
     {
         var frame = gameObject.Frame;
         var emptyChar = gameObject.Sprite.EmptyChar;
@@ -115,7 +114,7 @@ public class WorldRenderer
         }
     }
 
-    private Glyph ToGlyph(Vector2D worldPosition, char character, string? foreColor, string? backColor, Camera2D camera)
+    private Glyph ToGlyph(Vector2D worldPosition, char character, string? foreColor, string? backColor, Camera camera)
     {
         var relative = worldPosition - camera.Position;
         var pixelX = relative.X * CellWidthPixels;

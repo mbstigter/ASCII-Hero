@@ -1,5 +1,5 @@
 using ASCII_Hero.Client.Game.Assets;
-using ASCII_Hero.Client.Game.Input;
+using ASCII_Hero.Client.Game.Browser;
 using ASCII_Hero.Client.Game.World;
 
 namespace ASCII_Hero.Client.Game.Physics;
@@ -456,7 +456,7 @@ public class PhysicsSystem
         // the same way, alongside gravity, before the single acceleration/integration step below.
         if (body is IPatrolBody patrolBody)
         {
-            patrolBody.UpdatePatrolDirection();
+            patrolBody.UpdatePatrolDirection(world.Gravity);
             netForce += patrolBody.PatrolForce;
         }
 

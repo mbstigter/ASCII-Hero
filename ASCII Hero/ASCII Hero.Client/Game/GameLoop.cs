@@ -1,12 +1,9 @@
 using ASCII_Hero.Client.Game.Assets;
 using ASCII_Hero.Client.Game.Browser;
-using ASCII_Hero.Client.Game.Camera;
-using ASCII_Hero.Client.Game.Input;
 using ASCII_Hero.Client.Game.Menu;
 using ASCII_Hero.Client.Game.Physics;
 using ASCII_Hero.Client.Game.Rendering;
 using ASCII_Hero.Client.Game.World;
-using ASCII_Hero.Client.Game.Animation;
 using Microsoft.JSInterop;
 
 namespace ASCII_Hero.Client.Game;
@@ -49,7 +46,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private readonly InputState _input = new();
     private readonly PhysicsSystem _physics = new();
     private readonly CollisionSystem _collision = new();
-    private readonly Camera2D _camera = new();
+    private readonly Camera _camera = new();
     private readonly WorldRenderer _renderer = new();
     private readonly AnimationSystem _animation = new();
 

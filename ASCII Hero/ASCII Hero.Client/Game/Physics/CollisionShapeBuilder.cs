@@ -15,7 +15,7 @@ public static class CollisionShapeBuilder
     /// run are merged vertically into a single rectangle. This keeps the rectangle count small
     /// for typical blocky ASCII sprites without requiring true per-pixel/polygon collision.
     /// </summary>
-    public static IReadOnlyList<Rect2D> DeriveRectangles(char[,] grid, char emptyChar)
+    public static IReadOnlyList<Rect> DeriveRectangles(char[,] grid, char emptyChar)
     {
         var height = grid.GetLength(0);
         var width = grid.GetLength(1);
@@ -47,7 +47,7 @@ public static class CollisionShapeBuilder
         }
 
         // Step 2: merge vertically-identical runs (same start/width) across consecutive rows.
-        var rectangles = new List<Rect2D>();
+        var rectangles = new List<Rect>();
         var consumed = new bool[height][];
         for (var row = 0; row < height; row++)
         {
@@ -81,7 +81,7 @@ public static class CollisionShapeBuilder
                     nextRow++;
                 }
 
-                rectangles.Add(new Rect2D(run.Start, row, run.Width, mergedRows));
+                rectangles.Add(new Rect(run.Start, row, run.Width, mergedRows));
             }
         }
 

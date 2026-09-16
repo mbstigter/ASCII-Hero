@@ -2,6 +2,53 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## `MovingEnemy2D` patrol generalized to independent X/Y axes, with gravity-asymmetric vertical patrol
+
+- **`IPatrolBody`/`MovingEnemy2D`'s patrol changed from a single X-only range
+  to independent, nullable `PatrolMinX`/`PatrolMaxX` and `PatrolMinY`/
+  `PatrolMaxY` bounds**, each bouncing between its own bounds on its own
+  schedule - a body with both axes configured therefore patrols diagonally
+  with no separate "diagonal mode" needed, the same way `KinematicObject2D`
+  already supported independent per-axis bounds, just applied to
+  `MovingEnemy2D`'s force-based (rather than velocity-driven) movement.
+  `SetPatrol` now takes both axes' bounds/cruise speed together (an axis with
+  both bounds null simply isn't patrolled on that axis); `PatrolCruiseSpeed`
+  (X) and the new `PatrolCruiseSpeedY` let the two axes cruise at different
+  paces. `IPatrolBody.PatrolMinX`/`PatrolMaxX` became nullable to match, and
+  `UpdatePatrolDirection()` gained a `gravity` parameter (passed by
+  `PhysicsSystem.StepMovingBodyWithForces` from `world.Gravity`) so vertical
+  patrol can react to it - see below.
+- **Vertical patrol is deliberately gravity-asymmetric when
+  `GravityAffected` is true**: while heading up (toward `PatrolMinY`),
+  `MovingEnemy2D.UpdatePatrolDirection` subtracts `mass * gravity` from the
+  Y patrol force in addition to the ordinary proportional term, cancelling
+  gravity's own separately-added contribution so the same proportional gain
+  that already works for horizontal patrol can actually reach its target
+  climb speed instead of asymptoting below it under a constant opposing
+  pull. While heading down (toward `PatrolMaxY`), no such adjustment is
+  applied - the plain proportional force already lets gravity's own pull
+  carry most of the descent on its own, only correcting once actual
+  velocity overshoots the target speed, which reads as a controlled glide
+  rather than the enemy fighting its own fall. A separate "descend force
+  multiplier" constant was considered and rejected: the plain proportional
+  controller already produces the desired glide behavior on its own (it's a
+  feedback term, not a constant thrust), so gravity-cancellation is only
+  ever needed on the ascending leg, where it's what makes reaching the
+  target speed possible at all rather than shaping a particular feel.
+  `GravityAffected = false` still patrols vertically fully symmetrically
+  (no cancellation needed either way), unchanged from how horizontal-only
+  patrol already worked without gravity in the mix.
+- **`World2D.LoadAsync`'s `MovingEnemy` placement parsing** now forwards the
+  previously-parsed-but-discarded `PatrolMinY`/`PatrolMaxY`/
+  `PatrolInitialDirectionY` into `MovingEnemy2D.SetPatrol`, and gained a new
+  `PatrolCruiseSpeedY` key (falling back to `PatrolCruiseSpeed` itself, then
+  `MovingEnemy2D.DefaultPatrolCruiseSpeed`, if unset). The existing "entire
+  world width" default for unconfigured X bounds is preserved for
+  horizontal/no-axis-specified patrol, but is skipped when a placement
+  configures `PatrolMinY`/`PatrolMaxY` with no explicit X bounds at all, so
+  a vertical-only patroller doesn't also silently sweep the full world
+  width on X.
+
 ## Player facing now driven by raw move-input intent, not velocity-relative-to-surface
 
 - **Replaced `Player2D`'s velocity-relative-to-platform facing rule with a

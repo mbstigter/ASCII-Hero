@@ -1,4 +1,4 @@
-namespace ASCII_Hero.Client.Game.Input;
+namespace ASCII_Hero.Client.Game.Browser;
 
 /// <summary>Tracks which keyboard keys are currently held down, keyed by JS KeyboardEvent.code.</summary>
 public class InputState
