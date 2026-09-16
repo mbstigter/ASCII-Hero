@@ -7,7 +7,26 @@ namespace ASCII_Hero.Client.Game.Assets;
 /// <param name="Density">Relative mass per world-cell "volume"; drives <see cref="World.Body2D.Mass"/>.</param>
 /// <param name="Friction">0 = frictionless, 1 = very grippy.</param>
 /// <param name="Restitution">Bounciness; 0 = no bounce, 1 = perfectly elastic.</param>
-public readonly record struct Material(double Density, double Friction, double Restitution);
+/// <param name="ForegroundColor">
+/// Optional single-character color code (see <c>Global/Colors.ini</c>) used as this material's
+/// own tier in the render color-resolution chain - lower priority than a sprite/object's own
+/// color but higher than the level's default (see <see cref="Rendering.GlyphBuilder.ResolveColor"/>
+/// via <see cref="Rendering.WorldRenderer"/>). Null if this material doesn't define one, in which
+/// case the chain simply continues past it unchanged.
+/// </param>
+/// <param name="BackgroundColor">See <see cref="ForegroundColor"/>.</param>
+/// <param name="DefaultChar">
+/// Optional default glyph representing this material. Reserved for future use - not currently
+/// consumed by any loader/renderer (every sprite/background already authors its own
+/// <c>_characters.txt</c>, so there is no current fallback scenario that would read this).
+/// </param>
+public readonly record struct Material(
+    double Density,
+    double Friction,
+    double Restitution,
+    char? ForegroundColor = null,
+    char? BackgroundColor = null,
+    char? DefaultChar = null);
 
 /// <summary>
 /// The shared material library (Global/Materials.ini merged with an optional level-local
@@ -58,7 +77,12 @@ public class MaterialLibrary
             var density = IniValueParser.ParseDouble(section.GetValueOrDefault("Density"));
             var friction = IniValueParser.ParseDouble(section.GetValueOrDefault("Friction"));
             var restitution = IniValueParser.ParseDouble(section.GetValueOrDefault("Restitution"));
-            materials[sectionName] = new Material(density, friction, restitution);
+            var foregroundColor = IniValueParser.ParseColorCode(section.GetValueOrDefault("ForegroundColor"));
+            var backgroundColor = IniValueParser.ParseColorCode(section.GetValueOrDefault("BackgroundColor"));
+            var defaultChar = section.TryGetValue("DefaultChar", out var defaultCharText) && !string.IsNullOrEmpty(defaultCharText)
+                ? defaultCharText[0]
+                : (char?)null;
+            materials[sectionName] = new Material(density, friction, restitution, foregroundColor, backgroundColor, defaultChar);
         }
     }
 }

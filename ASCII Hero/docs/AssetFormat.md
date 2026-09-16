@@ -561,11 +561,13 @@ Level1_thumb_backgroundcolors.txt   (optional)
   (§3.2) renders for every world in its row, so every world's thumbnail needs
   to agree on one fixed size for that row to line up.
 - Animates exactly like a sprite clip if given more than one `//end`-separated
-  frame and an `[Animation]` section in that world's own `settings.ini` (same
-  `FrameDurationSeconds`/`Mode`/`DefaultFrame` keys as a sprite's own
-  `[Animation]`/`[Animation.{clipName}]` - see §2.4). Absent `[Animation]`,
-  a multi-frame thumbnail simply holds on its first (or `DefaultFrame`)
-  frame forever, same as an un-configured sprite clip.
+  frame and an `[Animation.Thumbnail]` section in that world's own
+  `settings.ini` (same `FrameDurationSeconds`/`Mode`/`DefaultFrame` keys as a
+  sprite's own `[Animation]`/`[Animation.{clipName}]` - see §2.4), named
+  distinctly from a sprite's own `[Animation]` since a thumbnail isn't a
+  clip and this section lives in the world's `settings.ini`, not a sprite's.
+  Absent `[Animation.Thumbnail]`, a multi-frame thumbnail simply holds on its
+  first (or `DefaultFrame`) frame forever, same as an un-configured sprite clip.
 - Background color follows the same resolution precedence as an in-game cell
   (§2.4): a cell's own `_thumb_backgroundcolors.txt` code, then this world's
   own `[Colors] DefaultBackgroundColor` (§3), then the hardcoded engine
@@ -649,11 +651,57 @@ Kind = MovingEnemy
 Facing = Left
 ```
 
-Every placement section requires two keys: `Asset` (which sprite asset to spawn)
-and `Kind` (which of the game's object categories it spawns as - see below).
-Both are validated at load time; a section missing either throws a load error
-rather than silently spawning something unintended. `Clip` (default `"default"`)
-selects which clip within the asset to display/collide against.
+Every placement section requires `Kind` (which of the game's object categories
+it spawns as - see below) plus **either** `Asset` (which sprite asset to spawn)
+**or** `Material` + `Width` + `Height` (a materials-only object with no sprite
+asset at all - see below). Both are validated at load time; a section with
+neither `Asset` nor `Material`, or missing `Kind`, throws a load error rather
+than silently spawning something unintended. `Clip` (default `"default"`)
+selects which clip within the asset to display/collide against, and only
+applies to `Asset`-based sections.
+
+#### Materials-only objects
+
+A section may skip `Asset`/`Clip` entirely and instead name a `Material` (one
+already defined in `Materials.ini`, see §1) plus a fixed `Width`/`Height` in
+cells. This spawns a solid rectangular body of that size, filled with that
+material's own `DefaultChar` glyph and colored by that material's own
+`ForegroundColor`/`BackgroundColor` - with no authored sprite asset/`_characters.txt`
+required at all:
+
+```ini
+[GraniteBlock]
+Material = Granite
+Width = 4
+Height = 2
+Kind = StaticObject
+```
+
+The material named must have a `DefaultChar` configured in `Materials.ini`;
+one that doesn't (most don't, by default) cannot be used for a materials-only
+object, and loading throws an error explaining which key is missing. This is
+the only thing that makes `DefaultChar` meaningful - it has no effect on any
+`Asset`-based placement, whose glyphs always come from its own sprite's
+`_characters.txt`.
+
+Materials-only objects are meant for simple, uniformly-filled shapes only
+(a solid slab of one material) - they have no `Clip`/`EffectClip`, no tiling
+(`Width`/`Height` already give the placement's final size directly, so
+`Repeat`/`TileAxis` do not apply), and no per-cell layering (e.g. a strip of
+grass on top of brick needs an authored sprite, not a materials-only object).
+The table below summarizes what each style supports:
+
+| Capability | `Asset`-based object | Materials-only object |
+| --- | --- | --- |
+| Requires authored sprite files | Yes | No |
+| Size source | Sprite's own `_characters.txt` (optionally tiled via `Repeat`) | `Width`/`Height` keys |
+| Per-cell character/color layering | Yes | No (one glyph/color for the whole shape) |
+| `Clip`/`EffectClip` | Yes | No |
+| `Repeat`/`TileAxis` tiling | Yes (if the asset is tileable) | No (not applicable) |
+| Glyph source | Sprite's authored characters | Material's `DefaultChar` |
+| Color source | Sprite defaults, then `Material` override, then world default | Material's `ForegroundColor`/`BackgroundColor` |
+| `Material` key's role | Optional override of the spawned material | Required - names the object's only material |
+| Best for | Animated/detailed/multi-material objects | Simple solid slabs (platforms, blocks) of one material |
 
 Each `[ObjectCodes]` entry maps a placement code to a section name, which in turn
 specifies which sprite asset/clip to spawn and any additional per-type properties.
@@ -981,12 +1029,13 @@ ForegroundColor = Y
   its resolved material's other physical defaults.
   Applies to `Player` too, not just non-player object types.
 - **`ForegroundColor`**/**`BackgroundColor`** — a single-character color code
-  (see `Global/Colors.ini`), the highest-precedence tier in
-  `WorldRenderer`'s color-resolution chain after the cell's own per-cell code:
+  (see `Global/Colors.ini`), a tier in `WorldRenderer`'s color-resolution
+  chain, in precedence order after the cell's own per-cell code:
   per-cell layer file &gt; this section's override &gt; the sprite asset's own
-  `[Colors]` default &gt; the level's own `[Colors]` default (§3, above) &gt; a
-  hardcoded engine fallback. Absent means this object type has no override
-  and the chain continues to the asset default unchanged.
+  `[Colors]` default &gt; this object's resolved material's own
+  `ForegroundColor`/`BackgroundColor` (see §4.2) &gt; the level's own `[Colors]`
+  default (§3, above) &gt; a hardcoded engine fallback. Absent at any tier means
+  that tier has no color of its own and the chain continues unchanged.
 
 Any non-`Player` object type may also set `Passable`, `Climbable`, and/or
 `Hangable` (each default `false`, except `Passable` which defaults to `true`
@@ -1030,9 +1079,26 @@ Hangable = true
 ### 4.1 `Global/Colors.ini`
 
 Defines the shared color palette referenced by every `_foregroundcolors.txt`/
-`_backgroundcolors.txt` file across all sprites and worlds. (Format finalized
-when the color system is implemented — placeholder structure: one section or
-line per color code mapping to an RGB value.)
+`_backgroundcolors.txt` file across all sprites and worlds, and by every
+`DefaultForegroundColor`/`DefaultBackgroundColor`/`ForegroundColor`/
+`BackgroundColor` key elsewhere in the format. One `[Colors]` section, each
+key a single-character code (`0`-`9` plus `A`-`Z`, 36 possible codes)
+mapping to a `#RRGGBB` hex value, e.g.:
+
+```ini
+[Colors]
+0 = #000000 ; Absolute Black
+3 = #FFFFFF ; Pure White
+L = #992200 ; Fiery Crimson / Magma Base
+```
+
+A world's own `Colors.ini` (if present) is merged over this file per the
+Global/World fallback rule in §1.1. **If a world-local `Colors.ini`
+redefines what an existing code means, it should be paired with a
+world-local `Materials.ini`** for any material whose `ForegroundColor`/
+`BackgroundColor` (see §4.2) depends on that code — otherwise that
+material's default color silently resolves against the unrelated global
+meaning of that same code rather than the world's own repurposed one.
 
 ### 4.2 `Global/Materials.ini`
 
@@ -1044,32 +1110,57 @@ and by `DefaultMaterial` in any `settings.ini`.
 Density = 2.5
 Friction = 0.4
 Restitution = 0.1
+ForegroundColor = J
+BackgroundColor = I
+DefaultChar = ░
 
 [Rubber]
 Density = 1.1
 Friction = 0.9
 Restitution = 0.8
+ForegroundColor = 1
+BackgroundColor = 0
+DefaultChar = ▓
 
 [Steel]
 Density = 7.8
 Friction = 0.3
 Restitution = 0.3
+ForegroundColor = U
+BackgroundColor = S
+DefaultChar = ▒
 
 [Air]
 Density = 0.0012
 Friction = 0.0
 Restitution = 0.0
+ForegroundColor = J
+DefaultChar = ' '
 
 [Water]
 Density = 1.0
 Friction = 0.05
 Restitution = 0.0
+ForegroundColor = I
+BackgroundColor = H
+DefaultChar = ~
 ```
 
 Fields:
 - **Density** — relative mass per world-cell "volume"; drives mass and buoyancy.
 - **Friction** — `0` = frictionless, `1` = very grippy.
 - **Restitution** — bounciness; `0` = no bounce, `1` = perfectly elastic.
+- **ForegroundColor**/**BackgroundColor** (optional) — a single-character
+  color code (see §4.1), this material's own fallback tier in the render
+  color-resolution chain (see the `ForegroundColor`/`BackgroundColor` object
+  placement fields in §3, above, for the full precedence order). Lets a
+  sprite that has no `[Colors]` default of its own still render in a color
+  appropriate to its physical material (e.g. any un-styled `Steel`-backed
+  object rendering in a metallic gray) without every such sprite needing to
+  repeat the same color pairing individually.
+- **DefaultChar** (optional) — a default glyph representing this material.
+  Reserved for future use — not currently read by any loader/renderer, since
+  every sprite/background today always authors its own `_characters.txt`.
 
 ### 4.3 `Global/Settings.ini`
 

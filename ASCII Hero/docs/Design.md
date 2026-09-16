@@ -12,7 +12,7 @@ not like a pixel-art game with ASCII characters placed on top.
 - Pure ASCII/text-mode visual language.
 - Monospaced glyphs form the game world (e.g. `@`, `#`, `█`, `░`, `│`, `─`).
 - Colour is part of the ASCII visual language. Each cell's foreground/background
-  colour is a single-character code (`0-9` plus `A-V`, 32 possible codes)
+  colour is a single-character code (`0-9` plus `A-Z`, 36 possible codes)
   looked up in a shared palette (`Colors.ini`, see
   [AssetFormat.md](AssetFormat.md)). Codes are allocated mnemonically and
   added as needed (e.g. `K`=blacK, `W`=White, `R`=Red) rather than filled in

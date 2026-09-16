@@ -1,7 +1,7 @@
-Y  
-P  
-PPT
+N  
+F  
+FFD
 //end
-FY 
-P  
-PPT
+BN 
+F  
+FFD

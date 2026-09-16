@@ -1,7 +1,6 @@
-FRB
-FFF
-   
+BLI
+BBB
+
 //end
-FRB
-FFF
-   
+BLI
+BBB

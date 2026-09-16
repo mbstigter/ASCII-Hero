@@ -32,6 +32,9 @@ public static class GlyphBuilder
     /// might be its grid's "no code here" marker should pass <c>null</c> for that slot itself
     /// (rather than the raw code) so it's skipped the same as any other absent code - see
     /// docs/AssetFormat.md §2.5/§4 for the format/precedence this implements for world rendering.
+    /// For a game object, the precedence order is: per-cell code &gt; object override &gt;
+    /// sprite default &gt; resolved material's default (see <see cref="Assets.Material"/>) &gt;
+    /// level default &gt; <paramref name="hardcodedFallback"/>.
     /// </summary>
     public static string? ResolveColor(ColorPalette palette, string? hardcodedFallback, params ReadOnlySpan<char?> codesInPrecedenceOrder)
     {

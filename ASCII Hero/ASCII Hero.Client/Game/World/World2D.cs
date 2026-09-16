@@ -178,13 +178,23 @@ public class World2D
         // can share one asset while asking for different clips (e.g. a "Spikes" placement using
         // an enemy asset's "idle" clip and a "FlameTrap" placement using the same asset's "trap"
         // and "burst" clips), so loading must be driven by the union, not any single section.
+        // A section may instead skip Asset entirely and use Material/Width/Height (see
+        // docs/AssetFormat.md §3.x) - such sections need no on-disk sprite at all, so they are
+        // simply skipped here; their synthesized asset is built on demand in the placement loop
+        // below (cheap enough in-memory work that pre-loading/caching it up front like a real
+        // sprite fetch isn't worth the complexity).
         var clipNamesByAsset = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
         foreach (var sectionName in objectsIni.Section("ObjectCodes").Values.Distinct())
         {
             var objectSection = objectsIni.Section(sectionName);
             if (!objectSection.TryGetValue("Asset", out var assetName))
             {
-                throw new FormatException($"Section '{sectionName}' of world '{worldName}' is missing required key 'Asset'.");
+                if (objectSection.TryGetValue("Material", out _))
+                {
+                    continue;
+                }
+
+                throw new FormatException($"Section '{sectionName}' of world '{worldName}' is missing required key 'Asset' (or 'Material' for a materials-only object).");
             }
 
             var clipName = objectSection.TryGetValue("Clip", out var clip) ? clip : "default";
@@ -216,6 +226,12 @@ public class World2D
             progress?.Report(assetsToLoad == 0 ? 5.0 : 4.0 + (double)assetsLoaded / assetsToLoad);
         }
 
+        // Materials-only sections (see above) each get their own synthesized asset, keyed by
+        // material name + size so identical placements (e.g. two same-size platforms of the same
+        // material) share one synthesized asset instead of rebuilding an identical grid per
+        // placement.
+        var syntheticAssetCache = new Dictionary<(string Material, int Width, int Height), SpriteAsset>();
+
         for (var row = 0; row < height; row++)
         {
             // The placement loop itself is now purely synchronous (every sprite it needs was
@@ -239,9 +255,11 @@ public class World2D
                 }
 
                 var objectSection = objectsIni.Section(sectionName);
-                if (!objectSection.TryGetValue("Asset", out var assetName))
+                var hasAsset = objectSection.TryGetValue("Asset", out var assetName);
+                var hasMaterial = objectSection.TryGetValue("Material", out var syntheticMaterialName);
+                if (!hasAsset && !hasMaterial)
                 {
-                    throw new FormatException($"Section '{sectionName}' of world '{worldName}' is missing required key 'Asset'.");
+                    throw new FormatException($"Section '{sectionName}' of world '{worldName}' is missing required key 'Asset' (or 'Material' for a materials-only object).");
                 }
 
                 if (!objectSection.TryGetValue("Kind", out var kind))
@@ -249,17 +267,59 @@ public class World2D
                     throw new FormatException($"Section '{sectionName}' of world '{worldName}' is missing required key 'Kind'.");
                 }
 
-                var clipName = objectSection.TryGetValue("Clip", out var clip) ? clip : "default";
                 var repeatCount = objectSection.TryGetValue("Repeat", out var repeatText) && IniValueParser.TryParseInt(repeatText, out var parsedRepeat)
                     ? parsedRepeat
                     : 1;
                 var position = new Vector2D(col, row);
-                var effectClipName = objectSection.TryGetValue("EffectClip", out var effectClipText) ? effectClipText : null;
 
-                // The sprite (with every clip this section could ever need, including its effect
-                // clip if any) was already loaded and cached during the pre-scan above.
-                var sprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, [clipName], worldName);
-                var frameIndex = sprite.GetClip(clipName).DefaultFrame;
+                SpriteAsset sprite;
+                string clipName;
+                int frameIndex;
+                string? effectClipName;
+
+                if (hasAsset)
+                {
+                    clipName = objectSection.TryGetValue("Clip", out var clip) ? clip : "default";
+                    effectClipName = objectSection.TryGetValue("EffectClip", out var effectClipText) ? effectClipText : null;
+
+                    // The sprite (with every clip this section could ever need, including its
+                    // effect clip if any) was already loaded and cached during the pre-scan above.
+                    sprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName!, [clipName], worldName);
+                    frameIndex = sprite.GetClip(clipName).DefaultFrame;
+                }
+                else
+                {
+                    // Materials-only object (see docs/AssetFormat.md §3.x): no Asset/Clip/EffectClip -
+                    // Width/Height give the placement's own size directly, and the material's own
+                    // DefaultChar (not an authored sprite grid) supplies every cell's glyph.
+                    if (!objectSection.TryGetValue("Width", out var widthText) || !IniValueParser.TryParseInt(widthText, out var syntheticWidth) || syntheticWidth < 1)
+                    {
+                        throw new FormatException($"Section '{sectionName}' of world '{worldName}' has 'Material' but is missing a valid 'Width'.");
+                    }
+
+                    if (!objectSection.TryGetValue("Height", out var heightText) || !IniValueParser.TryParseInt(heightText, out var syntheticHeight) || syntheticHeight < 1)
+                    {
+                        throw new FormatException($"Section '{sectionName}' of world '{worldName}' has 'Material' but is missing a valid 'Height'.");
+                    }
+
+                    var syntheticMaterial = world.Materials.Get(syntheticMaterialName);
+                    if (syntheticMaterial.DefaultChar is not { } syntheticGlyph)
+                    {
+                        throw new FormatException($"Section '{sectionName}' of world '{worldName}' uses materials-only Material '{syntheticMaterialName}', which has no DefaultChar configured in Materials.ini.");
+                    }
+
+                    var syntheticKey = (syntheticMaterialName!, syntheticWidth, syntheticHeight);
+                    if (!syntheticAssetCache.TryGetValue(syntheticKey, out var syntheticSprite))
+                    {
+                        syntheticSprite = SyntheticSpriteFactory.Build(syntheticMaterialName!, syntheticGlyph, syntheticWidth, syntheticHeight);
+                        syntheticAssetCache[syntheticKey] = syntheticSprite;
+                    }
+
+                    sprite = syntheticSprite;
+                    clipName = "default";
+                    frameIndex = 0;
+                    effectClipName = null;
+                }
 
 
                 var gravityAffected = !objectSection.TryGetValue("GravityAffected", out var gravityText) || !bool.TryParse(gravityText, out var parsedGravity) || parsedGravity;

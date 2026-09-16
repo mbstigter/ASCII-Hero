@@ -195,11 +195,11 @@ public static class WorldCatalog
 
         var defaultBackColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
 
-        // An optional [Animation] section (same keys/semantics as a sprite clip's own
+        // An optional [Animation.Thumbnail] section (same keys/semantics as a sprite clip's own
         // [Animation]/[Animation.{clipName}] section - see docs/AssetFormat.md §2.4) times the
         // thumbnail's frames. Absent entirely, the thumbnail never animates - even if it happens
         // to have more than one frame - exactly like an un-configured sprite clip.
-        var animationSection = settings.Section("Animation");
+        var animationSection = settings.Section("Animation.Thumbnail");
         var frameDurationSeconds = animationSection.TryGetValue("FrameDurationSeconds", out var durationText)
             ? SpriteLoader.ParseFrameDurationSeconds(durationText)
             : null;

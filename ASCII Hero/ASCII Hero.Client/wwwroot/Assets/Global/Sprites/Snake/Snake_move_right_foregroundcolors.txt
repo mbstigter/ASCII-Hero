@@ -1,7 +1,7 @@
-  Y
-  P
-TPP
+  N
+  F
+DFF
 //end
- YF
-  P
-TPP
+ NB
+  F
+DFF

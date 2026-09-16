@@ -1,26 +1,26 @@
                 
- Y   N   Y   N  
+ N   X   N   X  
                 
                 
                 
                 
                 
-CCCCCCCCOOOOOOOO
+UUUUUUUUAAAAAAAA
 //end
                 
                 
- Y       Y   N  
-     N          
+ N       N   X  
+     X          
                 
                 
                 
-CCCCCCCCOOOOOOOO
+UUUUUUUUAAAAAAAA
 //end
                 
                 
                 
- Y       Y     
-             N  
-     N          
+ N       N      
+             X  
+     X          
                 
-CCCCCCCCOOOOOOOO
+UUUUUUUUAAAAAAAA

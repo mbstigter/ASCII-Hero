@@ -1,7 +1,7 @@
-YYY
-Y Y
-YYY
+NNN
+N N
+NNN
 //end
- Y 
- Y 
- Y 
+ N 
+ N 
+ N 

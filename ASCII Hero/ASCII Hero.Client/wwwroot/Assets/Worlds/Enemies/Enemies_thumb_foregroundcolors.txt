@@ -1,35 +1,35 @@
                 
-    2           
+    Y           
                 
-      HHHHHH    
-        T     1 
-    HHHHHH      
-        T       
-HHHHHHHHHHHHHHHH
+      AAAAAA    
+        D     Y 
+    AAAAAA      
+        D       
+AAAAAAAAAAAAAAAA
 //end
                 
-     2          
+     Y          
                 
-      HHHHHH  1 
-       T        
-    HHHHHH      
-         T      
-HHHHHHHHHHHHHHHH
+      AAAAAA  Y 
+       D        
+    AAAAAA      
+         D      
+AAAAAAAAAAAAAAAA
 //end
                 
-      2         
-              1
-      HHHHHH    
-      T         
-    HHHHHH      
-          T     
-HHHHHHHHHHHHHHHH
+      Y         
+              Y 
+      AAAAAA    
+      D         
+    AAAAAA      
+          D     
+AAAAAAAAAAAAAAAA
 //end
                 
-       2      1 
+       Y      Y 
                 
-      HHHHHH    
-     T          
-    HHHHHH      
-           T    
-HHHHHHHHHHHHHHHH
+      AAAAAA    
+     D          
+    AAAAAA      
+           D    
+AAAAAAAAAAAAAAAA

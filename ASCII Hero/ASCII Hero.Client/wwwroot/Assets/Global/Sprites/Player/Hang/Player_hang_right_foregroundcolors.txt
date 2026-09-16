@@ -1,7 +1,7 @@
-FFF
-FRF
 BBB
+BLB
+III
 //end
-FFF
-FRF
 BBB
+BLB
+III

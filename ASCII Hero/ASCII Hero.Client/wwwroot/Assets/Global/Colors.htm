@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>36 Color Palette - Option C</title>
+    <style>
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            background-color: #121214;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+            padding: 16px;
+            color: #ffffff;
+        }
+        .palette-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+            gap: 10px;
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        .swatch-card {
+            display: flex;
+            align-items: center;
+            border-radius: 8px;
+            overflow: hidden;
+            background-color: #1e1e24;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+        .color-box {
+            width: 60px;
+            height: 60px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 1.1rem;
+            font-family: monospace;
+            border-right: 1px solid rgba(0,0,0,0.1);
+        }
+        .desc-box {
+            padding: 0 14px;
+            font-size: 0.85rem;
+            line-height: 1.3;
+            color: #d1d1d6;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="palette-grid">
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #000000; color: #FFFFFF;">0</div>
+            <div class="desc-box">Absolute Black (Pure Black)</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #3A3D45; color: #FFFFFF;">1</div>
+            <div class="desc-box">Charcoal Gray (Dark Neutral)</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #9AA0A6; color: #000000;">2</div>
+            <div class="desc-box">Silver Gray (Light Neutral)</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #FFFFFF; color: #000000;">3</div>
+            <div class="desc-box">Pure White (Absolute White)</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #3B1B19; color: #FFFFFF;">4</div>
+            <div class="desc-box">Deep Shadow Skin / Leather</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #7A3E34; color: #FFFFFF;">5</div>
+            <div class="desc-box">Shadow Flesh / Mid Leather</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #D47E6A; color: #000000;">6</div>
+            <div class="desc-box">Base Skin Tone / Light Leather</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #FFC5B2; color: #000000;">7</div>
+            <div class="desc-box">Highlight Skin / Peach Tone</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #29170E; color: #FFFFFF;">8</div>
+            <div class="desc-box">Deep Soil / Dark Wood Shadow</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #593622; color: #FFFFFF;">9</div>
+            <div class="desc-box">Bark Brown / Medium Wood</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #9E6846; color: #FFFFFF;">A</div>
+            <div class="desc-box">Warm Timber / Base Wood</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #D9A57E; color: #000000;">B</div>
+            <div class="desc-box">Light Wood Highlight / Sand</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #0B2B16; color: #FFFFFF;">C</div>
+            <div class="desc-box">Deep Forest Shadow Green</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #1C5E33; color: #FFFFFF;">D</div>
+            <div class="desc-box">Pine / Forest Base Green</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #3CA35B; color: #FFFFFF;">E</div>
+            <div class="desc-box">Lush Leaf Green</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #9CE669; color: #000000;">F</div>
+            <div class="desc-box">Sunlit Spring Green Highlight</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #0A1B36; color: #FFFFFF;">G</div>
+            <div class="desc-box">Deep Ocean Abyss Blue</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #17437A; color: #FFFFFF;">H</div>
+            <div class="desc-box">Deep Sea Blue</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #2E8BC0; color: #FFFFFF;">I</div>
+            <div class="desc-box">Clear Water / Cyan Blue</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #8BE3FF; color: #000000;">J</div>
+            <div class="desc-box">Glacier Ice / Bright Cyan Highlight</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #4A080A; color: #FFFFFF;">K</div>
+            <div class="desc-box">Smoldering Red Shadow</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #992200; color: #FFFFFF;">L</div>
+            <div class="desc-box">Fiery Crimson / Magma Base</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #E66B00; color: #000000;">M</div>
+            <div class="desc-box">Blazing Orange</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #FFD033; color: #000000;">N</div>
+            <div class="desc-box">Bright Flame Yellow Highlight</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #1A0B2E; color: #FFFFFF;">O</div>
+            <div class="desc-box">Void Black-Purple</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #4C1C7A; color: #FFFFFF;">P</div>
+            <div class="desc-box">Arcane Shadow Violet</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #9C36B8; color: #FFFFFF;">Q</div>
+            <div class="desc-box">Magical Energy Pink/Purple</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #FF7AF4; color: #000000;">R</div>
+            <div class="desc-box">Ethereal Arcane Pink Highlight</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #181C24; color: #FFFFFF;">S</div>
+            <div class="desc-box">Dark Iron Shadow</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #353D4D; color: #FFFFFF;">T</div>
+            <div class="desc-box">Cast Iron / Wrought Metal</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #66748E; color: #FFFFFF;">U</div>
+            <div class="desc-box">Polished Steel</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #B0C2DE; color: #000000;">V</div>
+            <div class="desc-box">Chrome Highlight / Reflective Metal</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #3D2506; color: #FFFFFF;">W</div>
+            <div class="desc-box">Dark Bronze Shadow</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #855410; color: #FFFFFF;">X</div>
+            <div class="desc-box">Old Gold / Tarnished Bronze</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #E09E2B; color: #000000;">Y</div>
+            <div class="desc-box">Pure Gold Base</div>
+        </div>
+        <div class="swatch-card">
+            <div class="color-box" style="background-color: #FFEAA3; color: #000000;">Z</div>
+            <div class="desc-box">Glint Gold Highlight</div>
+        </div>
+    </div>
+
+</body>
+</html>

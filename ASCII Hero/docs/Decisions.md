@@ -2,6 +2,91 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## Materials-only world objects (no sprite asset required)
+
+- **A world object section may now name `Material` + `Width` + `Height`
+  instead of `Asset` + `Clip`.** This finally gives `Material.DefaultChar`
+  (previously reserved/data-only, see the palette-widening entry below) a
+  real purpose: it supplies the glyph for a solid rectangular object that has
+  no authored sprite/`_characters.txt` at all - useful for simple slabs like
+  a plain brick/granite platform where authoring a whole sprite asset just to
+  repeat one uniform character would be pure boilerplate.
+- **Implemented as an in-memory synthetic `SpriteAsset`** (see
+  `SyntheticSpriteFactory.cs`), not as a second parallel object pipeline.
+  `World2D.LoadAsync` builds a one-clip, one-frame `SpriteAsset` whose grid is
+  filled with the material's `DefaultChar` and tagged with the material's
+  name in its materials layer, then feeds it into the exact same
+  `Body2D.SetFrame`/`CollisionShapeBuilder`/`WorldRenderer` path used by every
+  other object. This was chosen over teaching those systems a second,
+  sprite-free code path, since it required zero changes to any of them and
+  automatically inherits the existing material-color rendering fallback that
+  was already added for sprite-backed objects.
+- **`Repeat`/`TileAxis` do not apply to materials-only objects** - `Width`/
+  `Height` already give the placement's final size directly, so there is no
+  smaller authored unit to tile. This keeps `Repeat` a placement-level,
+  tiling-specific concept rather than conflating it with "the object's total
+  size", which materials-only objects express directly instead.
+- **Materials-only objects have no per-cell layering** (one glyph/color for
+  the whole shape) and no `Clip`/`EffectClip` - they are intentionally scoped
+  to simple, uniform solid shapes. Anything needing per-cell detail (e.g. a
+  strip of grass on top of brick) still requires an authored sprite asset.
+- **A material used this way must have `DefaultChar` configured in
+  `Materials.ini`**; one that doesn't throws a load-time error naming the
+  missing key, rather than silently spawning an invisible/broken object.
+
+## Color palette widened to 36 codes, `Colors.ini` re-palette, and `Materials.ini` gained default colors/char
+
+- **Palette widened from 32 codes (`0`-`9`/`A`-`V`) to 36 (`0`-`9`/`A`-`Z`)** -
+  no engine change was required beyond documentation (`docs/Design.md`,
+  `Colors.ini`'s own header comment): the loader (`ColorPalette`/`IniDocument`)
+  never validated or restricted which characters could appear as a code, it
+  simply keys a dictionary by whatever single character is present, so
+  widening the *convention* was purely a content/documentation change.
+- **`Colors.ini` was completely replaced** (not merged) with a newly-authored
+  36-color palette, dropping every old code/comment outright rather than
+  keeping old entries alongside new ones. Every `_foregroundcolors.txt`/
+  `_backgroundcolors.txt` cell code, and every `DefaultForegroundColor`/
+  `DefaultBackgroundColor`/`ForegroundColor`/`BackgroundColor` ini value
+  across all sprites/worlds, was remapped from the old palette to the new one
+  via nearest-RGB-distance matching (old->new: `K`->`0`, `W`->`3`, `R`->`L`,
+  `G`->`E`, `B`->`I`, `Y`->`N`, `O`->`M`, `N`->`X`, `S`->`2`, `D`->`1`,
+  `C`->`U`, `P`->`F`, `T`->`D`, `F`->`B`, `H`->`5`, `1`->`Y`, `2`->`9`), so
+  every existing asset keeps rendering visually equivalent to before despite
+  none of the old codes carrying over unchanged.
+- **`Material` (see `MaterialLibrary.cs`) gained optional `ForegroundColor`/
+  `BackgroundColor`/`DefaultChar` fields**, parsed from the same `Materials.ini`
+  sections that already define `Density`/`Friction`/`Restitution`. `WorldRenderer`'s
+  color-resolution chain for game objects gained a new tier for these:
+  per-cell code > object's own `ForegroundColor`/`BackgroundColor` override >
+  sprite's own `[Colors]` default > **this object's resolved material's own
+  default color** > the world's own default color > a hardcoded engine
+  fallback. Placed below the sprite default (a material is a generic,
+  shared-across-many-sprites fallback) but above the world default (a level's
+  own intended palette should still be able to override an object's default
+  physical-material look if desired). `DefaultChar` is reserved/data-only for
+  now - no loader/renderer currently has a scenario needing a material-level
+  glyph fallback, since every sprite/background already always authors its
+  own `_characters.txt`.
+- **Background cells have no material concept**, so the new material-color
+  tier only applies to game objects (`Body2D`-backed, via
+  `WorldRenderer.AddGameObjectGlyphs`), not to `AddBackgroundGlyphs` - there is
+  no per-cell resolved material available for background terrain art today.
+- **Now-redundant explicit color overrides were removed** where they merely
+  duplicated what a material's own new default color already provides (e.g.
+  `TestPhysics_objects.ini`'s Plastic ball placements, which matched
+  `Plastic`'s own new `ForegroundColor`), while overrides that are
+  intentionally different from their material's own color (e.g. the Rubber
+  balls, kept visually distinct from Ball's own default red) were left in
+  place.
+- **World-local `Colors.ini`/`Materials.ini` pairing caveat documented**: a
+  world that overrides `Colors.ini` in a way that changes what an existing
+  code means should also provide its own `Materials.ini` for any material
+  whose `ForegroundColor`/`BackgroundColor` depends on that code - otherwise
+  that material's default color resolves against the global (not the
+  world's repurposed) meaning of the same code. Not enforced by the engine
+  (same as every other Global/World override rule in this format), purely an
+  authoring convention documented in `AssetFormat.md` §4.1.
+
 ## `MovingEnemy2D` patrol generalized to independent X/Y axes, with gravity-asymmetric vertical patrol
 
 - **`IPatrolBody`/`MovingEnemy2D`'s patrol changed from a single X-only range

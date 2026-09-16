@@ -62,9 +62,10 @@ palettes, materials) from disk/HTTP into in-memory game objects.
 - **`ColorPalette`** - the resolved single-character color code -> CSS color
   lookup, merging a world's own optional `Colors.ini` over `Global/Colors.ini`.
 - **`MaterialLibrary`** - the resolved material-name -> `Material` (`Density`,
-  `Friction`, `Restitution`) lookup, merging a world's own optional
-  `Materials.ini` over `Global/Materials.ini`. An unknown/absent material name
-  resolves to a zeroed `Material.Undefined` fallback rather than throwing.
+  `Friction`, `Restitution`, optional `ForegroundColor`/`BackgroundColor`/
+  `DefaultChar`) lookup, merging a world's own optional `Materials.ini` over
+  `Global/Materials.ini`. An unknown/absent material name resolves to a
+  zeroed `Material.Undefined` fallback rather than throwing.
 - **`IniOverrideLoader`** - the shared Global-then-World ini load/merge
   routine used by both `ColorPalette` and `MaterialLibrary` (and any future
   asset needing the same fallback rule): reads `Global/{file}`, then merges an
@@ -93,11 +94,18 @@ palettes, materials) from disk/HTTP into in-memory game objects.
 - **`SpriteFrameTiler`** - repeats a tileable frame's authored unit along its
   declared axis (horizontal or vertical) to build an arbitrary-length
   platform or wall from one small authored unit, at spawn time.
+- **`SyntheticSpriteFactory`** - builds a one-clip, one-frame `SpriteAsset` in
+  memory from a material name/glyph/width/height, for "materials-only" world
+  objects (see docs/AssetFormat.md §3.4) that name a `Material`+`Width`+
+  `Height` instead of an `Asset`+`Clip`. Lets `World2D.LoadAsync` feed such a
+  placement into the exact same `Body2D`/`CollisionShapeBuilder`/
+  `WorldRenderer` path as any sprite-backed object, with no sprite files
+  authored on disk.
 - **`WorldSummary` / `WorldCatalog`** - lightweight, non-gameplay metadata for
   the world-selection screen: a world's `Title` and its fixed 16x8, optionally
   animated thumbnail art (see docs/AssetFormat.md §3.1/§3.2), loaded without
   loading the rest of that world's playable `World2D`.
-  `WorldCatalog.LoadWorldNamesAsync` reads the explicit, authored list of
+
   every playable world from `Global/Worlds.ini` (§4.4) - Blazor WebAssembly
   has no way to list `wwwroot`'s directory contents at runtime, so (like
   `[Stances]`) this is an authored list rather than one inferred from the
@@ -422,7 +430,12 @@ The live game state and the entity types that make it up.
   list of positioned glyphs (background layer plus every object's active
   frame), resolving each cell's color codes through the palette and
   converting world positions to pixel positions via the camera's current
-  view. The world itself is never restricted to a grid; this mapping exists
+  view. A game object's color-resolution chain is: per-cell code > its own
+  `ForeColorOverride`/`BackColorOverride` > its sprite's own default color >
+  its resolved material's own `ForegroundColor`/`BackgroundColor` (see
+  `MaterialLibrary`) > the world's own default color > a hardcoded engine
+  fallback (see `GlyphBuilder.ResolveColor`). The world itself is never
+  restricted to a grid; this mapping exists
   purely for the visual output. `BuildFrame` only builds glyphs for the
   background rows/columns and objects that actually intersect the camera's
   current viewport rect, so a world larger than the viewport doesn't do
