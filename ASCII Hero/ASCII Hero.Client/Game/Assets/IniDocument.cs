@@ -1,10 +1,9 @@
 namespace ASCII_Hero.Client.Game.Assets;
 
 /// <summary>
-/// A minimal, hand-rolled parser for the simple ".ini"-style files used throughout the asset
-/// format (settings.ini, Colors.ini, Materials.ini, *_objects.ini): "[Section]" headers,
-/// "Key = Value" lines, ";" line comments (both full-line and trailing), and blank lines.
-/// Not a general-purpose INI parser - only what AssetFormat.md actually specifies.
+/// Parses the simple ".ini"-style files used throughout the asset format (settings.ini,
+/// ColorPalette.ini, MaterialLibrary.ini, *_objects.ini): "[Section]" headers, "Key = Value" lines,
+/// ";" line comments (full-line and trailing), and blank lines.
 /// </summary>
 public class IniDocument
 {
@@ -61,8 +60,7 @@ public class IniDocument
 
     /// <summary>
     /// Every section name defined in this document (e.g. every material name in a
-    /// <c>Materials.ini</c>), in the order first encountered. Used by <see cref="MaterialLibrary"/>
-    /// to enumerate all materials without needing to know their names up front.
+    /// <c>MaterialLibrary.ini</c>), in the order first encountered.
     /// </summary>
     public IReadOnlyCollection<string> SectionNames => _sections.Keys;
 
@@ -73,7 +71,7 @@ public class IniDocument
 
     private static string StripComment(string line)
     {
-        // A ';' only starts a comment when not inside a quoted literal (e.g. EmptyChar = ';').
+        // A ';' only starts a comment when not inside a quoted literal, e.g. EmptyChar = ';'.
         var inQuote = false;
         for (var i = 0; i < line.Length; i++)
         {

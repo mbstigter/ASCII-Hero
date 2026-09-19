@@ -5,7 +5,7 @@ namespace ASCII_Hero.Client.Game.Assets;
 /// build up an arbitrary-length platform/wall, instead of a single fixed shape. A
 /// <see cref="Horizontal"/> asset is authored one cell wide (any height) and repeats
 /// column-wise; a <see cref="Vertical"/> asset is authored one cell tall (any width) and
-/// repeats row-wise. See docs/AssetFormat.md for the full rationale.
+/// repeats row-wise.
 /// </summary>
 public enum TileAxis
 {
@@ -18,12 +18,10 @@ public enum TileAxis
 /// How multi-frame clips advance through their frames over time. <see cref="Loop"/> cycles
 /// sequentially (0,1,2,0,1,2,...); <see cref="PingPong"/> bounces back and forth (0,1,2,1,0,1,...);
 /// <see cref="Once"/> advances sequentially like <see cref="Loop"/> but stops and holds on the
-/// last frame instead of wrapping back to the first (e.g. a one-shot transformation - a killed
-/// enemy crumbling down to its final husk appearance - that should visibly play through once and
-/// then stay there, as opposed to <see cref="Off"/>'s "never animate at all"); <see cref="Off"/>
-/// disables playback entirely, holding on <see cref="SpriteAsset.DefaultFrame"/> forever even
-/// though the clip has multiple frames (e.g. a dead/inanimate variant of an otherwise-animated
-/// asset). See docs/AssetFormat.md for the full rationale.
+/// last frame instead of wrapping back to the first (e.g. a killed enemy crumbling down to its
+/// final husk appearance); <see cref="Off"/> disables playback entirely, holding on
+/// <see cref="SpriteAsset.DefaultFrame"/> forever even though the clip has multiple frames (e.g.
+/// a dead/inanimate variant of an otherwise-animated asset).
 /// </summary>
 public enum AnimationMode
 {
@@ -55,8 +53,8 @@ public class SpriteClip
     /// Duration each frame of this clip displays before advancing to the next, in seconds. Null
     /// means this clip does not animate (the frame set at spawn stays active forever). Only
     /// meaningful when the clip has more than one frame. Resolved per-clip from an optional
-    /// <c>[Animation.{clipName}]</c> section, falling back to the asset-wide <c>[Animation]</c>
-    /// section - see docs/AssetFormat.md §2.4.
+    /// <c>[Animation.{clipName}] </c> section, falling back to the asset-wide <c>[Animation]</c>
+    /// section.
     /// </summary>
     public double? FrameDurationSeconds { get; init; }
 
@@ -75,10 +73,9 @@ public class SpriteClip
 /// Which way a pose's clip should face: <see cref="Idle"/> is a pose's neutral orientation (facing
 /// the viewer for a pose that moves horizontally, or whatever a pose's own neutral direction
 /// is otherwise, e.g. facing the ladder while climbing); <see cref="Left"/>/<see cref="Right"/>/
-/// <see cref="Up"/>/<see cref="Down"/> are directional variants. Unlike a fixed pair of axes, a
-/// pose can freely declare any subset of these five - not just one axis - which is what a
-/// four-directional pose (e.g. swimming) needs. See <see cref="PoseDefinition"/> and
-/// docs/AssetFormat.md §2.6.
+/// <see cref="Up"/>/<see cref="Down"/> are directional variants. A pose can freely declare any
+/// subset of these five - not just one axis - which is what a four-directional pose (e.g.
+/// swimming) needs. See <see cref="PoseDefinition"/>.
 /// </summary>
 public enum Facing
 {
@@ -96,7 +93,7 @@ public enum Facing
 /// position/count, so a pose can declare any subset of the five facings it actually needs - one
 /// axis (e.g. `Left`/`Right` for walking), the other (e.g. `Up`/`Down` for climbing), or all four
 /// at once (e.g. swimming). Any facing not declared by this pose falls back to
-/// <see cref="IdleClip"/>. See docs/AssetFormat.md §2.6.
+/// <see cref="IdleClip"/>.
 /// </summary>
 public class PoseDefinition
 {
@@ -115,7 +112,7 @@ public class PoseDefinition
 /// <summary>
 /// A fully loaded sprite asset: every clip defined by its files, plus the resolved empty-char
 /// used to interpret its grids. Produced by <see cref="SpriteLoader"/> from the on-disk asset
-/// format described in docs/AssetFormat.md.
+/// files.
 /// </summary>
 public class SpriteAsset
 {
@@ -127,12 +124,12 @@ public class SpriteAsset
     public TileAxis TileAxis { get; init; } = TileAxis.None;
 
     /// <summary>
-    /// Color code (see <c>Global/Colors.ini</c>) used for a cell whose own <c>_foregroundcolors.txt</c>
+    /// Color code (see <c>Global/ColorPalette.ini</c>) used for a cell whose own <c>_foregroundcolors.txt</c>
     /// (or <c>_backgroundcolors.txt</c>) is absent/empty at that position, from this asset's own
     /// <c>[Colors] DefaultForegroundColor</c>/<c>DefaultBackgroundColor</c> settings.ini keys. Null
-    /// when not set, in which case rendering falls back further to the level's own default (see
+    /// when not set, in which case rendering falls back further to the world's own default (see
     /// <see cref="World.World2D.DefaultForeColor"/>/<see cref="World.World2D.DefaultBackColor"/>) and
-    /// finally to the hardcoded renderer default. See docs/AssetFormat.md §2.5/§4.
+    /// finally to the hardcoded renderer default.
     /// </summary>
     public char? DefaultForeColor { get; init; }
 
@@ -140,10 +137,10 @@ public class SpriteAsset
     public char? DefaultBackColor { get; init; }
 
     /// <summary>
-    /// Optional pose/facing metadata (see docs/AssetFormat.md §2.6) mapping each pose name
-    /// (e.g. "Walk", "Crawl") to the clips shown for its Idle/Left/Right facings. Null for assets
-    /// that don't declare a <c>[Poses]</c> section - such assets only ever show whichever single
-    /// clip was explicitly requested at spawn time, with no pose/facing switching.
+    /// Optional pose/facing metadata mapping each pose name (e.g. "Walk", "Crawl") to the clips
+    /// shown for its Idle/Left/Right facings. Null for assets that don't declare a
+    /// <c>[Poses]</c> section - such assets only ever show whichever single clip was explicitly
+    /// requested at spawn time, with no pose/facing switching.
     /// </summary>
     public IReadOnlyDictionary<string, PoseDefinition>? Poses { get; init; }
 
@@ -155,7 +152,7 @@ public class SpriteAsset
             ? clip
             : throw new KeyNotFoundException($"Sprite '{Name}' has no clip named '{clipName}'.");
 
-    /// <summary>Resolves the clip name to show for a given pose/facing, per docs/AssetFormat.md §2.6.</summary>
+    /// <summary>Resolves the clip name to show for a given pose/facing.</summary>
     public string GetClipName(string pose, Facing facing)
     {
         if (Poses is null)

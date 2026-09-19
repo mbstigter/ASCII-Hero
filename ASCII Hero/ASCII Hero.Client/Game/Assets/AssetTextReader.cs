@@ -1,11 +1,11 @@
 namespace ASCII_Hero.Client.Game.Assets;
 
 /// <summary>
-/// Reads and parses the raw text content of asset layer files
+/// Parses the raw text content of asset layer files
 /// (_characters/_foregroundcolors/_backgroundcolors/_materials.txt) into per-frame char grids,
-/// applying the padding and "//end" frame-splitting rules from AssetFormat.md section 2.1. This
-/// is the low-level grid parser only - it knows nothing about folders, Global/Level fallback, or
-/// settings.ini; see <see cref="AssetPathResolver"/> and <see cref="SpriteLoader"/> for those.
+/// applying the padding and "//end" frame-splitting rules. Only handles grid parsing; folder
+/// resolution and settings are handled by <see cref="AssetPathResolver"/> and
+/// <see cref="SpriteLoader"/>.
 /// </summary>
 public static class AssetTextReader
 {
@@ -84,10 +84,9 @@ public static class AssetTextReader
     }
 
     /// <summary>
-    /// Pads or truncates raw grid content (e.g. TheMountains_objects.txt) to the given fixed
-    /// dimensions, per AssetFormat.md section 3: an object-placement grid's dimensions are not
-    /// inferred from its own content but instead fixed to match the world background's
-    /// dimensions, with missing rows/columns padded with <paramref name="emptyChar"/>.
+    /// Pads or truncates raw grid content (e.g. an object-placement grid) to the given fixed
+    /// dimensions, which match the world background's dimensions rather than being inferred from
+    /// the grid's own content. Missing rows/columns are padded with <paramref name="emptyChar"/>.
     /// </summary>
     public static char[,] ParseFixedSizeGrid(string content, int width, int height, char emptyChar)
     {
@@ -107,11 +106,10 @@ public static class AssetTextReader
     }
 
     /// <summary>
-    /// Pads/truncates every frame of a fixed-size, multi-frame layer file (e.g. a level's
+    /// Pads/truncates every frame of a fixed-size, multi-frame layer file (e.g. a world's
     /// thumbnail characters layer) to exactly <paramref name="width"/> x <paramref name="height"/>,
-    /// splitting on <c>//end</c> exactly like <see cref="ParseCharsLayer"/> - unlike that method,
-    /// though, dimensions are a fixed contract rather than inferred from content, since every
-    /// frame (and every level's thumbnail) must agree on one size. See docs/AssetFormat.md §3.1.
+    /// splitting on <c>//end</c> like <see cref="ParseCharsLayer"/>. Unlike that method, dimensions
+    /// are fixed rather than inferred from content.
     /// </summary>
     public static IReadOnlyList<char[,]> ParseFixedSizeFrames(string content, int width, int height, char emptyChar)
     {
@@ -128,9 +126,9 @@ public static class AssetTextReader
     /// <summary>
     /// Fixed-size counterpart to <see cref="ParseSecondaryLayer"/>: pads/truncates an optional
     /// secondary layer's frames (e.g. a thumbnail's foregroundcolors) to
-    /// <paramref name="width"/> x <paramref name="height"/>, padding any frame missing entirely
-    /// (including every frame, when <paramref name="content"/> itself is null) with
-    /// <paramref name="emptyChar"/> so it lines up 1:1 with <see cref="ParseFixedSizeFrames"/>'s result.
+    /// <paramref name="width"/> x <paramref name="height"/>, so the result lines up 1:1 with
+    /// <see cref="ParseFixedSizeFrames"/>'s result. A missing frame (or a null
+    /// <paramref name="content"/>) is padded entirely with <paramref name="emptyChar"/>.
     /// </summary>
     public static IReadOnlyList<char[,]> ParseFixedSizeSecondaryFrames(
         string? content, int frameCount, int width, int height, char emptyChar)

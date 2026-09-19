@@ -1,26 +1,26 @@
                 
-  K  N    K  N  
                 
                 
                 
-                
-                
-UUUUUUUUAAAAAAAA
-//end
-                
-                
-  K       K  N  
-     N          
-                
-                
-                
-UUUUUUUUAAAAAAAA
+        IHHHHHHI
+        IHHHHHHI
+        IHHHHHHI
+SSSSSSSSIIIIIIII
 //end
                 
                 
                 
-  K       K     
-             N  
-     N          
                 
-UUUUUUUUAAAAAAAA
+        IHHHHHHI
+        IHHHHHHI
+        IHHHHHHI
+SSSSSSSSIIIIIIII
+//end
+                
+                
+                
+                
+        IHHHHHHI
+        IHHHHHHI
+        IHHHHHHI
+SSSSSSSSIIIIIIII

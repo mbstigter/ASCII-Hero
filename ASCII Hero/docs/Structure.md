@@ -58,13 +58,16 @@ palettes, materials) from disk/HTTP into in-memory game objects.
 - **`AssetPathResolver`** - resolves which folder (`Worlds/{WorldName}/Sprites/{Asset}`
   or `Global/Sprites/{Asset}`) a sprite's files should be read from, applying
   the "world-local folder overrides global" rule: presence of a world-local
-  settings file is itself the override signal, no explicit flag needed.
+  settings file is itself the override signal, no explicit flag needed. This
+  resolution is per asset name, so a world overriding one sprite (e.g. an
+  ice world's own winter-clothed `Player` reskin) still falls back to
+  `Global/Sprites/` for every other sprite it uses.
 - **`ColorPalette`** - the resolved single-character color code -> CSS color
-  lookup, merging a world's own optional `Colors.ini` over `Global/Colors.ini`.
+  lookup, merging a world's own optional `ColorPalette.ini` over `Global/ColorPalette.ini`.
 - **`MaterialLibrary`** - the resolved material-name -> `Material` (`Density`,
   `Friction`, `Restitution`, optional `ForegroundColor`/`BackgroundColor`/
-  `DefaultChar`) lookup, merging a world's own optional `Materials.ini` over
-  `Global/Materials.ini`. An unknown/absent material name resolves to a
+  `Character`) lookup, merging a world's own optional `MaterialLibrary.ini` over
+  `Global/MaterialLibrary.ini`. An unknown/absent material name resolves to a
   zeroed `Material.Undefined` fallback rather than throwing.
 - **`IniOverrideLoader`** - the shared Global-then-World ini load/merge
   routine used by both `ColorPalette` and `MaterialLibrary` (and any future
@@ -441,7 +444,18 @@ The live game state and the entity types that make it up.
   current viewport rect, so a world larger than the viewport doesn't do
   per-cell work for the off-screen portion every frame; physics, collision,
   and animation are unaffected by this and keep simulating every body
-  regardless of visibility.
+  regardless of visibility. Game objects are drawn in two passes - every
+  static body first, then every non-static body - rather than in
+  `world.Objects`' own order (just the placement grid's row-by-row scan
+  order), so a static body (e.g. a passable body of water) can never paint
+  over a mover (a ball, the player, an enemy) that happens to be placed
+  earlier in the grid than it; `Passable` only ever affects collision, never
+  draw order. An optional per-world foreground layer (`World2D.ForegroundChars`/
+  `ForegroundFore`/`ForegroundBack`, mirroring the background layer but empty
+  by default) is then drawn last, on top of every object regardless of
+  static/mover - purely visual decoration (prison bars, foliage overhang, ...)
+  meant to always read as in front of everything, without a full per-object
+  z-order system.
 - **`Glyph`** - a single ASCII character to draw at a pixel position, with
   resolved foreground/background colors.
 - **`GlyphBuilder`** - shared color-resolution (a code's first match in a
@@ -599,8 +613,13 @@ large jumps after e.g. a tab switch):
    target's position, respecting its dead zone and the world's bounds.
 6. **Render** - `WorldRenderer.BuildFrame` converts the current world and
    camera view into a flat glyph list - culled to the camera's current
-   viewport rect (see Rendering above) - which `CanvasBridge.DrawFrameAsync`
-   sends to JavaScript to paint onto the canvas.
+   viewport rect (see Rendering above) - in background, static-object,
+   non-static-object, foreground order. `GameLoop.OnFrame` then appends the
+   HUD's own glyphs (`UIRenderer.AddFrame`/`AddLabel`/`AddBar` for `_hudBox`/
+   `_hudText`/`_hudBar`) to that same list, so the HUD is always drawn last -
+   on top of the foreground layer and everything else - before
+   `CanvasBridge.DrawFrameAsync` sends the complete list to JavaScript to
+   paint onto the canvas.
 
 ### Asset Loading (Global vs. World Fallback)
 
@@ -612,9 +631,15 @@ full reference):
   exists there; otherwise from the shared `Global/Sprites/{AssetName}/`
   folder. The mere presence of the world-local folder is the override
   signal - no explicit flag is needed.
-- A world's own optional `Colors.ini`/`Materials.ini` is merged over the
+- A world's own optional `ColorPalette.ini`/`MaterialLibrary.ini` is merged over the
   global one, with world entries taking precedence for same-named
   codes/sections, while anything only defined globally still applies.
+
+Resolution happens per asset/code/section, not per world, so overriding one
+thing never hides the rest of the globals - e.g. an ice-themed world could add
+a world-local `Sprites/Player/` reskin, an icy `ColorPalette.ini` recolor, and
+a low-friction `Ice` entry in `MaterialLibrary.ini`, while every other sprite,
+color, and material it uses still resolves to the global ones.
 
 ### Coordinate System
 

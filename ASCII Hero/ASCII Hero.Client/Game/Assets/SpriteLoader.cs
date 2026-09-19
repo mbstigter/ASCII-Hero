@@ -5,14 +5,13 @@ namespace ASCII_Hero.Client.Game.Assets;
 /// backgroundcolors/materials layers) into an in-memory <see cref="SpriteAsset"/>, applying the
 /// Global/World fallback rule (via <see cref="AssetPathResolver"/>) and the layer parsing/padding
 /// rules (via <see cref="AssetTextReader"/>). Reused identically for the player, static
-/// platforms, and any other sprite-backed object - there is only one loading concept, per
-/// AssetFormat.md section 5.
+/// platforms, and any other sprite-backed object.
 /// </summary>
 public class SpriteLoader(IAssetFileProvider fileProvider)
 {
     /// <summary>
     /// Loads the given asset, reading only the requested clips (the caller - typically the world
-    /// loader - knows which clips are actually needed, e.g. from TheMountains_objects.ini).
+    /// loader - knows which clips are actually needed, e.g. from a world's own objects.ini).
     /// </summary>
     public async Task<SpriteAsset> LoadAsync(string assetName, IReadOnlyList<string> clipNames, string? worldName)
     {
@@ -48,7 +47,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         foreach (var clipName in distinctClipNames)
         {
             // Per-clip [Animation.{clipName}] overrides fall back to the asset-wide [Animation]
-            // section for any key it doesn't itself set (see docs/AssetFormat.md §2.4).
+            // section for any key it doesn't itself set.
             var clipAnimationSection = settings.Section($"Animation.{clipName}");
             var frameDurationSeconds = clipAnimationSection.TryGetValue("FrameDurationSeconds", out var clipDurationText)
                 ? ParseFrameDurationSeconds(clipDurationText)
@@ -178,11 +177,11 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
     }
 
     /// <summary>
-    /// Parses the optional <c>[ClipFolders]</c> section (see docs/AssetFormat.md §2.7), mapping a
-    /// clip-name prefix (e.g. "walk", matching "walk_idle"/"walk_left"/"walk_right") to the
-    /// subfolder its files live in, for sprites busy enough to want to group clips by pose
-    /// instead of keeping every clip's files flat in the asset's root folder. Absent entirely for
-    /// simple single-/few-clip assets (e.g. Pipe), which keep the flat layout.
+    /// Parses the optional <c>[ClipFolders]</c> section, mapping a clip-name prefix (e.g. "walk",
+    /// matching "walk_idle"/"walk_left"/"walk_right") to the subfolder its files live in, for
+    /// sprites busy enough to want to group clips by pose instead of keeping every clip's files
+    /// flat in the asset's root folder. Absent entirely for simple single-/few-clip assets (e.g.
+    /// Pipe), which keep the flat layout.
     /// </summary>
     private static IReadOnlyDictionary<string, string> ParseClipFolders(
         IReadOnlyDictionary<string, string> clipFoldersSection) =>
@@ -243,10 +242,10 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             }
 
             // Each clip name's own trailing suffix (_idle/_left/_right/_up/_down) says which
-            // Facing it's for - see docs/AssetFormat.md §2.6 - rather than a fixed slot
-            // position/count, so a pose can freely declare any subset of the five facings it
-            // actually needs (just Left/Right for walking, just Up/Down for climbing, or all four
-            // directions plus Idle for something like swimming).
+            // Facing it's for, rather than a fixed slot position/count, so a pose can freely
+            // declare any subset of the five facings it actually needs (just Left/Right for
+            // walking, just Up/Down for climbing, or all four directions plus Idle for something
+            // like swimming).
             string? idleClip = null;
             var directionalClips = new Dictionary<Facing, string>();
             foreach (var clipName in clipNames)
@@ -280,9 +279,9 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
 
     /// <summary>
     /// Resolves which <see cref="Facing"/> a pose's clip name is for, from its own trailing
-    /// suffix (<c>_idle</c>/<c>_left</c>/<c>_right</c>/<c>_up</c>/<c>_down</c>) - see
-    /// docs/AssetFormat.md §2.6. A clip with none of these suffixes is treated as
-    /// <see cref="Facing.Idle"/> (the neutral/only orientation for a pose that declares just one clip).
+    /// suffix (<c>_idle</c>/<c>_left</c>/<c>_right</c>/<c>_up</c>/<c>_down</c>). A clip with none
+    /// of these suffixes is treated as <see cref="Facing.Idle"/> (the neutral/only orientation for
+    /// a pose that declares just one clip).
     /// </summary>
     private static Facing ResolveFacingFromClipName(string clipName)
     {

@@ -27,8 +27,19 @@ public class WorldRenderer
         var viewRight = camera.Position.X + viewportWidthCells;
         var viewBottom = camera.Position.Y + viewportHeightCells;
 
+        // Draw every static body (terrain, water, platforms, ...) before any non-static one
+        // (the player, balls, enemies, ...), regardless of each one's order in world.Objects
+        // (itself just the placement grid's row-by-row scan order) - otherwise a static body
+        // placed later in the grid than a mover it overlaps (e.g. a passable body of water
+        // beneath balls dropped above it) would paint over that mover's glyphs every frame,
+        // even though Passable only ever affects collision, never draw order.
         foreach (var body in world.Objects)
         {
+            if (!body.IsStatic)
+            {
+                continue;
+            }
+
             // Skip any game object whose bounding box doesn't intersect the visible viewport at
             // all, before touching its (possibly much larger) sprite frame grid - avoids doing
             // per-cell work for objects that are nowhere near the camera.
@@ -40,6 +51,24 @@ public class WorldRenderer
 
             AddGameObjectGlyphs(glyphs, body, world, camera);
         }
+
+        foreach (var body in world.Objects)
+        {
+            if (body.IsStatic)
+            {
+                continue;
+            }
+
+            if (body.Position.X + body.Size.X <= viewLeft || body.Position.X >= viewRight ||
+                body.Position.Y + body.Size.Y <= viewTop || body.Position.Y >= viewBottom)
+            {
+                continue;
+            }
+
+            AddGameObjectGlyphs(glyphs, body, world, camera);
+        }
+
+        AddForegroundGlyphs(glyphs, world, camera, viewportWidthCells, viewportHeightCells);
 
         return glyphs;
     }
@@ -70,6 +99,44 @@ public class WorldRenderer
 
                 var cellForeCode = GlyphBuilder.NullIfEmpty(world.BackgroundFore[row, col], world.EmptyChar);
                 var cellBackCode = GlyphBuilder.NullIfEmpty(world.BackgroundBack[row, col], world.EmptyChar);
+                var foreColor = GlyphBuilder.ResolveColor(world.Palette, GlyphBuilder.DefaultForeColor, cellForeCode, world.DefaultForeColor);
+                var backColor = GlyphBuilder.ResolveColor(world.Palette, GlyphBuilder.DefaultBackColor, cellBackCode, world.DefaultBackColor);
+                var cellPosition = new Vector2D(col, row);
+                glyphs.Add(ToGlyph(cellPosition, character, foreColor, backColor, camera));
+            }
+        }
+    }
+
+    /// <summary>
+    /// Draws the optional foreground layer (see <see cref="World2D.ForegroundChars"/>) last, on
+    /// top of every static and non-static game object drawn above - so a world can place purely
+    /// visual decoration (prison bars, foliage overhang, ...) that always reads as being in front
+    /// of the player and everything else, without a full per-object z-order system. A world with
+    /// no foreground file simply has an all-empty grid here, so this draws nothing.
+    /// </summary>
+    private void AddForegroundGlyphs(List<Glyph> glyphs, World2D world, Camera camera, double viewportWidthCells, double viewportHeightCells)
+    {
+        var chars = world.ForegroundChars;
+        var height = chars.GetLength(0);
+        var width = chars.GetLength(1);
+
+        var startRow = Math.Max(0, (int)Math.Floor(camera.Position.Y));
+        var endRow = Math.Min(height, (int)Math.Ceiling(camera.Position.Y + viewportHeightCells));
+        var startCol = Math.Max(0, (int)Math.Floor(camera.Position.X));
+        var endCol = Math.Min(width, (int)Math.Ceiling(camera.Position.X + viewportWidthCells));
+
+        for (var row = startRow; row < endRow; row++)
+        {
+            for (var col = startCol; col < endCol; col++)
+            {
+                var character = chars[row, col];
+                if (character == world.EmptyChar)
+                {
+                    continue;
+                }
+
+                var cellForeCode = GlyphBuilder.NullIfEmpty(world.ForegroundFore[row, col], world.EmptyChar);
+                var cellBackCode = GlyphBuilder.NullIfEmpty(world.ForegroundBack[row, col], world.EmptyChar);
                 var foreColor = GlyphBuilder.ResolveColor(world.Palette, GlyphBuilder.DefaultForeColor, cellForeCode, world.DefaultForeColor);
                 var backColor = GlyphBuilder.ResolveColor(world.Palette, GlyphBuilder.DefaultBackColor, cellBackCode, world.DefaultBackColor);
                 var cellPosition = new Vector2D(col, row);

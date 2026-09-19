@@ -2,25 +2,25 @@
   K  N    K  N  
                 
                 
-                
-                
-                
-UUUUUUUUAAAAAAAA
+        JIIIIIIJ
+        JIIIIIIJ
+        JIIIIIIJ
+UUUUUUUUJJJJJJJJ
 //end
                 
                 
   K       K  N  
      N          
-                
-                
-                
-UUUUUUUUAAAAAAAA
+        JIIIIIIJ
+        JIIIIIIJ
+        JIIIIIIJ
+UUUUUUUUJJJJJJJJ
 //end
                 
                 
                 
   K       K     
-             N  
-     N          
-                
-UUUUUUUUAAAAAAAA
+        JIIIINIJ
+     N  JIIIIIIJ
+        JIIIIIIJ
+UUUUUUUUJJJJJJJJ

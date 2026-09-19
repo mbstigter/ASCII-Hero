@@ -1,11 +1,6 @@
 namespace ASCII_Hero.Client.Game.Assets;
 
-/// <summary>
-/// Fetches raw asset file content. Backed by HttpClient in the browser (Blazor WebAssembly has
-/// no direct filesystem access - static files under wwwroot are served over HTTP like any other
-/// web resource), kept behind this small interface so asset-loading code itself never depends
-/// directly on HttpClient.
-/// </summary>
+/// <summary>Fetches raw asset file content by relative path.</summary>
 public interface IAssetFileProvider
 {
     /// <summary>Returns the file's text content, or null if the file does not exist (404).</summary>

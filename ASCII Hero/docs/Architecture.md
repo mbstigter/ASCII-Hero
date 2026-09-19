@@ -79,7 +79,7 @@ DOM keyboard events.
   spawn time from a named material (`Body2D.MaterialName`, derived from the
   dominant non-empty material of the active sprite frame's per-cell
   `_materials.txt`/`DefaultMaterial` layer) looked up in `World2D.Materials`
-  (a `MaterialLibrary` that merges `Global/Materials.ini` with an optional
+  (a `MaterialLibrary` that merges `Global/MaterialLibrary.ini` with an optional
   level-local override, mirroring `ColorPalette`'s Global+Level pattern). A
   level placement's ini section can override the resolved material name via
   `Material`, or just the resulting `Restitution` via `Restitution`, without

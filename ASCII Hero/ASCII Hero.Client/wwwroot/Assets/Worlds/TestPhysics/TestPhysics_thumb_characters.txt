@@ -1,5 +1,5 @@
                 
- o   o   o   o  
+  o  o    o  o  
                 
                 
                 
@@ -9,7 +9,7 @@
 //end
                 
                 
- o       o   o  
+  o       o  o  
      o          
                 
                 
@@ -19,7 +19,7 @@
                 
                 
                 
- o       o      
+  o       o     
              o  
      o          
                 

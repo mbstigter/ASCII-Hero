@@ -4,13 +4,12 @@ namespace ASCII_Hero.Client.Game.Assets;
 /// Builds an in-memory <see cref="SpriteAsset"/> for a "materials-only" world object placement -
 /// one that names a <c>Material</c> plus <c>Width</c>/<c>Height</c> directly in its
 /// <c>_objects.ini</c> section instead of an <c>Asset</c>/<c>Clip</c> pair backed by on-disk
-/// sprite files (see docs/AssetFormat.md §3.x). The synthesized asset has exactly one clip
-/// ("default") with one frame, fully filled with the material's own <see cref="Material.DefaultChar"/>
+/// sprite files. The synthesized asset has exactly one clip ("default") with one frame, fully
+/// filled with the material's own (or a placement's own override of) <see cref="Material.Character"/>
 /// and tagged with the material's name in every cell's materials grid - so it flows through the
-/// exact same <see cref="World.Body2D.SetFrame"/>/collision/render/material-resolution path as
-/// any sprite loaded by <see cref="SpriteLoader"/>, with zero changes required to that shared
-/// pipeline. No tiling/<see cref="TileAxis"/> concept applies here - <c>Width</c>/<c>Height</c>
-/// already give the placement's final size directly, unlike a repeatable sprite unit.
+/// same <see cref="World.Body2D.SetFrame"/>/collision/render/material-resolution path as any
+/// sprite loaded by <see cref="SpriteLoader"/>. No tiling/<see cref="TileAxis"/> concept applies
+/// here - <c>Width</c>/<c>Height</c> already give the placement's final size directly.
 /// </summary>
 public static class SyntheticSpriteFactory
 {
@@ -18,15 +17,16 @@ public static class SyntheticSpriteFactory
     /// A sentinel that can never equal any authored glyph, so a materials-only asset's whole
     /// <paramref name="width"/> x <paramref name="height"/> rectangle is always solid (no
     /// per-cell holes) - unlike a normal sprite's own <c>EmptyChar</c>, which is an ordinary
-    /// printable character that could otherwise collide with a real cell's own glyph.
+    /// printable character.
     /// </summary>
     public const char EmptyChar = '\0';
 
     /// <summary>
     /// Builds the synthesized asset for one material name + size. <paramref name="glyph"/> is the
-    /// material's own <see cref="Material.DefaultChar"/> - callers must resolve and validate that
-    /// before calling this (see <see cref="World.World2D.LoadAsync"/>), since a material with no
-    /// <see cref="Material.DefaultChar"/> configured has nothing to render as.
+    /// material's own <see cref="Material.Character"/> (or a placement's own override of it) -
+    /// callers must resolve and validate that before calling this (see
+    /// <see cref="World.World2D.LoadAsync"/>), since a material with no <see cref="Material.Character"/>
+    /// configured (and no override) has nothing to render as.
     /// </summary>
     public static SpriteAsset Build(string materialName, char glyph, int width, int height)
     {

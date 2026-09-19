@@ -1,11 +1,10 @@
 namespace ASCII_Hero.Client.Game.Assets;
 
 /// <summary>
-/// Resolves which folder an asset's files should be read from, applying the Global vs. World
-/// override/fallback rule from AssetFormat.md section 1.1: a world-local
-/// Sprites/{AssetName}/ folder (if present) is used instead of Global/Sprites/{AssetName}/,
-/// with the world-local folder's mere presence acting as the override signal (checked here by
-/// probing for that folder's settings.ini file).
+/// Resolves which folder a sprite asset's files should be read from, applying the Global vs.
+/// World override rule: a world-local Sprites/{AssetName}/ folder is used instead of
+/// Global/Sprites/{AssetName}/ when present, detected by probing for that folder's settings.ini
+/// file.
 /// </summary>
 public static class AssetPathResolver
 {

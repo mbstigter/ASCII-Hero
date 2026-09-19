@@ -65,6 +65,22 @@ public class World2D
     /// <summary>Background (fill) color code per background cell, same dimensions as <see cref="BackgroundChars"/>.</summary>
     public char[,] BackgroundBack { get; private set; } = new char[0, 0];
 
+    /// <summary>
+    /// Optional foreground layer of the world, purely visual - drawn last, on top of every game
+    /// object (see <see cref="Rendering.WorldRenderer"/>), same dimensions as
+    /// <see cref="BackgroundChars"/>. A world with no <c>{WorldName}_foreground_characters.txt</c>
+    /// file gets an all-empty grid here, which draws nothing - this layer is entirely optional
+    /// (e.g. prison bars, foliage overhang, anything meant to always sit above the player and
+    /// every other object without needing a full z-order system).
+    /// </summary>
+    public char[,] ForegroundChars { get; private set; } = new char[0, 0];
+
+    /// <summary>Foreground color code per foreground cell, same dimensions as <see cref="ForegroundChars"/>.</summary>
+    public char[,] ForegroundFore { get; private set; } = new char[0, 0];
+
+    /// <summary>Background (fill) color code per foreground cell, same dimensions as <see cref="ForegroundChars"/>.</summary>
+    public char[,] ForegroundBack { get; private set; } = new char[0, 0];
+
     /// <summary>"No cell here" marker used by this world's background/object grids.</summary>
     public char EmptyChar { get; private set; } = ' ';
 
@@ -72,7 +88,7 @@ public class World2D
     public ColorPalette Palette { get; private set; } = null!;
 
     /// <summary>
-    /// Color code (see <c>Global/Colors.ini</c>) this world's own <c>[Colors]
+    /// Color code (see <c>Global/ColorPalette.ini</c>) this world's own <c>[Colors]
     /// DefaultForegroundColor</c> settings.ini key resolves to, used by <see cref="Rendering.WorldRenderer"/>
     /// as the fallback for any cell (background or object) whose own color code is absent/empty
     /// and whose sprite has no own default either. Null when not set, in which case the
@@ -158,6 +174,21 @@ public class World2D
         var backgroundBackContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_background_backgroundcolors.txt");
         world.BackgroundFore = AssetTextReader.ParseSecondaryLayer(backgroundForeContent, backgroundFrames, emptyChar)[0];
         world.BackgroundBack = AssetTextReader.ParseSecondaryLayer(backgroundBackContent, backgroundFrames, emptyChar)[0];
+
+        // Foreground layer (see its own doc comment on ForegroundChars) is entirely optional - a
+        // world with no {worldName}_foreground_characters.txt simply gets an all-empty grid at
+        // the background's own dimensions, same as an absent _background_foregroundcolors.txt/
+        // _background_backgroundcolors.txt already does via ParseSecondaryLayer above. Dimensions
+        // are fixed to the background layer's, not independently inferred, the same way
+        // _objects.txt reuses them - a foreground decoration is placed against the same grid, not
+        // sized on its own.
+        var foregroundContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_foreground_characters.txt");
+        var foregroundFrames = AssetTextReader.ParseFixedSizeFrames(foregroundContent ?? string.Empty, width, height, emptyChar);
+        world.ForegroundChars = foregroundFrames.Count > 0 ? foregroundFrames[0] : new char[height, width];
+        var foregroundForeContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_foreground_foregroundcolors.txt");
+        var foregroundBackContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_foreground_backgroundcolors.txt");
+        world.ForegroundFore = AssetTextReader.ParseFixedSizeSecondaryFrames(foregroundForeContent, 1, width, height, emptyChar)[0];
+        world.ForegroundBack = AssetTextReader.ParseFixedSizeSecondaryFrames(foregroundBackContent, 1, width, height, emptyChar)[0];
         progress?.Report(3);
 
         var objectsIniContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_objects.ini")
@@ -230,7 +261,7 @@ public class World2D
         // material name + size so identical placements (e.g. two same-size platforms of the same
         // material) share one synthesized asset instead of rebuilding an identical grid per
         // placement.
-        var syntheticAssetCache = new Dictionary<(string Material, int Width, int Height), SpriteAsset>();
+        var syntheticAssetCache = new Dictionary<(string Material, char Glyph, int Width, int Height), SpriteAsset>();
 
         for (var row = 0; row < height; row++)
         {
@@ -291,7 +322,7 @@ public class World2D
                 {
                     // Materials-only object (see docs/AssetFormat.md §3.x): no Asset/Clip/EffectClip -
                     // Width/Height give the placement's own size directly, and the material's own
-                    // DefaultChar (not an authored sprite grid) supplies every cell's glyph.
+                    // Character (not an authored sprite grid) supplies every cell's glyph.
                     if (!objectSection.TryGetValue("Width", out var widthText) || !IniValueParser.TryParseInt(widthText, out var syntheticWidth) || syntheticWidth < 1)
                     {
                         throw new FormatException($"Section '{sectionName}' of world '{worldName}' has 'Material' but is missing a valid 'Width'.");
@@ -303,12 +334,19 @@ public class World2D
                     }
 
                     var syntheticMaterial = world.Materials.Get(syntheticMaterialName);
-                    if (syntheticMaterial.DefaultChar is not { } syntheticGlyph)
+                    // Character on the placement itself lets it override its own glyph away from
+                    // the material's shared Character (e.g. simulating localized pollution on an
+                    // otherwise-clean Water body) without affecting every other object using
+                    // that material.
+                    var syntheticGlyphOverride = objectSection.TryGetValue("Character", out var syntheticCharText) ? IniValueParser.ParseColorCode(syntheticCharText) : null;
+                    if (syntheticGlyphOverride is null && syntheticMaterial.Character is null)
                     {
-                        throw new FormatException($"Section '{sectionName}' of world '{worldName}' uses materials-only Material '{syntheticMaterialName}', which has no DefaultChar configured in Materials.ini.");
+                        throw new FormatException($"Section '{sectionName}' of world '{worldName}' uses materials-only Material '{syntheticMaterialName}', which has no Character configured in MaterialLibrary.ini (and no 'Character' override was given on this placement).");
                     }
 
-                    var syntheticKey = (syntheticMaterialName!, syntheticWidth, syntheticHeight);
+                    var syntheticGlyph = syntheticGlyphOverride ?? syntheticMaterial.Character!.Value;
+
+                    var syntheticKey = (syntheticMaterialName!, syntheticGlyph, syntheticWidth, syntheticHeight);
                     if (!syntheticAssetCache.TryGetValue(syntheticKey, out var syntheticSprite))
                     {
                         syntheticSprite = SyntheticSpriteFactory.Build(syntheticMaterialName!, syntheticGlyph, syntheticWidth, syntheticHeight);
@@ -611,6 +649,16 @@ public class World2D
                 spawnedBody.Density = densityOverride ?? material.Density;
                 spawnedBody.Friction = frictionOverride ?? material.Friction;
                 spawnedBody.Restitution = restitutionOverride ?? material.Restitution;
+                if (materialOverride is not null)
+                {
+                    // Keep MaterialName consistent with the material this override just resolved,
+                    // not just Density/Friction/Restitution above - otherwise WorldRenderer's own
+                    // material color resolution (which reads MaterialName) would keep using the
+                    // sprite's own baked-in material (e.g. Ball's DefaultMaterial = Rubber) even
+                    // for a placement that overrode Material to something else (e.g. Plastic),
+                    // silently ignoring that override's own ForegroundColor/BackgroundColor.
+                    spawnedBody.MaterialName = materialOverride;
+                }
                 if (massOverride is not null)
                 {
                     spawnedBody.Mass = massOverride.Value;

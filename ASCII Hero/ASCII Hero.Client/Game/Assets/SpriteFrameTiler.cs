@@ -4,7 +4,7 @@ namespace ASCII_Hero.Client.Game.Assets;
 /// Repeats a tileable sprite frame's grids along its declared <see cref="TileAxis"/> to build up
 /// an arbitrary-length platform/wall from one small authored unit. A <see cref="TileAxis.Horizontal"/>
 /// unit (authored one cell wide) is repeated column-wise; a <see cref="TileAxis.Vertical"/> unit
-/// (authored one cell tall) is repeated row-wise. See docs/AssetFormat.md for the format rationale.
+/// (authored one cell tall) is repeated row-wise.
 /// </summary>
 public static class SpriteFrameTiler
 {

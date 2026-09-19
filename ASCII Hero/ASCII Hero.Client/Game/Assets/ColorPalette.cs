@@ -1,12 +1,11 @@
 namespace ASCII_Hero.Client.Game.Assets;
 
 /// <summary>
-/// The shared color palette (Global/Colors.ini merged with an optional world-local
-/// Colors.ini, per AssetFormat.md section 1.1: world entries override same-named codes,
-/// codes only defined globally still apply). Maps a single-character color code (as found in
-/// any _foregroundcolors.txt/_backgroundcolors.txt) to a CSS hex color string. Loading/merging
-/// itself is handled by the shared <see cref="IniOverrideLoader"/>, which <see cref="MaterialLibrary"/>
-/// also uses for its identical Global-then-World fallback rule.
+/// The shared color palette (Global/ColorPalette.ini merged with an optional world-local
+/// ColorPalette.ini: world entries override same-named codes, codes only defined globally still
+/// apply). Maps a single-character color code (as found in any
+/// _foregroundcolors.txt/_backgroundcolors.txt) to a CSS hex color string. Loading/merging is
+/// handled by the shared <see cref="IniOverrideLoader"/>.
 /// </summary>
 public class ColorPalette
 {
@@ -16,7 +15,7 @@ public class ColorPalette
 
     public static async Task<ColorPalette> LoadAsync(IAssetFileProvider fileProvider, string? worldName)
     {
-        var colors = await IniOverrideLoader.LoadAsync<char, string>(fileProvider, worldName, "Colors.ini", Merge);
+        var colors = await IniOverrideLoader.LoadAsync<char, string>(fileProvider, worldName, "ColorPalette.ini", Merge);
         return new ColorPalette(colors);
     }
 

@@ -11,8 +11,9 @@ required.
 Assets/
 	Global/
 		Settings.ini
-		Colors.ini
-		Materials.ini
+		ColorPalette.ini
+		ColorPalette.htm
+		MaterialLibrary.ini
 		Worlds.ini
 		Sprites/
 			Player/
@@ -43,8 +44,8 @@ Assets/
 			Level1_objects.ini
 			Level1_thumb_characters.txt        (optional, world-selection screen preview)
 			Level1_thumb_foregroundcolors.txt  (optional)
-			Colors.ini            (optional, world-specific overrides/additions)
-			Materials.ini          (optional, world-specific overrides/additions)
+			ColorPalette.ini      (optional, world-specific overrides/additions)
+			MaterialLibrary.ini   (optional, world-specific overrides/additions)
 			Sprites/
 				BossPlant/           (optional, world-specific sprite - a boss unique
 									 to this world, for example)
@@ -60,7 +61,7 @@ Assets/
   one-world-only.
 - **`Worlds/{WorldName}/`** holds one folder per world, containing that world's own
   background/object-placement files, plus optional world-specific `Sprites/`,
-  `Colors.ini`, and `Materials.ini` for anything that only makes sense within that
+  `ColorPalette.ini`, and `MaterialLibrary.ini` for anything that only makes sense within that
   one world (a unique boss sprite, a world-specific color not used anywhere else,
   a special material only this world's puzzle needs).
 
@@ -74,18 +75,26 @@ back to `Global/` only if not found there:
   `Global/Sprites/{AssetName}/`. This lets a world override a global sprite (e.g. a
   world-specific reskinned platform) simply by placing a same-named folder locally,
   with no engine-level "override" flag needed - presence of the world-local folder
-  is itself the override signal.
-- **Colors/materials**: a world's own `Colors.ini`/`Materials.ini` (if present) is
-  merged over `Global/Colors.ini`/`Global/Materials.ini` - entries with the same
+  is itself the override signal. This resolution happens per asset name, not per
+  world: a world that overrides one sprite still gets every other sprite from
+  `Global/Sprites/` as normal.
+- **Colors/materials**: a world's own `ColorPalette.ini`/`MaterialLibrary.ini` (if present) is
+  merged over `Global/ColorPalette.ini`/`Global/MaterialLibrary.ini` - entries with the same
   code/section name in the world file take precedence; entries only defined
-  globally still apply unchanged. A world with no local `Colors.ini`/`Materials.ini`
+  globally still apply unchanged. A world with no local `ColorPalette.ini`/`MaterialLibrary.ini`
   simply uses the global ones as-is.
 
 This keeps the common case (everything shared globally) requiring zero extra
 files, while still allowing full per-world customization when actually needed.
 
+**Example**: an ice-themed world could add `Worlds/IceWorld/Sprites/Player/` with a
+winter-clothed reskin of just the `Player` sprite, plus a local `ColorPalette.ini`
+recoding a color to icy blues and a local `MaterialLibrary.ini` adding a
+low-friction `Ice` material - while every other sprite, color, and material the
+world uses still resolves to the global ones untouched.
+
 Naming case convention: global shared files use "first word capitalized" naming
-(`Settings.ini`, `Colors.ini`, `Materials.ini`). Per-asset files stay entirely
+(`Settings.ini`, `ColorPalette.ini`, `MaterialLibrary.ini`). Per-asset files stay entirely
 lowercase-prefixed, matching the asset/clip name (`Player_walk_idle_characters.txt`).
 
 ## 2. Sprite files
@@ -104,9 +113,9 @@ plus one `{AssetName}_settings.ini` per asset folder.
 | File suffix                | Contents                                                            |
 |------------------------------|----------------------------------------------------------------------|
 | `_characters.txt`           | The visible glyph for each cell. Required.                          |
-| `_foregroundcolors.txt`     | Foreground color code per cell (see `Global/Colors.ini`). Optional.  |
-| `_backgroundcolors.txt`     | Background color code per cell (see `Global/Colors.ini`). Optional.  |
-| `_materials.txt`            | Material code per cell (see `Global/Materials.ini`). Optional.      |
+| `_foregroundcolors.txt`     | Foreground color code per cell (see `Global/ColorPalette.ini`). Optional.  |
+| `_backgroundcolors.txt`     | Background color code per cell (see `Global/ColorPalette.ini`). Optional.  |
+| `_materials.txt`            | Material code per cell (see `Global/MaterialLibrary.ini`). Optional.      |
 
 All layer files for the same clip share identical dimensions (rows and columns).
 Dimensions are never authored explicitly — they're inferred from the content of
@@ -230,7 +239,7 @@ B = Bone
 - `EmptyChar` (default `' '`) — which character in layer files means "no cell here."
 - `TileAxis` (default `None`) — whether this asset is a tileable unit (see §2.5).
 
-**`[Colors]`** (optional) — whole-asset default color codes (see `Global/Colors.ini`),
+**`[Colors]`** (optional) — whole-asset default color codes (see `Global/ColorPalette.ini`),
 the color analog of `[Physics] DefaultMaterial`'s whole-object shorthand (§2.3):
 - `DefaultForegroundColor`/`DefaultBackgroundColor` — the color code used for any
   cell whose own `_foregroundcolors.txt`/`_backgroundcolors.txt` position is
@@ -488,6 +497,9 @@ Level1_background_characters.txt
 Level1_background_foregroundcolors.txt
 Level1_background_backgroundcolors.txt
 Level1_background_materials.txt   (optional)
+Level1_foreground_characters.txt        (optional)
+Level1_foreground_foregroundcolors.txt  (optional)
+Level1_foreground_backgroundcolors.txt  (optional)
 Level1_objects.txt
 Level1_objects.ini
 ```
@@ -502,6 +514,21 @@ Level1_objects.ini
   data — this is a documented design intent for a future alternative to
   defining solid terrain via `_objects.ini`, not a working feature today. Omit
   the file until this is implemented.
+- `Level1_foreground_*` is the background layer's counterpart on the other side
+  of the scene: purely visual, drawn last — on top of every game object,
+  static or otherwise (see [Structure.md](Structure.md)'s Rendering/per-frame
+  tick sections for the full render-order note, including where the HUD
+  fits) — instead of first. This is
+  for decoration meant to always read as being in front of everything else
+  (e.g. prison bars, an overhanging foliage strip, a window frame) without
+  needing a full per-object z-order system. Entirely optional — a world with
+  no `Level1_foreground_characters.txt` simply has nothing drawn on this
+  layer, exactly as today. When present, it is **not** sized independently
+  from its own content — like `Level1_objects.txt`, its dimensions are fixed
+  to `Level1_background_characters.txt`'s own width/height, with any missing
+  rows/columns padded with `EmptyChar`. No `_foreground_materials.txt`
+  equivalent exists — this layer is always purely visual, never physically
+  solid.
 - `Level1_objects.txt` is a **separate** grid, at the same dimensions as
   `Level1_background_characters.txt`, used only to mark where object instances
   spawn.
@@ -512,6 +539,7 @@ Level1_objects.ini
   instead the loader reads `Level1_background_characters.txt` first to
   establish the world's width/height, then reads `Level1_objects.txt` against
   those same dimensions, padding any missing rows/columns with `EmptyChar`.
+
 
 `Level1_settings.ini` mirrors an asset's `settings.ini` (§2.4), but at world
 scope:
@@ -584,7 +612,7 @@ Level1_thumb_backgroundcolors.txt   (optional)
 Before any world loads and plays, the game shows a single row of world
 thumbnails (§3.1) with each one's `Title` (see `[World]` above) displayed
 above it, styled the same way as in-game ASCII rendering (same font/cell
-grid, same `Global/Colors.ini` palette, plain CP437 box-drawing glyphs for
+grid, same `Global/ColorPalette.ini` palette, plain CP437 box-drawing glyphs for
 the selector box) rather than ordinary Blazor HTML/CSS.
 
 - The row shows either 5 or 3 thumbnails at once (whichever largest odd
@@ -663,9 +691,9 @@ applies to `Asset`-based sections.
 #### Materials-only objects
 
 A section may skip `Asset`/`Clip` entirely and instead name a `Material` (one
-already defined in `Materials.ini`, see §1) plus a fixed `Width`/`Height` in
+already defined in `MaterialLibrary.ini`, see §1) plus a fixed `Width`/`Height` in
 cells. This spawns a solid rectangular body of that size, filled with that
-material's own `DefaultChar` glyph and colored by that material's own
+material's own `Character` glyph and colored by that material's own
 `ForegroundColor`/`BackgroundColor` - with no authored sprite asset/`_characters.txt`
 required at all:
 
@@ -677,12 +705,35 @@ Height = 2
 Kind = StaticObject
 ```
 
-The material named must have a `DefaultChar` configured in `Materials.ini`;
-one that doesn't (most don't, by default) cannot be used for a materials-only
-object, and loading throws an error explaining which key is missing. This is
-the only thing that makes `DefaultChar` meaningful - it has no effect on any
-`Asset`-based placement, whose glyphs always come from its own sprite's
-`_characters.txt`.
+The material named must have a `Character` configured in `MaterialLibrary.ini`,
+**or** the section itself must supply its own `Character` override (see
+below); one with neither cannot be used for a materials-only object, and
+loading throws an error explaining which key is missing. Aside from that
+fallback role, a material's `Character` has no effect on any `Asset`-based
+placement, whose glyphs always come from its own sprite's `_characters.txt`.
+
+A materials-only section may also override any of its three visual keys away
+from the shared material's own defaults, same as an `Asset`-based placement
+already can via `ForegroundColor`/`BackgroundColor` (see the placement-key
+table above):
+
+- `Character` — overrides the glyph away from the material's own
+  `Character`, for this placement only.
+- `ForegroundColor`/`BackgroundColor` — override the color away from the
+  material's own `ForegroundColor`/`BackgroundColor`, for this placement only.
+
+For example, to simulate a patch of polluted water without affecting every
+other `Water` placement in the level:
+
+```ini
+[PollutedWater]
+Material = Water
+Width = 6
+Height = 3
+Kind = StaticObject
+Character = ~
+ForegroundColor = G
+```
 
 Materials-only objects are meant for simple, uniformly-filled shapes only
 (a solid slab of one material) - they have no `Clip`/`EffectClip`, no tiling
@@ -698,7 +749,8 @@ The table below summarizes what each style supports:
 | Per-cell character/color layering | Yes | No (one glyph/color for the whole shape) |
 | `Clip`/`EffectClip` | Yes | No |
 | `Repeat`/`TileAxis` tiling | Yes (if the asset is tileable) | No (not applicable) |
-| Glyph source | Sprite's authored characters | Material's `DefaultChar` |
+| `Character`/`ForegroundColor`/`BackgroundColor` overrides | `ForegroundColor`/`BackgroundColor` only (glyphs come from the sprite) | All three (`Character` overrides the material's own `Character`) |
+| Glyph source | Sprite's authored characters | Material's `Character` |
 | Color source | Sprite defaults, then `Material` override, then world default | Material's `ForegroundColor`/`BackgroundColor` |
 | `Material` key's role | Optional override of the spawned material | Required - names the object's only material |
 | Best for | Animated/detailed/multi-material objects | Simple solid slabs (platforms, blocks) of one material |
@@ -998,7 +1050,7 @@ Material = Plastic
 ForegroundColor = Y
 ```
 
-- **`Material`** — the material name (see `Global/Materials.ini`) this
+- **`Material`** — the material name (see `Global/MaterialLibrary.ini`) this
   section's Density/Friction/Restitution resolve from, in place of the
   spawned body's own resolved `MaterialName`. `Friction`/`Restitution`/
   `Density` below are each separate, independently overridable keys rather
@@ -1029,7 +1081,7 @@ ForegroundColor = Y
   its resolved material's other physical defaults.
   Applies to `Player` too, not just non-player object types.
 - **`ForegroundColor`**/**`BackgroundColor`** — a single-character color code
-  (see `Global/Colors.ini`), a tier in `WorldRenderer`'s color-resolution
+  (see `Global/ColorPalette.ini`), a tier in `WorldRenderer`'s color-resolution
   chain, in precedence order after the cell's own per-cell code:
   per-cell layer file &gt; this section's override &gt; the sprite asset's own
   `[Colors]` default &gt; this object's resolved material's own
@@ -1076,7 +1128,7 @@ Hangable = true
 
 ## 4. Global files
 
-### 4.1 `Global/Colors.ini`
+### 4.1 `Global/ColorPalette.ini`
 
 Defines the shared color palette referenced by every `_foregroundcolors.txt`/
 `_backgroundcolors.txt` file across all sprites and worlds, and by every
@@ -1092,15 +1144,15 @@ mapping to a `#RRGGBB` hex value, e.g.:
 L = #992200 ; Fiery Crimson / Magma Base
 ```
 
-A world's own `Colors.ini` (if present) is merged over this file per the
-Global/World fallback rule in §1.1. **If a world-local `Colors.ini`
+A world's own `ColorPalette.ini` (if present) is merged over this file per the
+Global/World fallback rule in §1.1. **If a world-local `ColorPalette.ini`
 redefines what an existing code means, it should be paired with a
-world-local `Materials.ini`** for any material whose `ForegroundColor`/
+world-local `MaterialLibrary.ini`** for any material whose `ForegroundColor`/
 `BackgroundColor` (see §4.2) depends on that code — otherwise that
 material's default color silently resolves against the unrelated global
 meaning of that same code rather than the world's own repurposed one.
 
-### 4.2 `Global/Materials.ini`
+### 4.2 `Global/MaterialLibrary.ini`
 
 Defines the shared material library, referenced by every `_materials.txt` file
 and by `DefaultMaterial` in any `settings.ini`.
@@ -1112,7 +1164,7 @@ Friction = 0.4
 Restitution = 0.1
 ForegroundColor = J
 BackgroundColor = I
-DefaultChar = ░
+Character = ░
 
 [Rubber]
 Density = 1.1
@@ -1120,7 +1172,7 @@ Friction = 0.9
 Restitution = 0.8
 ForegroundColor = 1
 BackgroundColor = 0
-DefaultChar = ▓
+Character = ▓
 
 [Steel]
 Density = 7.8
@@ -1128,14 +1180,14 @@ Friction = 0.3
 Restitution = 0.3
 ForegroundColor = U
 BackgroundColor = S
-DefaultChar = ▒
+Character = ▒
 
 [Air]
 Density = 0.0012
 Friction = 0.0
 Restitution = 0.0
 ForegroundColor = J
-DefaultChar = ' '
+Character = ' '
 
 [Water]
 Density = 1.0
@@ -1143,7 +1195,7 @@ Friction = 0.05
 Restitution = 0.0
 ForegroundColor = I
 BackgroundColor = H
-DefaultChar = ~
+Character = ~
 ```
 
 Fields:
@@ -1158,9 +1210,12 @@ Fields:
   appropriate to its physical material (e.g. any un-styled `Steel`-backed
   object rendering in a metallic gray) without every such sprite needing to
   repeat the same color pairing individually.
-- **DefaultChar** (optional) — a default glyph representing this material.
-  Reserved for future use — not currently read by any loader/renderer, since
-  every sprite/background today always authors its own `_characters.txt`.
+- **Character** (optional) — a default glyph representing this material,
+  used as the glyph for a materials-only world object (one naming this
+  `Material` but no `Asset` — see §3, "Materials-only objects"); has no
+  effect on any `Asset`-based placement, whose glyphs always come from its
+  own sprite's `_characters.txt`. A materials-only placement may also
+  override it per-instance via its own `Character` key.
 
 ### 4.3 `Global/Settings.ini`
 

@@ -2,6 +2,39 @@
 
 Log of significant architecture/design decisions. Newest first.
 
+## Iterative (multi-pass) narrow-phase solid/mover collision resolution
+
+- **The solids-and-movers narrow phase in `CollisionSystem.Resolve` now
+  re-runs its detection-and-resolution passes (`ResolveAgainstSolid` over
+  candidate solids, `ResolveBodyPair` over candidate movers) `SolverIterations`
+  (4) times per frame, instead of once.** Previously each contact was detected
+  and immediately corrected exactly once, in whatever order bodies/candidates
+  happened to be iterated in that frame. When a body touched more than one
+  contact at once - a corner formed by two solids, a body resting on the
+  ground while also overlapping another mover, a body sandwiched between two
+  solids - each contact's correction could reintroduce or worsen an overlap at
+  another contact that had already been "resolved" earlier in the same pass,
+  since there was no reconciliation step. Symptoms included corner-sticking, a
+  body being able to sink through a floor it was also touching another
+  contact against, and single-frame "teleport"-looking bursts of motion from
+  conflicting corrections stacking up.
+- **Fix: wrap the existing solids/movers resolution in a small fixed-count
+  loop.** Each iteration re-detects overlap from the bodies' *current* (already
+  partially corrected) positions and resolves it immediately, exactly the same
+  way `ResolveAgainstSolid` already re-fetches a body's `CollisionRects` fresh
+  between its own multiple collision rects within a single call (see its
+  remarks) - this simply generalizes that same "always work from live,
+  just-corrected state" pattern to reconcile *all* of a frame's simultaneous
+  contacts, not just one body's own rects against one solid. No per-contact
+  math (impulse/restitution/friction formulas) changed; only the orchestration
+  did. `4` iterations is a standard "sequential impulse" default and matches
+  the small number of simultaneous contacts any one body realistically has in
+  this game, so the added per-frame cost is negligible.
+- **`ResolveWorldBounds` and hazard/collectable/climbable/hangable resolution
+  remain single-pass**, run once after the iterative solids/movers loop
+  completes, unchanged - they are not pairwise contacts requiring the same
+  reconciliation.
+
 ## Materials-only world objects (no sprite asset required)
 
 - **A world object section may now name `Material` + `Width` + `Height`
@@ -31,8 +64,43 @@ Log of significant architecture/design decisions. Newest first.
   to simple, uniform solid shapes. Anything needing per-cell detail (e.g. a
   strip of grass on top of brick) still requires an authored sprite asset.
 - **A material used this way must have `DefaultChar` configured in
-  `Materials.ini`**; one that doesn't throws a load-time error naming the
-  missing key, rather than silently spawning an invisible/broken object.
+  `Materials.ini`, unless the placement itself supplies a `Character`
+  override** (see the per-placement visual override entry below); a section
+  with neither throws a load-time error naming the missing key, rather than
+  silently spawning an invisible/broken object.
+
+## `Materials.ini`'s `DefaultChar` key renamed to `Character`
+
+- **Renamed for naming consistency with `ForegroundColor`/`BackgroundColor`**,
+  neither of which carry a `Default` prefix despite serving the exact same
+  "fallback tier" role. Purely a rename - no behavior change - covering the
+  `Materials.ini` key itself, the `Material.Character` record property
+  (`MaterialLibrary.cs`), and all doc/comment references. The per-placement
+  `Character` override key (see above) already used the un-prefixed name, so
+  this also removes the naming mismatch between a material's own key and a
+  placement's override of it.
+
+## Per-placement `Character` override for materials-only objects
+
+- **A materials-only object section may now set `Character` to override its
+  own glyph away from its material's shared `DefaultChar`, for that placement
+  only** - mirroring the existing per-placement `ForegroundColor`/
+  `BackgroundColor` overrides (already generic to every `Kind`/spawn style,
+  not just materials-only). This closes the one visual key that materials-
+  only objects couldn't already override on their own, e.g. authoring one
+  `Water` placement with a distinct "polluted" look (different glyph and/or
+  color) without affecting every other `Water` object in the level.
+- **Implemented entirely within the existing materials-only branch of
+  `World2D.LoadAsync`/`SyntheticSpriteFactory`** - no new override plumbing
+  was needed since `ForeColorOverride`/`BackColorOverride` on `Body2D` already
+  apply generically at render time; only the synthetic sprite's own glyph
+  needed a per-section override path, resolved before building/caching the
+  synthetic `SpriteAsset` (so two placements using the same material+size but
+  different `Character` values still get distinct cached synthetic assets).
+- **A materials-only section can now omit `DefaultChar` in `Materials.ini`
+  entirely as long as it supplies its own `Character`** - the "must have a
+  usable glyph from somewhere" validation now checks both, only erroring if
+  neither is present.
 
 ## Color palette widened to 36 codes, `Colors.ini` re-palette, and `Materials.ini` gained default colors/char
 

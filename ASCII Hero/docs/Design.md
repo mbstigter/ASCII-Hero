@@ -13,7 +13,7 @@ not like a pixel-art game with ASCII characters placed on top.
 - Monospaced glyphs form the game world (e.g. `@`, `#`, `█`, `░`, `│`, `─`).
 - Colour is part of the ASCII visual language. Each cell's foreground/background
   colour is a single-character code (`0-9` plus `A-Z`, 36 possible codes)
-  looked up in a shared palette (`Colors.ini`, see
+  looked up in a shared palette (`ColorPalette.ini`, see
   [AssetFormat.md](AssetFormat.md)). Codes are allocated mnemonically and
   added as needed (e.g. `K`=blacK, `W`=White, `R`=Red) rather than filled in
   sequentially — only as many as are actually used need to be defined.
@@ -73,7 +73,7 @@ not like a pixel-art game with ASCII characters placed on top.
   still to be designed.
 - **Material-Based Collision Response.** Move surface-dependent collision
   behavior (bounciness, friction, etc.) onto a per-material concept (see
-  `Materials.ini`) instead of ad-hoc per-body-type checks in `CollisionSystem`.
+  `MaterialLibrary.ini`) instead of ad-hoc per-body-type checks in `CollisionSystem`.
 - **Force-Based Movement for the player.** `DynamicObject2D`/`MovingEnemy2D`
   already move via the force/acceleration model (`PhysicsSystem.
   StepMovingBodyWithForces`) - gravity, and now `MovingEnemy2D`'s patrol (see

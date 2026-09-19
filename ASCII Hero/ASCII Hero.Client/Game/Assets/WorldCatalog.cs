@@ -11,10 +11,9 @@ public class ThumbnailFrame
 /// <summary>
 /// Everything a world-selection screen needs to show one world without fully loading it (compare
 /// <see cref="World.World2D.LoadAsync"/>, which loads the whole playable world): its display
-/// title and its fixed-size, optionally-animated thumbnail art. See docs/AssetFormat.md §3.1/§3.2.
-/// Owns its own thumbnail animation state (current frame, elapsed time) since exactly one instance
-/// of each world's thumbnail is ever shown on the selection screen at a time - unlike a sprite's
-/// clip, there's no need to separate "shared asset data" from "one placement's playback state".
+/// title and its fixed-size, optionally-animated thumbnail art. Owns its own thumbnail animation
+/// state (current frame, elapsed time) since exactly one instance of each world's thumbnail is
+/// ever shown on the selection screen at a time.
 /// </summary>
 public class WorldSummary
 {
@@ -126,7 +125,7 @@ public class WorldSummary
 /// <summary>
 /// The set of worlds available to play and their lightweight <see cref="WorldSummary"/> metadata,
 /// for a world-selection screen shown before <see cref="World.World2D.LoadAsync"/> loads the
-/// chosen world. See docs/AssetFormat.md §3.2/§4.4.
+/// chosen world.
 /// </summary>
 public static class WorldCatalog
 {
@@ -134,10 +133,9 @@ public static class WorldCatalog
     public const int ThumbnailHeight = 8;
 
     /// <summary>
-    /// Reads the ordered list of every world available to play from <c>Global/Worlds.ini</c> (see
-    /// docs/AssetFormat.md §4.4) - an explicit, authored manifest rather than a directory listing,
-    /// since Blazor WebAssembly has no way to enumerate `wwwroot`'s contents at runtime (the same
-    /// reasoning as the authored, not filesystem-inferred, `[Poses]` clip list).
+    /// Reads the ordered list of every world available to play from <c>Global/Worlds.ini</c> - an
+    /// explicit, authored manifest rather than a directory listing, since Blazor WebAssembly has
+    /// no way to enumerate `wwwroot`'s contents at runtime.
     /// </summary>
     public static async Task<IReadOnlyList<string>> LoadWorldNamesAsync(IAssetFileProvider fileProvider)
     {
@@ -170,10 +168,10 @@ public static class WorldCatalog
         var emptyChar = IniValueParser.ParseEmptyChar(settings.TryGetValue("Layout", "EmptyChar"));
         var title = settings.TryGetValue("World", "Title") is { Length: > 0 } titleValue ? titleValue : worldName;
 
-        // Both files are optional (see docs/AssetFormat.md §3.1) - a world without thumbnail art
-        // yields a single blank thumbnail frame rather than failing to load. Like any other clip,
-        // multiple frames are separated by "//end"; unlike a sprite clip, every frame here is
-        // fixed at exactly ThumbnailWidth x ThumbnailHeight rather than inferred from content.
+        // Both files are optional - a world without thumbnail art yields a single blank
+        // thumbnail frame rather than failing to load. Like any other clip, multiple frames are
+        // separated by "//end"; unlike a sprite clip, every frame here is fixed at exactly
+        // ThumbnailWidth x ThumbnailHeight rather than inferred from content.
         var charsContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_thumb_characters.txt");
         var charFrames = charsContent is null
             ? [EmptyGrid(emptyChar)]
@@ -196,9 +194,9 @@ public static class WorldCatalog
         var defaultBackColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
 
         // An optional [Animation.Thumbnail] section (same keys/semantics as a sprite clip's own
-        // [Animation]/[Animation.{clipName}] section - see docs/AssetFormat.md §2.4) times the
-        // thumbnail's frames. Absent entirely, the thumbnail never animates - even if it happens
-        // to have more than one frame - exactly like an un-configured sprite clip.
+        // [Animation]/[Animation.{clipName}] section) times the thumbnail's frames. Absent
+        // entirely, the thumbnail never animates - even if it happens to have more than one
+        // frame - exactly like an un-configured sprite clip.
         var animationSection = settings.Section("Animation.Thumbnail");
         var frameDurationSeconds = animationSection.TryGetValue("FrameDurationSeconds", out var durationText)
             ? SpriteLoader.ParseFrameDurationSeconds(durationText)

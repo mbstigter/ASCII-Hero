@@ -1,24 +1,25 @@
 namespace ASCII_Hero.Client.Game.Assets;
 
 /// <summary>
-/// One material's physical properties, as read from a <c>Materials.ini</c> section (see
-/// docs/AssetFormat.md and Assets/Global/Materials.ini's own header comment).
+/// One material's physical properties, as read from a <c>MaterialLibrary.ini</c> section.
 /// </summary>
 /// <param name="Density">Relative mass per world-cell "volume"; drives <see cref="World.Body2D.Mass"/>.</param>
 /// <param name="Friction">0 = frictionless, 1 = very grippy.</param>
 /// <param name="Restitution">Bounciness; 0 = no bounce, 1 = perfectly elastic.</param>
 /// <param name="ForegroundColor">
-/// Optional single-character color code (see <c>Global/Colors.ini</c>) used as this material's
+/// Optional single-character color code (see <c>Global/ColorPalette.ini</c>) used as this material's
 /// own tier in the render color-resolution chain - lower priority than a sprite/object's own
-/// color but higher than the level's default (see <see cref="Rendering.GlyphBuilder.ResolveColor"/>
+/// color but higher than the world's default (see <see cref="Rendering.GlyphBuilder.ResolveColor"/>
 /// via <see cref="Rendering.WorldRenderer"/>). Null if this material doesn't define one, in which
-/// case the chain simply continues past it unchanged.
+/// case the chain continues past it unchanged.
 /// </param>
 /// <param name="BackgroundColor">See <see cref="ForegroundColor"/>.</param>
-/// <param name="DefaultChar">
-/// Optional default glyph representing this material. Reserved for future use - not currently
-/// consumed by any loader/renderer (every sprite/background already authors its own
-/// <c>_characters.txt</c>, so there is no current fallback scenario that would read this).
+/// <param name="Character">
+/// Optional default glyph representing this material - used as the glyph for a materials-only
+/// world object placement that names this material but no <c>Asset</c>; such a placement may
+/// also override it per-instance via its own <c>Character</c> key. Has no effect on any
+/// <c>Asset</c>-based placement, whose glyphs always come from its own sprite's
+/// <c>_characters.txt</c>.
 /// </param>
 public readonly record struct Material(
     double Density,
@@ -26,25 +27,22 @@ public readonly record struct Material(
     double Restitution,
     char? ForegroundColor = null,
     char? BackgroundColor = null,
-    char? DefaultChar = null);
+    char? Character = null);
 
 /// <summary>
-/// The shared material library (Global/Materials.ini merged with an optional level-local
-/// Materials.ini, per docs/AssetFormat.md section 1.1: level entries override same-named
-/// sections, sections only defined globally still apply). Maps a material name (as found in a
-/// sprite's <c>DefaultMaterial</c>/<c>MaterialCodes</c> settings or a level's own
-/// <c>_materials.txt</c> per-cell layer, resolved by <see cref="SpriteLoader"/> into
-/// <see cref="SpriteFrame.Materials"/>) to its physical properties. Loading/merging itself is
-/// handled by the shared <see cref="IniOverrideLoader"/>, which <see cref="ColorPalette"/> also
-/// uses for its identical Global-then-Level fallback rule.
+/// The shared material library (Global/MaterialLibrary.ini merged with an optional world-local
+/// MaterialLibrary.ini: world entries override same-named sections, sections only defined
+/// globally still apply). Maps a material name (as found in a sprite's <c>DefaultMaterial</c>/
+/// <c>MaterialCodes</c> settings or a world's own <c>_materials.txt</c> per-cell layer, resolved
+/// by <see cref="SpriteLoader"/> into <see cref="SpriteFrame.Materials"/>) to its physical
+/// properties. Loading/merging is handled by the shared <see cref="IniOverrideLoader"/>.
 /// </summary>
 public class MaterialLibrary
 {
     /// <summary>
     /// Fallback used when a body has no resolvable material (e.g. a sprite with neither
-    /// <c>DefaultMaterial</c> nor a per-cell material layer) - physically inert (massless,
-    /// frictionless, no bounce) so an unconfigured body doesn't silently gain unexpected physics
-    /// behavior rather than failing loudly.
+    /// <c>DefaultMaterial</c> nor a per-cell material layer): physically inert (massless,
+    /// frictionless, no bounce).
     /// </summary>
     public static readonly Material Undefined = new(Density: 0.0, Friction: 0.0, Restitution: 0.0);
 
@@ -55,14 +53,13 @@ public class MaterialLibrary
     public static async Task<MaterialLibrary> LoadAsync(IAssetFileProvider fileProvider, string? worldName)
     {
         var materials = await IniOverrideLoader.LoadAsync<string, Material>(
-            fileProvider, worldName, "Materials.ini", Merge, StringComparer.OrdinalIgnoreCase);
+            fileProvider, worldName, "MaterialLibrary.ini", Merge, StringComparer.OrdinalIgnoreCase);
         return new MaterialLibrary(materials);
     }
 
     /// <summary>
     /// Looks up a material's properties by name, or <see cref="Undefined"/> if the name is null
-    /// or not defined in this library (rather than throwing - a body with no configured material
-    /// should behave physically inert, not crash the level load).
+    /// or not defined in this library.
     /// </summary>
     public Material Get(string? materialName) =>
         materialName is not null && _materials.TryGetValue(materialName, out var material)
@@ -79,10 +76,10 @@ public class MaterialLibrary
             var restitution = IniValueParser.ParseDouble(section.GetValueOrDefault("Restitution"));
             var foregroundColor = IniValueParser.ParseColorCode(section.GetValueOrDefault("ForegroundColor"));
             var backgroundColor = IniValueParser.ParseColorCode(section.GetValueOrDefault("BackgroundColor"));
-            var defaultChar = section.TryGetValue("DefaultChar", out var defaultCharText) && !string.IsNullOrEmpty(defaultCharText)
-                ? defaultCharText[0]
+            var character = section.TryGetValue("Character", out var characterText) && !string.IsNullOrEmpty(characterText)
+                ? characterText[0]
                 : (char?)null;
-            materials[sectionName] = new Material(density, friction, restitution, foregroundColor, backgroundColor, defaultChar);
+            materials[sectionName] = new Material(density, friction, restitution, foregroundColor, backgroundColor, character);
         }
     }
 }

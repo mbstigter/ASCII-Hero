@@ -267,10 +267,10 @@ public abstract class Body2D
     /// that still lets every existing single-material asset resolve exactly as authored; revisit
     /// only if a concrete asset genuinely needs per-cell-granular collision response.
     /// </summary>
-    public string? MaterialName { get; private set; }
+    public string? MaterialName { get; set; }
 
     /// <summary>
-    /// Per-instance color code (see <c>Global/Colors.ini</c>) overriding this body's sprite's own
+    /// Per-instance color code (see <c>Global/ColorPalette.ini</c>) overriding this body's sprite's own
     /// <see cref="Assets.SpriteAsset.DefaultForeColor"/>/<see cref="Assets.SpriteAsset.DefaultBackColor"/>,
     /// set from this placement's <c>ForegroundColor</c>/<c>BackgroundColor</c> ini key (see
     /// <see cref="World.World2D.LoadAsync"/>). Null if the placement didn't specify one, in which
