@@ -142,11 +142,12 @@ The live game state and the entity types that make it up.
 	gravity, collector, and killer capabilities (below), plus the climbing
 	(`IClimberBody`) and hanging (`IHangerBody`) capabilities (see Physics
 	below), plus `IPosedBody` (its `UpdatePose()` resolves stance+facing from
-	its own state, but is called explicitly by `PhysicsSystem.Step` rather
-	than through the generic per-frame dispatch below, since the player still
-	moves via direct velocity assignment - see Physics below). Nothing here
-	is player-specific - all of these are ordinary capability interfaces any
-	future body (e.g. a climbing/hanging enemy) could implement the same way.
+	its own state, called explicitly by `PhysicsSystem.Step` rather than
+	through the generic per-frame dispatch below) and `IWalkForceBody` (its
+	horizontal "motor" force, computed each frame by `PhysicsSystem.
+	UpdateWalkForce` - see Physics below). Nothing here is player-specific -
+	all of these are ordinary capability interfaces any future body (e.g. a
+	climbing/hanging enemy) could implement the same way.
   - `StaticObject2D` - solid, static terrain (platforms, walls, decoration).
   - `StaticEnemy2D` - a non-moving hazard (e.g. spikes) that can optionally
 	be "killable" and can trigger a cosmetic effect on contact.
@@ -240,9 +241,11 @@ The live game state and the entity types that make it up.
 ### Physics
 
 - **`PhysicsSystem`** - resolves player jump/stance/pose input, applies
-  gravity to any `IGravityAffected` body, and integrates position from
-  velocity for every `IPhysicsBody` each frame, all via one shared per-frame
-  mass-scaled force accumulator (`StepMovingBodyWithForces` - gravity as
+  gravity to any `IGravityAffected` body, computes the player's own
+  horizontal walk/crawl "motor" force (`UpdateWalkForce`, via
+  `IWalkForceBody`), and integrates position from velocity for every
+  `IPhysicsBody` each frame, all via one shared per-frame mass-scaled force
+  accumulator (`StepMovingBodyWithForces` - gravity as
   `mass * world.Gravity`, plus, for any `IPatrolBody`, its own patrol force,
   and for any `IWalkForceBody`, its own walk force, converted to acceleration
   via `a = F / mass`, then integrated into velocity), which is numerically
@@ -316,38 +319,38 @@ The live game state and the entity types that make it up.
   collision response are the combined (simple-average, see `Combine`) values
   of both contacting bodies' own resolved material properties (see
   `Body2D.Restitution`/`Friction` below), not a single one-sided or
-  type-based value. Solid-collision response (`ResolveRectAgainstSolid`)
-  treats the solid's own velocity (real for a kinematic body like
-  `KinematicObject2D`, zero for ordinary stationary terrain) as the
-  collision's reference frame - the normal-relative velocity response and
-  friction both run on the other body's velocity relative to the solid, then
-  the solid's velocity is added back - so a moving platform naturally drags
-  a resting rider along via friction (more so for a grippy material, less
-  for a slick one) using the exact same formulas as stationary terrain. The
-  normal-relative response is a genuine impulse-based reflection (matching
-  `ResolveNormalImpulse`'s mover-vs-mover math, generalized to an
-  infinite-mass second body), and the tangential (along-surface) component
-  is damped via real Coulomb friction (`ApplyCoulombFriction`) - capped by
-  the magnitude of the normal impulse just applied at that same contact
-  (`|f| <= mu * N`, expressed in velocity terms since impulses here are
-  resolved per-frame rather than as a continuous force), rather than the
-  old flat "multiply by `1 - friction`" approximation. Combined with
-  `PhysicsSystem` integrating that velocity into `Position` before `Resolve`
-  runs each frame, this carries a resting rider - the player included, now
-  that its own horizontal velocity is force/mass-driven (see
-  `IWalkForceBody` above) rather than overwritten from input every frame -
-  along a moving platform on both axes with no special-casing: the
-  platform-carry gap this used to leave (a platform displacing farther in
-  one frame than a body's own velocity-matched motion keeps up with) is
-  closed simply by the ordinary landing-snap correction re-running against
-  the platform's current (already-moved) position every frame - no separate
-  re-seat/carry mechanism is needed on either axis (see docs/Decisions.md
-  for the two now-removed workarounds this replaced).
+  type-based value. Solid-collision response (`ResolveAgainstSolid`/
+  `ResolveAgainstOtherBody`) treats the solid's own velocity (real for a
+  kinematic body like `KinematicObject2D`, zero for ordinary stationary
+  terrain) as the collision's reference frame - the normal-relative velocity
+  response and friction both run on the other body's velocity relative to
+  the solid, then the solid's velocity is added back - so a moving platform
+  naturally drags a resting rider along via friction (more so for a grippy
+  material, less for a slick one) using the exact same formulas as
+  stationary terrain. The normal-relative response is a genuine
+  impulse-based reflection (`ResolveContact`'s mass-weighted impulse,
+  generalized to an infinite-mass second body for solids), and the
+  tangential (along-surface) component is damped via real Coulomb friction
+  (`ApplyCoulombFriction`) - capped by the magnitude of the normal impulse
+  just applied at that same contact (`|f| <= mu * N`, expressed in velocity
+  terms since impulses here are resolved per-frame rather than as a
+  continuous force). Combined with `PhysicsSystem` integrating that velocity
+  into `Position` before `Resolve` runs each frame, this carries a resting
+  rider - the player included, now that its own horizontal velocity is
+  force/mass-driven (see `IWalkForceBody` above) rather than overwritten
+  from input every frame - along a moving platform on both axes with no
+  special-casing: the platform-carry gap this used to leave (a platform
+  displacing farther in one frame than a body's own velocity-matched motion
+  keeps up with) is closed simply by the ordinary landing-snap correction
+  re-running against the platform's current (already-moved) position every
+  frame - no separate re-seat/carry mechanism is needed on either axis (see
+  docs/Decisions.md for the two now-removed workarounds this replaced).
   Moving-body-vs-moving-body resolution
-  (`ResolveBodyPair`) splits position correction by relative mass and
-  resolves the along-normal velocity response via a standard 1D
-  mass-weighted impulse, rather than each body independently reflecting its
-  own velocity. Both climbing and hanging touch checks
+  (`ResolveAgainstMover`, sharing its math with the solid case via the same
+  `ResolveAgainstOtherBody`/`ResolveContact`) splits position correction by
+  relative mass and resolves the along-normal velocity response via a
+  standard 1D mass-weighted impulse, rather than each body independently
+  reflecting its own velocity. Both climbing and hanging touch checks
   share one generic snap-speed gate (a body moving too fast does not snap on,
   matching a jump arc's peak still needing to finish naturally rather than
   instantly catching on a passing platform/pipe/ladder); hanging additionally
@@ -364,18 +367,18 @@ The live game state and the entity types that make it up.
   including a `WorldBoundsSentinel` placeholder body so a body resting
   against the world's own floor/wall/ceiling (not a placed platform) records
   an ordinary `SurfaceBottom` contact the same way as any other solid, with
-  no special-casing. `ResolveRectAgainstSolid`/`ResolveBodyPair` then record
-  the reciprocal contact pair on both sides as they resolve a landing (e.g.
-  the rider gets `SurfaceBottom` against the solid, the solid gets
-  `SurfaceTop` against the rider). `IPhysicsBody.IsGrounded` is a derived,
-  read-only property (`HasContact(ContactType.SurfaceBottom)`), not a stored
-  mutable flag - see docs/Decisions.md for why this replaced the earlier
-  ordering-bug-prone stored flag. The one exception is `PhysicsSystem`
-  explicitly calling `RemoveContact(ContactType.SurfaceBottom)` the instant a
-  jump/climb/hang begins, so the derived state reflects "airborne" for that
-  same frame rather than waiting for `Resolve`'s next contact pass.
-  `Body2D.IsOneWayPlatform` lets a static solid block only a genuine
-  downward-moving top-landing (`ResolveRectAgainstSolid` checks the
+  no special-casing. `ResolveContact` then records the reciprocal contact
+  pair on both sides as it resolves a landing (e.g. the rider gets
+  `SurfaceBottom` against the solid, the solid gets `SurfaceTop` against the
+  rider). `IPhysicsBody.IsGrounded` is a derived, read-only property
+  (`HasContact(ContactType.SurfaceBottom)`), not a stored mutable flag - see
+  docs/Decisions.md for why this replaced the earlier ordering-bug-prone
+  stored flag. The one exception is `PhysicsSystem` explicitly calling
+  `RemoveContact(ContactType.SurfaceBottom)` the instant a jump/climb/hang
+  begins, so the derived state reflects "airborne" for that same frame
+  rather than waiting for `Resolve`'s next contact pass. `Body2D.
+  IsOneWayPlatform` lets a static solid block only a genuine downward-moving
+  top-landing (`ResolveAgainstOtherBody` checks the contact normal's
   overlap axis and the body's velocity relative to the solid); any other
   overlap axis, or a body moving upward through it, passes straight
   through untouched, so jumping up through a one-way platform from below
@@ -391,7 +394,7 @@ The live game state and the entity types that make it up.
   against a specific solid or another specific moving body - is the narrow
   phase, and always performs the fine-grained check ported (in spirit) from
   the older ConsoleGame2D prototype's `CheckCharacterCollision`:
-  `TryFindDeepestOverlap` only accepts a rectangle-pair overlap if at least
+  `TryFindContact` only accepts a rectangle-pair overlap if at least
   one world cell within it has a non-empty character on both bodies' sprite
   frames (see `HasCharacterOverlap`), rather than trusting the merged
   collision rectangles alone - a refinement that only matters for a shape

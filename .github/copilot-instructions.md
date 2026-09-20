@@ -25,11 +25,11 @@ AsciiHero is a browser-based retro ASCII platform game built with C# and .NET 10
 
 ### Before Changing Architecture
 
-Check [docs/Architecture.md](../ASCII%20Hero/docs/Architecture.md) and [docs/Decisions.md](../ASCII%20Hero/docs/Decisions.md).
+Check [docs/Architecture.md](../ASCII%20Hero/docs/Architecture.md) and [docs/DecisionsSummary.md](../ASCII%20Hero/docs/DecisionsSummary.md) (consult [docs/Decisions.md](../ASCII%20Hero/docs/Decisions.md) only when the detailed history/rationale behind a specific decision is needed).
 
 ### Before Changing Game Design
 
-Check [docs/Design.md](../ASCII%20Hero/docs/Design.md) and [docs/Decisions.md](../ASCII%20Hero/docs/Decisions.md).
+Check [docs/Design.md](../ASCII%20Hero/docs/Design.md) and [docs/DecisionsSummary.md](../ASCII%20Hero/docs/DecisionsSummary.md).
 
 ### Before Changing Asset File Formats
 
@@ -39,6 +39,10 @@ Check [docs/AssetFormat.md](../ASCII%20Hero/docs/AssetFormat.md).
 
 [docs/Structure.md](../ASCII%20Hero/docs/Structure.md) describes the program's components and key flows. Whenever a change adds, removes, renames, or moves a class/subsystem, or changes an existing flow it describes (e.g. startup order, per-frame tick order, asset loading/fallback rules), update the corresponding section of docs/Structure.md as part of that same change - treat it the same way as docs/Decisions.md, not as a separate follow-up task.
 
+### Keeping docs/DecisionsSummary.md Up To Date
+
+[docs/DecisionsSummary.md](../ASCII%20Hero/docs/DecisionsSummary.md) is a compact, current-state-only distillation of docs/Decisions.md, grouped by subsystem rather than by date. When a new architecture/design decision is logged in docs/Decisions.md, also add or update a short bullet in docs/DecisionsSummary.md if the decision is something a future change would need to know still holds true - and when a later decision supersedes/reverts an earlier one, update or remove the corresponding docs/DecisionsSummary.md bullet in the same change rather than leaving it stale.
+
 ### Local Development and Debugging
 
 - For local dev/debug launches of AsciiHero, launch the browser in app mode (msedge.exe --app=<url>, chromeless window) via launchSettings.json rather than a normal browser tab, so the canvas has focus immediately without an address bar competing for it.
@@ -46,3 +50,7 @@ Check [docs/AssetFormat.md](../ASCII%20Hero/docs/AssetFormat.md).
 ### Validation
 
 After code changes, build the solution and address build errors before considering the task complete.
+
+### Decision Documentation
+
+- docs/Decisions.md is maintained as a compact, current-state-only reference of architecture/design decisions grouped by subsystem, NOT a chronological historical log. When a decision is added, changed, or superseded/reverted, update docs/Decisions.md in place (edit/remove bullets) rather than appending historical entries.

@@ -86,25 +86,32 @@ DOM keyboard events.
   needing a distinct sprite asset. `CollisionSystem` combines two contacting
   bodies' `Restitution`/`Friction` via a simple average (`Combine`, see
   docs/Decisions.md) rather than one side dominating outright.
-- Player movement remains driven by direct velocity assignment from input
-  (`PhysicsSystem.StepMovingBody`) — deliberately excluded from the
-  force-based model below for now (see docs/Decisions.md). Every other
-  moving body (`IGravityAffected`/`IPhysicsBody`) integrates via a per-frame
-  force accumulator instead (`PhysicsSystem.StepMovingBodyWithForces`):
-  forces (today, just gravity as `mass * world.Gravity`) are summed into a
-  net force, converted to acceleration via `a = F / mass`, and integrated
-  into velocity — for a gravity-only body this is numerically identical to a
-  direct `velocity.Y += gravity * dt`, but it is the extension point for any
-  future non-gravity force source. There is no separate constraint-solver
-  "normal force" term; a resting body's downward velocity is instead damped
-  to zero/near-zero pragmatically by the existing grounded-contact
-  restitution response in `CollisionSystem` each frame it remains in contact.
+- Every moving body — the player included — integrates via a per-frame,
+  mass-scaled force accumulator (`PhysicsSystem.StepMovingBodyWithForces`):
+  forces (gravity as `mass * world.Gravity`, plus a body's own
+  `IPatrolBody.PatrolForce`/`IWalkForceBody.WalkForce`, e.g. the player's
+  proportional-to-speed-gap horizontal "motor" force computed by
+  `PhysicsSystem.UpdateWalkForce`) are summed into a net force, converted to
+  acceleration via `a = F / mass`, and integrated into velocity — for a
+  gravity-only body this is numerically identical to a direct `velocity.Y +=
+  gravity * dt`, but it is the extension point for any non-gravity force
+  source. Climb/hang vertical velocity and jump-off impulses remain direct
+  velocity assignments on purpose — those are discrete state-machine
+  locomotion modes (like a scripted teleport), not continuous ground-level
+  walk/crawl locomotion. There is no separate constraint-solver "normal
+  force" term; a resting body's velocity along the contact normal is instead
+  resolved by `CollisionSystem`'s own impulse-based response each frame it
+  remains in contact (see below).
 - Collision resolution between two finite-mass moving bodies
-  (`CollisionSystem.ResolveBodyPair`) splits position correction by relative
-  mass (a heavier body yields less ground than a lighter one) and resolves
-  the along-normal velocity response via a standard 1D mass-weighted impulse
-  (`j = -(1+e) * relativeVelocity / (1/mA + 1/mB)`), rather than each body
-  independently reflecting its own velocity.
+  (`CollisionSystem.ResolveAgainstMover`, sharing its math with solid-vs-mover
+  resolution via `ResolveAgainstOtherBody`/`ResolveContact`) splits position
+  correction by relative mass (a heavier body yields less ground than a
+  lighter one) and resolves the along-normal velocity response via a
+  standard 1D mass-weighted impulse (`j = -(1+e) * relativeVelocity / (1/mA
+  + 1/mB)`), rather than each body independently reflecting its own
+  velocity. The tangential (along-surface) component is then damped via real
+  Coulomb friction (`ApplyCoulombFriction`), capped by the normal impulse
+  magnitude just resolved at that same contact.
 - Platform collision and moving-body-vs-moving-body collision (e.g. the
   player and a dynamic object) are both resolved against `IPhysicsBody`
   generically — there is no per-concrete-type collision method. The player
@@ -114,54 +121,27 @@ DOM keyboard events.
   `IsStatic` (immune to collision response — nothing corrects its own
   position/velocity) while also implementing `IPhysicsBody` with a real,
   self-driven `Velocity`. `CollisionSystem`'s solid-collision math
-  (`ResolveRectAgainstSolid`) treats that solid's own velocity as the
-  collision's reference frame — computing bounce/friction on the other
-  body's velocity *relative to* the solid, then adding the solid's velocity
-  back — rather than assuming every solid is stationary. For ordinary
-  terrain (velocity zero) this reduces to exactly the prior math; for a
-  moving platform, friction naturally drags a resting rider along toward
-  matching the platform's own velocity (a grippy material carries the rider
-  more than a slick one), and vertical carry falls out for free from the
-  existing per-frame snap-onto-top-surface correction always running
-  against the platform's current (already-moved) position.
-- That snap-onto-top correction, combined with the velocity-matching
-  above (integrated into `Position` by `PhysicsSystem.Step` each frame
-  *before* `CollisionSystem.Resolve` runs), is what carries a resting body
-  vertically along with a moving platform in the ordinary case. But a
-  platform displacing downward farther in one frame than the resting
-  body's own velocity-matched fall keeps up with can still briefly lose
-  all rect overlap with the body entirely, before either mechanism gets a
-  chance to run - `CollisionSystem.MaintainVerticalGroundedContact` closes
-  this permanently: for a body still `IsGrounded` from last frame and
-  remembered (`_groundedSolids`) to be standing on a *moving* solid, if it
-  still overlaps that solid horizontally, its `Position.Y` is snapped
-  directly onto the solid's *current* top surface before this frame's
-  ordinary landing check runs - the same correction that check would
-  already produce, just performed one step earlier so overlap is never
-  actually lost. Being a direct assignment rather than an additive
-  velocity/position delta, it cannot double-count with the mechanisms
-  above (an earlier attempt that instead added `solidVelocity.Y *
-  deltaSeconds` on top of them caused visible up/down jitter - see
-  docs/Decisions.md). Gated on the body still being grounded (so a body
-  that jumped this same frame isn't wrongly snapped back down) and on the
-  solid actually moving (so a bouncing `DynamicObject2D`'s bounce off
-  ordinary stationary terrain is never cancelled).
-- `CollisionSystem` separately remembers, per grounded `IPhysicsBody`,
-  which solid it last landed on (`_groundedSolids`, shared with the fix
-  above), and at the start of the next `Resolve` call shifts *the
-  player's* `Position.X` by the remembered solid's `Velocity.X *
-  deltaSeconds` before the ordinary overlap check runs. This is a
-  **temporary hack**, not a permanent design: it exists only because
-  `PhysicsSystem.Step` overwrites the player's `Velocity.X` directly from
-  input every frame, so the friction-based horizontal velocity-matching
-  above never gets a chance to act for the player specifically (every
-  other body already carries horizontally for free via that
-  velocity-matching, same as vertical). It is scoped to the player only -
-  applying it to every body too would double-count the already-working
-  horizontal carry for non-player bodies. Once player movement becomes
-  force/mass-based instead of direct velocity assignment (see the
-  deferred TODO on `PhysicsSystem.Step`), this entire mechanism becomes
-  redundant and should be deleted.
+  (`ResolveAgainstOtherBody`/`ResolveContact`) treats that solid's own
+  velocity as the collision's reference frame — computing the normal-impulse
+  response and Coulomb friction on the other body's velocity *relative to*
+  the solid, then adding the solid's velocity back — rather than assuming
+  every solid is stationary. For ordinary terrain (velocity zero) this
+  reduces to exactly the prior math; for a moving platform, friction
+  naturally drags a resting rider along toward matching the platform's own
+  velocity (a grippy material carries the rider more than a slick one).
+- That velocity-matching, combined with `PhysicsSystem` integrating
+  velocity into `Position` each frame *before* `CollisionSystem.Resolve`
+  runs, carries a resting body — the player included, since its own
+  horizontal velocity is now force/mass-driven rather than overwritten from
+  input — along a moving platform on both axes with no special-casing: the
+  ordinary landing-snap correction re-running against the platform's
+  current (already-moved) position every frame closes the platform-carry
+  gap on its own (a platform displacing farther in one frame than a body's
+  own velocity-matched motion keeps up with). Two earlier workarounds for
+  this gap — `CollisionSystem._groundedSolids` and a player-only horizontal
+  platform-carry hack, plus a since-removed `MaintainVerticalGroundedContact`
+  re-seat step — were provably made redundant by this and deleted outright
+  (see docs/Decisions.md).
 - Hazard contact is resolved generically: any `IPhysicsBody` overlapping any
   `IHazardBody` in `World2D.Objects` is detected, with no concrete-type checks
   on either side. Hazard contact detection exists but does not yet apply any

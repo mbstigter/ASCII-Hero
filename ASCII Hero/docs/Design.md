@@ -71,19 +71,13 @@ not like a pixel-art game with ASCII characters placed on top.
   as readily as ladder jump-off allows. Needs a mechanism closer to ladder's
   (where the debounce is released on landing as well as loss of overlap) -
   still to be designed.
-- **Material-Based Collision Response.** Move surface-dependent collision
-  behavior (bounciness, friction, etc.) onto a per-material concept (see
-  `MaterialLibrary.ini`) instead of ad-hoc per-body-type checks in `CollisionSystem`.
-- **Force-Based Movement for the player.** `DynamicObject2D`/`MovingEnemy2D`
-  already move via the force/acceleration model (`PhysicsSystem.
-  StepMovingBodyWithForces`) - gravity, and now `MovingEnemy2D`'s patrol (see
-  `IPatrolBody`, [Decisions.md](Decisions.md)), both accumulate as mass-scaled
-  forces rather than direct velocity assignment. The player alone still moves
-  via direct velocity assignment from input (see the existing `TODO` in
-  `PhysicsSystem.Step`) - deliberately deferred until patrol force-movement
-  has been exercised enough to trust the pattern, since reworking the
-  player's tightly-tuned stance/jump/climb/hang movement carries much more
-  risk than adding a new non-player force source did.
+- **Material-Based Collision Response.** Largely done - a body's
+  `Density`/`Friction`/`Restitution`/`Mass` are resolved from a named
+  material (`MaterialLibrary.ini`, see [Decisions.md](Decisions.md)) rather
+  than ad-hoc per-body-type checks, and two contacting bodies' values
+  combine generically via `CollisionSystem.Combine`. Still open: any
+  material-driven behavior beyond the physical constants themselves (e.g. a
+  distinct sound/visual cue per material on contact).
 - **`MovingEnemy` behavior.** Linear patrol (back-and-forth along the X axis,
   under its own mass-scaled force - see
   [Decisions.md](Decisions.md)) is now implemented via `IPatrolBody`/`Patrol`
@@ -93,13 +87,12 @@ not like a pixel-art game with ASCII characters placed on top.
   full world). Facing/animation while patrolling is also implemented -
   `MovingEnemy2D.UpdatePatrolDirection()` calls `SetPose` each frame so a
   `Snake` visually turns to face (and animate through) its `move_left`/
-  `move_right` clips as it changes direction. Chase behavior is not - still
-  to design/implement:
+  `move_right` clips as it changes direction. Grounded and flying varieties
+  both already exist (a flying enemy simply opts out of gravity via the
+  existing `GravityAffected = false` placement key, used together with
+  `Patrol` - e.g. `Butterfly`). Chase behavior is not implemented - still to
+  design/implement:
   - Chase-the-player movement.
-  - Grounded and flying varieties (a flying enemy can already opt out of
-    gravity via the existing `GravityAffected = false` placement key - no new
-    mechanism needed there, just an asset/level using it together with
-    `Patrol`).
 - **`KinematicObject` behavior.** Beyond constant-velocity motion, still to
   design/implement:
   - Sprites no different from `StaticObject`.
