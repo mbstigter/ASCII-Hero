@@ -36,4 +36,8 @@ public class InputState
     /// <summary>Dev/testing shortcut - abandons the current world and returns to the world-select
     /// screen, regardless of which pose/mode is active. See docs/Decisions.md.</summary>
     public bool IsEscapePressed => IsPressed("Escape");
+
+    /// <summary>Dev/testing shortcut - toggles the FPS debug overlay (see
+    /// <see cref="GameLoop.OnFrame"/>). "F" is otherwise unused by any gameplay input.</summary>
+    public bool IsFpsToggleKeyPressed => IsPressed("KeyF");
 }

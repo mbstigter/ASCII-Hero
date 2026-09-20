@@ -300,6 +300,27 @@ public abstract class Body2D
     public double Friction { get; set; }
 
     /// <summary>
+    /// Drag coefficient applied while immersed in this body's own material as someone else's
+    /// ambient medium (see <see cref="CurrentMedium"/> and <c>Assets.Material.Viscosity</c>),
+    /// resolved the same way as <see cref="Density"/>. Meaningless for a body's own motion -
+    /// only read off whichever <see cref="Assets.Material"/> a passable volume resolves to, when
+    /// some other body's <see cref="CurrentMedium"/> is being determined.
+    /// </summary>
+    public double Viscosity { get; set; }
+
+    /// <summary>
+    /// The material this body is currently immersed in - defaults to <c>Air</c>, overridden to a
+    /// passable object's own resolved material wherever this body's collision rectangle overlaps
+    /// one (see <see cref="Physics.PhysicsSystem"/>'s per-frame resolution). Unlike
+    /// <see cref="IsGrounded"/>, this cannot be derived purely from already-stored contact state -
+    /// resolving it requires scanning the world's passable volumes - so <see cref="Physics.PhysicsSystem"/>
+    /// recomputes and assigns it fresh once per frame for every <see cref="IMediumAffected"/> body,
+    /// immediately before integrating that body's forces, rather than it being a stored flag
+    /// mutated ad hoc over time.
+    /// </summary>
+    public Assets.Material CurrentMedium { get; set; } = Assets.MaterialLibrary.Undefined;
+
+    /// <summary>
     /// Bounciness applied on collision (0 = no bounce, 1 = perfectly elastic), resolved the same
     /// way as <see cref="Density"/> unless a placement explicitly overrides it via the
     /// <c>Restitution</c> ini key (see <see cref="World.World2D.LoadAsync"/>).

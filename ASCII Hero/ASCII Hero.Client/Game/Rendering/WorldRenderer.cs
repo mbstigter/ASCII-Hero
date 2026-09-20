@@ -97,10 +97,8 @@ public class WorldRenderer
                     continue;
                 }
 
-                var cellForeCode = GlyphBuilder.NullIfEmpty(world.BackgroundFore[row, col], world.EmptyChar);
-                var cellBackCode = GlyphBuilder.NullIfEmpty(world.BackgroundBack[row, col], world.EmptyChar);
-                var foreColor = GlyphBuilder.ResolveColor(world.Palette, GlyphBuilder.DefaultForeColor, cellForeCode, world.DefaultForeColor);
-                var backColor = GlyphBuilder.ResolveColor(world.Palette, GlyphBuilder.DefaultBackColor, cellBackCode, world.DefaultBackColor);
+                var foreColor = world.BackgroundForeColors[row, col];
+                var backColor = world.BackgroundBackColors[row, col];
                 var cellPosition = new Vector2D(col, row);
                 glyphs.Add(ToGlyph(cellPosition, character, foreColor, backColor, camera));
             }
@@ -135,10 +133,8 @@ public class WorldRenderer
                     continue;
                 }
 
-                var cellForeCode = GlyphBuilder.NullIfEmpty(world.ForegroundFore[row, col], world.EmptyChar);
-                var cellBackCode = GlyphBuilder.NullIfEmpty(world.ForegroundBack[row, col], world.EmptyChar);
-                var foreColor = GlyphBuilder.ResolveColor(world.Palette, GlyphBuilder.DefaultForeColor, cellForeCode, world.DefaultForeColor);
-                var backColor = GlyphBuilder.ResolveColor(world.Palette, GlyphBuilder.DefaultBackColor, cellBackCode, world.DefaultBackColor);
+                var foreColor = world.ForegroundForeColors[row, col];
+                var backColor = world.ForegroundBackColors[row, col];
                 var cellPosition = new Vector2D(col, row);
                 glyphs.Add(ToGlyph(cellPosition, character, foreColor, backColor, camera));
             }

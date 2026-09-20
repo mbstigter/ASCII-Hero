@@ -2,25 +2,25 @@
   K  N    K  N  
                 
                 
-        JIIIIIIJ
-        JIIIIIIJ
-        JIIIIIIJ
+       AJIIIIIIJ
+       AJIIIIIIJ
+       AJIIIIIIJ
 UUUUUUUUJJJJJJJJ
 //end
                 
                 
   K       K  N  
      N          
-        JIIIIIIJ
-        JIIIIIIJ
-        JIIIIIIJ
+       AJIIIIIIJ
+       AJIIIIIIJ
+       AJIIIIIIJ
 UUUUUUUUJJJJJJJJ
 //end
                 
                 
                 
   K       K     
-        JIIIINIJ
-     N  JIIIIIIJ
-        JIIIIIIJ
+       AJIIIINIJ
+     N AJIIIIIIJ
+       AJIIIIIIJ
 UUUUUUUUJJJJJJJJ

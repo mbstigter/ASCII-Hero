@@ -13,6 +13,32 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// </summary>
 public class PhysicsSystem
 {
+    /// <summary>
+    /// The fixed duration of every single Physics/Collision update (<see cref="Step"/> plus the
+    /// caller's own <see cref="CollisionSystem.Resolve"/> call) - see
+    /// <see cref="GameLoop.OnPlayingFrameAsync"/>, which accumulates each real animation frame's
+    /// reported <c>deltaSeconds</c> and drains that accumulator in however many whole steps of
+    /// exactly this size are currently available, carrying any leftover remainder forward to next
+    /// frame's accumulator rather than folding it into an odd-sized partial step (the standard
+    /// "fix your timestep" pattern). Force integration (see <see cref="StepMovingBodyWithForces"/>)
+    /// scales velocity and position directly by <c>deltaSeconds</c>, and collision detection (see
+    /// <see cref="CollisionSystem"/>) is purely discrete (no continuous/swept detection) - both an
+    /// unusually large step (e.g. after a real frame hitch - GC pause, a slow JS interop
+    /// round-trip, a dropped/re-entrant frame, see <c>GameLoop._isProcessingFrame</c> - which
+    /// could move a body far enough in one step to jitter erratically or tunnel straight through
+    /// a wall) and an inconsistent step size varying frame to frame with ordinary frame-rate
+    /// jitter (which, even well short of any tunneling risk, was enough on its own to visibly
+    /// flicker a body's pose right at a grounded/airborne boundary, since the exact instant
+    /// contact is gained/lost - and how far ahead of that instant the query lands - shifts based
+    /// on the immediately preceding step's size) are avoided by this constant always being the
+    /// step size, deterministically, regardless of how the frame rate happens to fluctuate.
+    /// Deliberately generous relative to a typical ~1/60s frame (this only needs to guard against
+    /// rare outlier frames, not shrink the ordinary per-frame cost) yet small enough that even a
+    /// body moving at a high multiple of ordinary walking speed can't clear a full cell in one
+    /// step.
+    /// </summary>
+    public const double FixedPhysicsStepSeconds = 1.0 / 60.0;
+
     /// <summary>Default target ground speed while standing/walking - see <see cref="Player2D.WalkSpeed"/>.</summary>
     public const double DefaultWalkSpeed = 12.0;
 
@@ -373,6 +399,58 @@ public class PhysicsSystem
     }
 
     /// <summary>
+    /// Resolves the material a body at <paramref name="body"/>'s current collision rectangles is
+    /// immersed in this frame: <see cref="Assets.MaterialLibrary.Undefined"/>'s <c>Air</c>-like
+    /// default unless <paramref name="body"/> overlaps one or more static <see cref="Body2D.IsPassable"/>
+    /// volumes, in which case the highest-<see cref="Assets.Material.Density"/> overlapping
+    /// volume's own resolved material wins (see docs/Plans/AmbientMedium.md's tie-break rule).
+    /// Deliberately a plain linear scan over <paramref name="world"/>'s passable statics, mirroring
+    /// <see cref="CollisionSystem"/>'s existing per-frame climbable/hangable overlap scans, rather
+    /// than adding a new broad-phase spatial structure just for this.
+    /// </summary>
+    private static Assets.Material ResolveCurrentMedium(World2D world, IPhysicsBody body)
+    {
+        var resolved = world.Materials.Get("Air");
+        foreach (var candidate in world.Objects)
+        {
+            if (!candidate.IsStatic || !candidate.IsPassable)
+            {
+                continue;
+            }
+
+            var candidateMaterial = world.Materials.Get(candidate.MaterialName);
+            if (candidateMaterial.Density <= resolved.Density)
+            {
+                continue;
+            }
+
+            if (Overlaps(body, candidate))
+            {
+                resolved = candidateMaterial;
+            }
+        }
+
+        return resolved;
+    }
+
+    /// <summary>Same overlap test used by <see cref="CollisionSystem"/> - true if any of <paramref name="a"/>'s collision rects overlap any of <paramref name="b"/>'s.</summary>
+    private static bool Overlaps(IPhysicsBody a, Body2D b)
+    {
+        foreach (var rectA in a.CollisionRects)
+        {
+            foreach (var rectB in b.CollisionRects)
+            {
+                if (rectA.Overlaps(rectB))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Recomputes <see cref="Player2D.WalkForce"/> as a proportional "motor" force converging
     /// <paramref name="player"/>'s current velocity toward (<paramref name="targetVelocityX"/>,
     /// <paramref name="targetVelocityY"/>) - the walk/crawl/climb/hang speed the current input
@@ -466,6 +544,50 @@ public class PhysicsSystem
         if (body is IWalkForceBody walkForceBody)
         {
             netForce += walkForceBody.WalkForce;
+        }
+
+        // Ambient medium (see docs/Plans/AmbientMedium.md): resolved fresh every frame (mirroring
+        // IsGrounded's "derived, not stored" philosophy, just needing an explicit recompute call
+        // since it depends on spatial overlap rather than already-tracked contact state) and
+        // exposed via Body2D.CurrentMedium for other systems (e.g. a future swim pose) to read.
+        // Only bodies opting in via IMediumAffected receive the buoyancy/drag forces themselves -
+        // resolution of CurrentMedium itself is unconditional so it always reflects reality.
+        if (body is Body2D mediumBody)
+        {
+            var medium = ResolveCurrentMedium(world, body);
+            mediumBody.CurrentMedium = medium;
+
+            if (body is IMediumAffected { MediumAffected: true })
+            {
+                // Buoyancy: an upward (gravity-opposing) force equal to the weight of medium
+                // displaced by this body's own volume - Archimedes' principle. Volume is
+                // recovered from mass/density (mass = density * volume), using this body's own
+                // resolved density (falling back to 1.0 for an unconfigured body, same rationale
+                // as the mass fallback above) to avoid a divide-by-zero for a massless/density-
+                // less body.
+                var bodyDensity = mediumBody.Density > 0 ? mediumBody.Density : 1.0;
+                var volume = mass / bodyDensity;
+                netForce.Y -= medium.Density * volume * world.Gravity;
+
+                // Drag: a quadratic (velocity-squared) velocity-opposing force scaled by the
+                // medium's Viscosity and this body's own frontal area facing the direction of
+                // travel - the physically accurate model for fluid drag at ordinary (non-creeping)
+                // speeds, unlike a linear model which only holds for very slow motion through a
+                // thick medium. Scaling with the square of speed rather than speed itself means a
+                // fast impact (e.g. a body falling into water) sheds far more of its momentum than
+                // the same body drifting slowly - which is what keeps a body from significantly
+                // overshooting/bouncing back out after a hard entry. Scaling with frontal area
+                // (Size.Y facing horizontal travel, Size.X facing vertical travel - the 2D analog
+                // of cross-sectional area) means a bigger body of the same material displaces and
+                // pushes against more of the medium and so feels proportionally more drag than a
+                // smaller one, not just more buoyancy from its larger volume. Applied per-axis
+                // using each axis's own speed/area (not the combined velocity magnitude/a single
+                // area) to keep the two axes independent, consistent with every other force here.
+                // Continuous while immersed, independent of any solid contact, distinct from
+                // Coulomb friction (which only acts at contact time).
+                netForce.X -= medium.Viscosity * body.Size.Y * body.Velocity.X * Math.Abs(body.Velocity.X);
+                netForce.Y -= medium.Viscosity * body.Size.X * body.Velocity.Y * Math.Abs(body.Velocity.Y);
+            }
         }
 
         var acceleration = new Vector2D(netForce.X / mass, netForce.Y / mass);

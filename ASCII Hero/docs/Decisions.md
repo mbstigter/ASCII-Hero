@@ -63,8 +63,47 @@ capture the "why" behind a decision without needing a lengthy narrative.
   force**, so momentum at the moment of jump-off (including any platform
   carry) decays/steers gradually across the arc instead of snapping
   instantly to a target speed.
-- **Medium drag/buoyancy (air/liquid) is deliberately deferred and treated as
-  a distinct concept from surface friction** - not yet implemented.
+- **Medium drag/buoyancy is a distinct concept from surface friction, implemented as
+  continuous force-accumulator terms** (`PhysicsSystem.StepMovingBodyWithForces`/
+  `ResolveCurrentMedium`): a body's ambient medium (`Body2D.CurrentMedium`, defaulting
+  to `Air`) is resolved fresh every frame from whichever static, passable `Body2D`
+  overlaps it - the highest-`Density` overlapping volume wins on a tie, deterministic
+  regardless of placement order. Buoyancy is Archimedes' principle (medium density
+  times the body's own volume, opposing gravity); drag is a quadratic
+  (velocity-squared) velocity-opposing force scaled by the medium's `Viscosity` and
+  the immersed body's own frontal area (`Size.Y` for horizontal drag, `Size.X` for
+  vertical drag - the 2D analog of cross-sectional area, so a bigger body feels
+  proportionally more drag than a smaller one of the same material, not just more
+  buoyancy from its larger volume) - the physically accurate model for fluid drag
+  at ordinary speeds, and one that sheds a fast impact's momentum far more
+  aggressively than a slow drift's, which keeps a body from significantly
+  overshooting/bouncing back out after a hard water entry. Only bodies implementing
+  `IMediumAffected` (mirroring `IGravityAffected`) receive these forces; `CurrentMedium`
+  itself is still resolved/exposed for every body regardless, for future systems (e.g.
+  a swim pose) to read.
+- **Physics/Collision run on a fixed timestep accumulator, not a variable/capped
+  per-frame step** (`GameLoop.OnPlayingFrameAsync`'s `_physicsAccumulatorSeconds`,
+  `PhysicsSystem.FixedPhysicsStepSeconds`): an earlier "cap the step size and
+  sub-step to cover the frame" approach still let each step's size vary with
+  ordinary frame-rate jitter, which alone (independent of any oversized-single-step
+  tunneling concern) was enough to visibly perturb collision/pose resolution right
+  at a grounded/airborne boundary, since the exact instant contact is gained/lost
+  shifts with the immediately preceding step's size - observed as pose flicker
+  (rapid grounded/airborne alternation) specifically in the ~25-40 FPS range, where
+  frame deltas straddled the old cap unpredictably. Each frame's elapsed time is
+  now added to an accumulator, which is drained in however many whole steps of
+  exactly `FixedPhysicsStepSeconds` are currently available - every step
+  identically sized, deterministically, regardless of how the frame rate
+  fluctuates - with any remainder left for next frame's accumulator rather than
+  folded into an odd-sized partial step this frame. `CollisionSystem.Resolve` and
+  `World2D.ApplyPendingRemovals` both re-run after every fixed step (not once for
+  the whole frame), so a large catch-up delta still can't let a body integrate
+  several times before ever being collision-checked (neither Physics nor Collision
+  uses continuous/swept detection). Animation/camera/render remain once per real
+  frame, since both are purely presentational and already delta-tolerant. The
+  accumulator is reset to `0` when a new world finishes loading, so no leftover
+  time from a previous world (or time spent loading) is burned through as extra
+  steps on the new world's first frame.
 
 ## Assets & Materials
 
@@ -136,6 +175,22 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **The camera follows its target with a dead zone** (only scrolls once the
   target nears the viewport edge) and is always clamped to the world's own
   bounds.
+- **An FPS overlay is a dev/testing toggle, off by default** (`GameLoop._showFpsOverlay`,
+  `InputState.IsFpsToggleKeyPressed` bound to `F`), showing a smoothed
+  frames-per-second reading computed from each real frame's own raw,
+  unclamped elapsed time (not the fixed Physics/Collision step size), since
+  the point of the overlay is to surface real frame-pacing hitches that the
+  physics fixed-timestep otherwise hides from gameplay. Displayed as the
+  number leading (e.g. "144 FPS"), right-aligned so the label's column is
+  recomputed each frame from its own rendered length and stays flush with
+  the top-right corner regardless of digit count.
+- **Background/foreground layer colors are precomputed once at world load**
+  (`World2D.BackgroundForeColors`/`BackgroundBackColors`/`ForegroundForeColors`/
+  `ForegroundBackColors`), instead of resolving each visible cell's color code
+  against the palette every frame in `WorldRenderer`. These layers are purely
+  static level data, so the palette lookup only ever needs to happen once per
+  cell, not once per cell per frame; `WorldRenderer` now just reads the
+  precomputed color directly.
 
 ## Level/Game Flow
 
@@ -160,3 +215,8 @@ comments or muscle memory referencing these, they're gone:
 - `Up` doubling as a jump trigger (tried twice, reverted both times).
 - `Min`/`Max` wording for patrol initial direction (renamed to
   `Left`/`Right`/`Up`/`Down` for readability).
+- Batching consecutive same-row/same-color/adjacent glyphs in
+  `game-interop.js`'s `drawFrame` into one `fillRect`/`fillText` call pair
+  per run (measured no FPS improvement, slightly negative, likely because
+  game-object glyphs interleave with background/foreground glyphs in the
+  array, keeping runs short - reverted to one draw call pair per glyph).

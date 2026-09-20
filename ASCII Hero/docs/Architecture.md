@@ -58,6 +58,13 @@ DOM keyboard events.
 
 ## Physics
 
+The physics system has one core (force integration, collision detection and
+resolution, ambient medium) shared by every body regardless of category, and
+a thin layer of per-category behavior (player input, enemy patrol AI, 
+kinematic platform scripting) that only ever plugs into that core by
+implementing a capability interface — it never reimplements or bypasses the
+core's own force/collision/medium math.
+
 - Physics operates on continuous world coordinates.
 - Collision detection operates on game-world geometry, not rendered ASCII
   characters.
@@ -102,6 +109,19 @@ DOM keyboard events.
   force" term; a resting body's velocity along the contact normal is instead
   resolved by `CollisionSystem`'s own impulse-based response each frame it
   remains in contact (see below).
+- Every body lives in an ambient medium (`Body2D.CurrentMedium`), resolved
+  fresh each frame by `PhysicsSystem` — `Air` by default, overridden to
+  whichever overlapping static/passable `Body2D` (e.g. a `Water` volume) has
+  the highest material `Density`. Any `IMediumAffected` body then receives
+  two further terms in the same force accumulator: buoyancy (Archimedes'
+  principle — the medium's density times the body's own resolved volume,
+  opposing gravity) and drag (a quadratic, velocity-squared force scaled by
+  the medium's `Viscosity`, physically correct for fluid drag at ordinary
+  speeds, and by the body's own frontal area, so a bigger body of the same
+  material feels proportionally more resistance than a smaller one). This is
+  deliberately distinct from `Friction`/`Restitution`, which only act at
+  solid-contact time — buoyancy/drag act continuously while immersed,
+  independent of any contact.
 - Collision resolution between two finite-mass moving bodies
   (`CollisionSystem.ResolveAgainstMover`, sharing its math with solid-vs-mover
   resolution via `ResolveAgainstOtherBody`/`ResolveContact`) splits position

@@ -21,10 +21,18 @@ namespace ASCII_Hero.Client.Game.Assets;
 /// <c>Asset</c>-based placement, whose glyphs always come from its own sprite's
 /// <c>_characters.txt</c>.
 /// </param>
+/// <param name="Viscosity">
+/// Drag coefficient applied to a body while immersed in this material as its ambient medium (see
+/// <see cref="World.Body2D.CurrentMedium"/>) - 0 = no resistance to motion at all, higher values
+/// slow movement more strongly the faster the body moves through it. Distinct from
+/// <see cref="Friction"/>, which only acts at solid-contact time; this acts continuously while
+/// immersed, independent of any contact.
+/// </param>
 public readonly record struct Material(
     double Density,
     double Friction,
     double Restitution,
+    double Viscosity = 0.0,
     char? ForegroundColor = null,
     char? BackgroundColor = null,
     char? Character = null);
@@ -74,12 +82,13 @@ public class MaterialLibrary
             var density = IniValueParser.ParseDouble(section.GetValueOrDefault("Density"));
             var friction = IniValueParser.ParseDouble(section.GetValueOrDefault("Friction"));
             var restitution = IniValueParser.ParseDouble(section.GetValueOrDefault("Restitution"));
+            var viscosity = IniValueParser.ParseDouble(section.GetValueOrDefault("Viscosity"));
             var foregroundColor = IniValueParser.ParseColorCode(section.GetValueOrDefault("ForegroundColor"));
             var backgroundColor = IniValueParser.ParseColorCode(section.GetValueOrDefault("BackgroundColor"));
             var character = section.TryGetValue("Character", out var characterText) && !string.IsNullOrEmpty(characterText)
                 ? characterText[0]
                 : (char?)null;
-            materials[sectionName] = new Material(density, friction, restitution, foregroundColor, backgroundColor, character);
+            materials[sectionName] = new Material(density, friction, restitution, viscosity, foregroundColor, backgroundColor, character);
         }
     }
 }

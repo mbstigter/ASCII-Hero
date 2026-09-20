@@ -25,11 +25,11 @@ AsciiHero is a browser-based retro ASCII platform game built with C# and .NET 10
 
 ### Before Changing Architecture
 
-Check [docs/Architecture.md](../ASCII%20Hero/docs/Architecture.md) and [docs/DecisionsSummary.md](../ASCII%20Hero/docs/DecisionsSummary.md) (consult [docs/Decisions.md](../ASCII%20Hero/docs/Decisions.md) only when the detailed history/rationale behind a specific decision is needed).
+Check [docs/Architecture.md](../ASCII%20Hero/docs/Architecture.md) and [docs/Decisions.md](../ASCII%20Hero/docs/Decisions.md).
 
 ### Before Changing Game Design
 
-Check [docs/Design.md](../ASCII%20Hero/docs/Design.md) and [docs/DecisionsSummary.md](../ASCII%20Hero/docs/DecisionsSummary.md).
+Check [docs/Design.md](../ASCII%20Hero/docs/Design.md) and [docs/Decisions.md](../ASCII%20Hero/docs/Decisions.md).
 
 ### Before Changing Asset File Formats
 
@@ -38,10 +38,6 @@ Check [docs/AssetFormat.md](../ASCII%20Hero/docs/AssetFormat.md).
 ### Keeping docs/Structure.md Up To Date
 
 [docs/Structure.md](../ASCII%20Hero/docs/Structure.md) describes the program's components and key flows. Whenever a change adds, removes, renames, or moves a class/subsystem, or changes an existing flow it describes (e.g. startup order, per-frame tick order, asset loading/fallback rules), update the corresponding section of docs/Structure.md as part of that same change - treat it the same way as docs/Decisions.md, not as a separate follow-up task.
-
-### Keeping docs/DecisionsSummary.md Up To Date
-
-[docs/DecisionsSummary.md](../ASCII%20Hero/docs/DecisionsSummary.md) is a compact, current-state-only distillation of docs/Decisions.md, grouped by subsystem rather than by date. When a new architecture/design decision is logged in docs/Decisions.md, also add or update a short bullet in docs/DecisionsSummary.md if the decision is something a future change would need to know still holds true - and when a later decision supersedes/reverts an earlier one, update or remove the corresponding docs/DecisionsSummary.md bullet in the same change rather than leaving it stale.
 
 ### Local Development and Debugging
 

@@ -89,11 +89,19 @@ palettes, materials) from disk/HTTP into in-memory game objects.
   per-stance subfolders instead of one flat folder - purely a file-layout
   convenience, invisible to every other caller/consumer of a loaded clip.
 - **`SpriteAsset` / `SpriteClip` / `SpriteFrame`** - the in-memory result of
-  loading: an asset holds named clips (e.g. `walk_idle`, `walk_left`), each
-  clip holds one or more frames (char/fore/back/material grids), plus
-  resolved animation timing (duration, loop mode, default frame) and optional
-  stance/facing metadata mapping a stance name to the clip shown for each
-  facing.
+  loading, and the game's one representation of "what a game object looks
+  like": a `SpriteAsset` is one named asset (e.g. `Player`, `Ball`) holding
+  every clip it defines (e.g. `walk_idle`, `walk_left`) plus asset-wide
+  metadata (its own empty-char, tile axis, default colors, optional
+  stance/facing map). A `SpriteClip` is one named clip, holding one or more
+  `SpriteFrame`s in sequence plus resolved animation timing (duration, loop
+  mode, default start frame). A `SpriteFrame` is the actual drawable/
+  collidable unit - parallel `Chars`/`Fore`/`Back`/`Materials` grids, one
+  entry per cell - consumed directly by `WorldRenderer` (for its glyphs) and
+  `CollisionSystem`/`Body2D` (for its silhouette/material lookup). A `Body2D`
+  holds a reference to its `SpriteAsset` plus its currently-active clip/frame
+  index rather than copying frame data, so many placements of the same asset
+  (e.g. many identical platform tiles) share the one loaded `SpriteAsset`.
 - **`SpriteFrameTiler`** - repeats a tileable frame's authored unit along its
   declared axis (horizontal or vertical) to build an arbitrary-length
   platform or wall from one small authored unit, at spawn time.
@@ -188,6 +196,11 @@ The live game state and the entity types that make it up.
 	(position, velocity, size, grounded state, collision shape).
   - `IGravityAffected` - can optionally opt out of gravity via a
 	`GravityAffected` flag.
+  - `IMediumAffected` - can optionally opt out of ambient-medium buoyancy/
+	drag via a `MediumAffected` flag, mirroring `IGravityAffected`. Every
+	`Body2D` still has its `CurrentMedium` resolved and exposed each frame
+	regardless (see `PhysicsSystem` below) - only the force application
+	itself is gated on this capability.
   - `IPatrolBody` - patrols back and forth independently on the X and/or Y
 	axis between `PatrolMinX`/`PatrolMaxX` and/or `PatrolMinY`/`PatrolMaxY`
 	under its own mass-scaled force, recomputed each frame via
@@ -250,7 +263,18 @@ The live game state and the entity types that make it up.
   and for any `IWalkForceBody`, its own walk force, converted to acceleration
   via `a = F / mass`, then integrated into velocity), which is numerically
   identical to a direct gravity-velocity add for a gravity-only body but is
-  the extension point for any further force source. The player's own
+  the extension point for any further force source. Each frame it also
+  resolves every body's `CurrentMedium` (`ResolveCurrentMedium` - `Air` by
+  default, overridden to the highest-density overlapping static/passable
+  volume's material, e.g. a `Water` body) and, for any `IMediumAffected`
+  body, adds a buoyancy force (Archimedes' principle - the medium's density
+  times the body's own resolved volume, opposing gravity) and a quadratic
+  (velocity-squared) drag force (the medium's `Viscosity` times velocity times
+  its own magnitude, per axis, further scaled by the body's own frontal area
+  facing that axis - `Size.Y` for horizontal drag, `Size.X` for vertical drag,
+  the 2D analog of cross-sectional area - so a bigger body feels
+  proportionally more drag than a smaller one of the same material) into the
+  same accumulator.
   sustained locomotion - walk/crawl on the ground, climbing a ladder
   (including its vertical motion), and hanging/shimmying from a pipe/rope
   (including holding position against suspended gravity) - is one such force
@@ -440,7 +464,13 @@ The live game state and the entity types that make it up.
   `ForeColorOverride`/`BackColorOverride` > its sprite's own default color >
   its resolved material's own `ForegroundColor`/`BackgroundColor` (see
   `MaterialLibrary`) > the world's own default color > a hardcoded engine
-  fallback (see `GlyphBuilder.ResolveColor`). The world itself is never
+  fallback (see `GlyphBuilder.ResolveColor`). The background/foreground
+  layers are purely static level data, so their colors are instead resolved
+  once at world load time into `World2D.BackgroundForeColors`/
+  `BackgroundBackColors`/`ForegroundForeColors`/`ForegroundBackColors`
+  (see `World2D.LoadAsync`'s `PrecomputeLayerColors`), and `WorldRenderer`
+  just reads the precomputed color for each visible cell every frame instead
+  of re-resolving it. The world itself is never
   restricted to a grid; this mapping exists
   purely for the visual output. `BuildFrame` only builds glyphs for the
   background rows/columns and objects that actually intersect the camera's
@@ -459,8 +489,14 @@ The live game state and the entity types that make it up.
   static/mover - purely visual decoration (prison bars, foliage overhang, ...)
   meant to always read as in front of everything, without a full per-object
   z-order system.
-- **`Glyph`** - a single ASCII character to draw at a pixel position, with
-  resolved foreground/background colors.
+- **`Glyph`** - the final, fully-resolved output of the rendering pipeline: a
+  single ASCII character plus its already-resolved foreground/background CSS
+  colors, already positioned in pixel space (not world/cell coordinates) for
+  one specific frame. Built by `GlyphBuilder`/`WorldRenderer`/`UIRenderer`/
+  `WorldSelectRenderer`, then handed as a flat per-frame list straight to
+  `CanvasBridge` for drawing - it carries no reference back to the world cell,
+  sprite, or object it came from, so it is purely a draw instruction, never
+  retained or reused across frames.
 - **`GlyphBuilder`** - shared color-resolution (a code's first match in a
   caller-supplied precedence list, tried against the palette), cell-to-pixel
   glyph construction, and box-drawing-border helpers used by `WorldRenderer`,
@@ -594,27 +630,58 @@ Driven by the browser's `requestAnimationFrame` calling `GameLoop.OnFrame`
 once per frame, with the elapsed time since the last frame (clamped to avoid
 large jumps after e.g. a tab switch):
 
-1. **Physics** - `PhysicsSystem.Step` resolves player jump/stance/pose input
-   (feeding the player's own force-based ground/climb/hang locomotion, see
-   `IWalkForceBody` above), applies gravity to affected bodies, and
-   integrates every moving body's position from its accumulated forces.
-2. **Collision** - `CollisionSystem.Resolve` resolves overlaps: moving bodies
-   against solid terrain and world bounds, moving bodies against each other,
-   hazard/collectable contact (including collector pickups and killer/
-   killable kill contacts, each of which may spawn a cosmetic
-   `EffectInstance2D`), and any `IClimberBody`/`IHangerBody`'s
+1. **Physics + Collision (fixed timestep)** - a single real frame's elapsed
+   time varies frame to frame, both from ordinary timing jitter and
+   occasionally far more than ordinary after a real hitch (a GC pause, a
+   slow JS interop round-trip, a dropped/re-entrant frame). Integrating a
+   variable amount directly through `PhysicsSystem.Step`/`CollisionSystem.Resolve`
+   is unsafe two ways: an oversized single step risks a body moving far
+   enough to jitter erratically or tunnel through a wall before collision
+   ever reacts (neither uses continuous/swept detection), and even an
+   ordinary but inconsistent step size can, on its own, visibly perturb
+   collision/pose resolution right at a grounded/airborne boundary (the
+   exact instant contact is gained/lost shifts with the immediately
+   preceding step's size). `GameLoop.OnPlayingFrameAsync` therefore drives
+   Physics/Collision with a fixed-timestep accumulator (the standard "fix
+   your timestep" pattern, via `_physicsAccumulatorSeconds`): each frame's
+   elapsed time is added to the accumulator, which is then drained in
+   however many whole steps of exactly `PhysicsSystem.FixedPhysicsStepSeconds`
+   are currently available, leaving any remainder (always strictly less
+   than one fixed step) for next frame rather than folding it into an
+   odd-sized partial step this frame - so every single step is identically
+   sized, deterministically, regardless of how the frame rate fluctuates.
+   Each step runs `PhysicsSystem.Step` (resolves player jump/stance/pose
+   input, feeding the player's own force-based ground/climb/hang locomotion,
+   see `IWalkForceBody` above; applies gravity to affected bodies; and
+   integrates every moving body's position from its accumulated forces) and
+   then `CollisionSystem.Resolve` (resolves overlaps: moving bodies against
+   solid terrain and world bounds, moving bodies against each other,
+   hazard/collectable contact - including collector pickups and
+   killer/killable kill contacts, each of which may spawn a cosmetic
+   `EffectInstance2D` - and any `IClimberBody`/`IHangerBody`'s
    `IsTouchingClimbable`/`IsTouchingHangable` overlap against
-   `IsClimbable`/`IsHangable` terrain (both speed-gated; hanging additionally
-   requires approaching the surface from underneath).
-3. **Removal** - `World2D.ApplyPendingRemovals` removes anything queued for
-   removal this frame (a picked-up collectable, a killed enemy, an expired
-   effect), deferred from the systems above so nothing mutates the object
-   list mid-iteration.
-4. **Animation** - `AnimationSystem.Update` advances every body's animation
-   frame timer and ticks down any active effect's remaining lifetime.
-5. **Camera** - `Camera.Follow` smoothly scrolls toward the current camera
-   target's position, respecting its dead zone and the world's bounds.
-6. **Render** - `WorldRenderer.BuildFrame` converts the current world and
+   `IsClimbable`/`IsHangable` terrain, both speed-gated, with hanging
+   additionally requiring approaching the surface from underneath) once per
+   fixed step - not once for the whole frame - so a large catch-up delta
+   can't let a body integrate several times before ever being
+   collision-checked. `World2D.ApplyPendingRemovals` (removes anything
+   queued for removal - a picked-up collectable, a killed enemy, an expired
+   effect - deferred from the systems above so nothing mutates the object
+   list mid-iteration) likewise runs after every fixed step, not just once
+   at the end, so a later step's collision pass never sees a body that
+   should already be gone. `_physicsAccumulatorSeconds` is reset to `0` when
+   a new world finishes loading, so no leftover time from a previous world
+   (or time spent loading) is burned through as extra steps on the new
+   world's very first frame.
+2. **Animation** - `AnimationSystem.Update` advances every body's animation
+   frame timer and ticks down any active effect's remaining lifetime. Runs
+   once per real frame (using the frame's full elapsed time, not the fixed
+   fraction any one Physics/Collision step used), not once per fixed step,
+   since it is purely presentational and already tolerant of a larger delta.
+3. **Camera** - `Camera.Follow` smoothly scrolls toward the current camera
+   target's position, respecting its dead zone and the world's bounds. Also
+   runs once per real frame, for the same reason as Animation above.
+4. **Render** - `WorldRenderer.BuildFrame` converts the current world and
    camera view into a flat glyph list - culled to the camera's current
    viewport rect (see Rendering above) - in background, static-object,
    non-static-object, foreground order. `GameLoop.OnFrame` then appends the
@@ -622,7 +689,17 @@ large jumps after e.g. a tab switch):
    `_hudText`/`_hudBar`) to that same list, so the HUD is always drawn last -
    on top of the foreground layer and everything else - before
    `CanvasBridge.DrawFrameAsync` sends the complete list to JavaScript to
-   paint onto the canvas.
+   paint onto the canvas. An additional dev/testing FPS overlay
+   (`InputState.IsFpsToggleKeyPressed`, bound to `F`) can be toggled on top
+   of the HUD, showing a smoothed frames-per-second reading computed each
+   frame from that frame's own raw, unclamped elapsed time (not the fixed
+   Physics/Collision step size), right-aligned to the current viewport width
+   - recomputed each frame from the rendered text's own length (leading with
+     the number, e.g. "144 FPS") so the label stays flush with the corner
+     regardless of digit count - so it stays pinned to the top-right corner;
+   off by default so it never appears for an ordinary player.
+
+
 
 ### Asset Loading (Global vs. World Fallback)
 

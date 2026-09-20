@@ -3,7 +3,7 @@ using ASCII_Hero.Client.Game.Assets;
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>The player-controlled character, backed by the loaded "Player" sprite asset.</summary>
-public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody, IKillerBody, IEffectTrigger, IClimberBody, IHangerBody, IPosedBody, IWalkForceBody
+public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected, ICollectorBody, IKillerBody, IEffectTrigger, IClimberBody, IHangerBody, IPosedBody, IWalkForceBody
 {
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }
@@ -32,6 +32,9 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, ICollectorBody, 
     /// can drive vertical/lateral movement directly instead of fighting gravity's pull.
     /// </summary>
     public bool GravityAffected => !(IsClimbing || IsHanging);
+
+    /// <summary>The player is always subject to ambient-medium buoyancy/drag.</summary>
+    public bool MediumAffected => true;
 
     /// <summary>
     /// Current pose (e.g. "Walk", "Crawl").

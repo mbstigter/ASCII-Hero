@@ -13,7 +13,7 @@ namespace ASCII_Hero.Client.Game.World;
 /// every other non-player body's force-based movement rather than direct velocity assignment.
 /// Chase behavior does not exist yet.
 /// </summary>
-public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected, IPatrolBody, IPosedBody, IEffectTrigger, IKillableBody
+public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected, IMediumAffected, IPatrolBody, IPosedBody, IEffectTrigger, IKillableBody
 {
     /// <summary>
     /// Default "muscle power" - the mass-scaled force gain applied to converge this body's
@@ -46,6 +46,9 @@ public class MovingEnemy2D : Body2D, IPhysicsBody, IHazardBody, IGravityAffected
 
     /// <summary>Whether this enemy is subject to normal world gravity.</summary>
     public bool GravityAffected { get; set; } = true;
+
+    /// <summary>Whether this enemy is subject to ambient-medium buoyancy/drag.</summary>
+    public bool MediumAffected { get; set; } = true;
 
     /// <summary>Whether this enemy is currently patrolling on either axis (see <see cref="IPatrolBody"/>).</summary>
     public bool IsPatrolling { get; set; }

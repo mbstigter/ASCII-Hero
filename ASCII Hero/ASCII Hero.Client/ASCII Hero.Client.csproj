@@ -30,4 +30,8 @@
     <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly" Version="10.0.11" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Folder Include="wwwroot\Assets\Worlds\TEMP\" />
+  </ItemGroup>
+
 </Project>

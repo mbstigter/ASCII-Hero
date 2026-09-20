@@ -1,4 +1,5 @@
 using ASCII_Hero.Client.Game.Assets;
+using ASCII_Hero.Client.Game.Rendering;
 
 namespace ASCII_Hero.Client.Game.World;
 
@@ -56,7 +57,12 @@ public class World2D
         _pendingRemovals.Clear();
     }
 
-    /// <summary>Background layer of the world, purely visual - one glyph per world cell.</summary>
+    /// <summary>
+    /// Background layer of the world, purely visual - one glyph per world cell, sized to
+    /// <see cref="WidthCells"/>/<see cref="HeightCells"/>. Optional: a world with no
+    /// <c>{WorldName}_background_characters.txt</c> file gets an all-empty grid here (draws
+    /// nothing).
+    /// </summary>
     public char[,] BackgroundChars { get; private set; } = new char[0, 0];
 
     /// <summary>Foreground color code per background cell, same dimensions as <see cref="BackgroundChars"/>.</summary>
@@ -80,6 +86,28 @@ public class World2D
 
     /// <summary>Background (fill) color code per foreground cell, same dimensions as <see cref="ForegroundChars"/>.</summary>
     public char[,] ForegroundBack { get; private set; } = new char[0, 0];
+
+    /// <summary>
+    /// Precomputed (resolved once at load time, see <see cref="PrecomputeLayerColors"/>) CSS
+    /// foreground color for each <see cref="BackgroundChars"/> cell, or null for that cell's
+    /// resolved default (see <see cref="Rendering.GlyphBuilder.BuildGlyph"/>). Background/
+    /// foreground layers are purely static level data - the palette, per-cell color codes, and
+    /// this world's own default color codes are all already final by the time <see cref="LoadAsync"/>
+    /// returns - so resolving each cell's actual color once here, rather than every frame in
+    /// <see cref="Rendering.WorldRenderer"/>, removes a palette lookup per visible background/
+    /// foreground cell every frame with no behavior change. Empty cells are left null, same as
+    /// the underlying character grid.
+    /// </summary>
+    public string?[,] BackgroundForeColors { get; private set; } = new string?[0, 0];
+
+    /// <summary>See <see cref="BackgroundForeColors"/> - the background layer's resolved fill color.</summary>
+    public string?[,] BackgroundBackColors { get; private set; } = new string?[0, 0];
+
+    /// <summary>See <see cref="BackgroundForeColors"/>, for <see cref="ForegroundChars"/> instead.</summary>
+    public string?[,] ForegroundForeColors { get; private set; } = new string?[0, 0];
+
+    /// <summary>See <see cref="BackgroundForeColors"/>, for <see cref="ForegroundChars"/> instead.</summary>
+    public string?[,] ForegroundBackColors { get; private set; } = new string?[0, 0];
 
     /// <summary>"No cell here" marker used by this world's background/object grids.</summary>
     public char EmptyChar { get; private set; } = ' ';
@@ -109,10 +137,14 @@ public class World2D
     /// <summary>Gravity acceleration, in world cells per second squared.</summary>
     public double Gravity { get; private set; } = 40;
 
-    /// <summary>Width of the world, in cells, derived from the background layer.</summary>
+    /// <summary>
+    /// Width of the world, in cells - always derived from <c>_objects.txt</c>'s own content (the
+    /// world's sole authoritative layout definition, along with <c>_objects.ini</c>), never from
+    /// the purely-visual/optional background or foreground art layers.
+    /// </summary>
     public int WidthCells { get; private set; }
 
-    /// <summary>Height of the world, in cells, derived from the background layer.</summary>
+    /// <summary>Height of the world, in cells - see <see cref="WidthCells"/> for how it's derived.</summary>
     public int HeightCells { get; private set; }
 
     /// <summary>
@@ -161,27 +193,33 @@ public class World2D
         world.Materials = await MaterialLibrary.LoadAsync(fileProvider, worldName);
         progress?.Report(2);
 
-        var backgroundContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_background_characters.txt")
-            ?? throw new FileNotFoundException($"Missing required background layer for world '{worldName}'.");
-        var backgroundFrames = AssetTextReader.ParseCharsLayer(backgroundContent, emptyChar);
-        world.BackgroundChars = backgroundFrames[0];
-        var width = world.BackgroundChars.GetLength(1);
-        var height = world.BackgroundChars.GetLength(0);
+        // _objects.txt/_objects.ini is the world's sole authoritative layout definition -
+        // WidthCells/HeightCells are always inferred from _objects.txt's own content (widest
+        // line, line count), never from the background/foreground art layers, which are always
+        // purely visual and optional, padded to these dimensions like any other secondary layer.
+        var objectsContentForSizing = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_objects.txt")
+            ?? throw new FileNotFoundException($"Missing required object placement grid for world '{worldName}'.");
+        var sizingFrames = AssetTextReader.ParseCharsLayer(objectsContentForSizing, emptyChar);
+        var width = sizingFrames[0].GetLength(1);
+        var height = sizingFrames[0].GetLength(0);
         world.WidthCells = width;
         world.HeightCells = height;
 
+        var backgroundContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_background_characters.txt");
+        var backgroundFrames = AssetTextReader.ParseFixedSizeFrames(backgroundContent ?? string.Empty, width, height, emptyChar);
+        world.BackgroundChars = backgroundFrames.Count > 0 ? backgroundFrames[0] : new char[height, width];
+
         var backgroundForeContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_background_foregroundcolors.txt");
         var backgroundBackContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_background_backgroundcolors.txt");
-        world.BackgroundFore = AssetTextReader.ParseSecondaryLayer(backgroundForeContent, backgroundFrames, emptyChar)[0];
-        world.BackgroundBack = AssetTextReader.ParseSecondaryLayer(backgroundBackContent, backgroundFrames, emptyChar)[0];
+        world.BackgroundFore = AssetTextReader.ParseFixedSizeSecondaryFrames(backgroundForeContent, 1, width, height, emptyChar)[0];
+        world.BackgroundBack = AssetTextReader.ParseFixedSizeSecondaryFrames(backgroundBackContent, 1, width, height, emptyChar)[0];
 
         // Foreground layer (see its own doc comment on ForegroundChars) is entirely optional - a
         // world with no {worldName}_foreground_characters.txt simply gets an all-empty grid at
-        // the background's own dimensions, same as an absent _background_foregroundcolors.txt/
-        // _background_backgroundcolors.txt already does via ParseSecondaryLayer above. Dimensions
-        // are fixed to the background layer's, not independently inferred, the same way
-        // _objects.txt reuses them - a foreground decoration is placed against the same grid, not
-        // sized on its own.
+        // the world's own dimensions (from _objects.txt, see width/height above), same as an
+        // absent background layer file already does. Dimensions are fixed, not independently
+        // inferred - a foreground decoration is placed against the same grid, not sized on its
+        // own.
         var foregroundContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_foreground_characters.txt");
         var foregroundFrames = AssetTextReader.ParseFixedSizeFrames(foregroundContent ?? string.Empty, width, height, emptyChar);
         world.ForegroundChars = foregroundFrames.Count > 0 ? foregroundFrames[0] : new char[height, width];
@@ -189,15 +227,21 @@ public class World2D
         var foregroundBackContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_foreground_backgroundcolors.txt");
         world.ForegroundFore = AssetTextReader.ParseFixedSizeSecondaryFrames(foregroundForeContent, 1, width, height, emptyChar)[0];
         world.ForegroundBack = AssetTextReader.ParseFixedSizeSecondaryFrames(foregroundBackContent, 1, width, height, emptyChar)[0];
+
+        // Background/foreground layers are static level data - resolve every cell's actual
+        // color once here (rather than every frame in WorldRenderer) now that the palette and
+        // every color code/default this world will ever have are already final.
+        world.BackgroundForeColors = PrecomputeLayerColors(world.BackgroundFore, world.Palette, emptyChar, GlyphBuilder.DefaultForeColor, world.DefaultForeColor);
+        world.BackgroundBackColors = PrecomputeLayerColors(world.BackgroundBack, world.Palette, emptyChar, GlyphBuilder.DefaultBackColor, world.DefaultBackColor);
+        world.ForegroundForeColors = PrecomputeLayerColors(world.ForegroundFore, world.Palette, emptyChar, GlyphBuilder.DefaultForeColor, world.DefaultForeColor);
+        world.ForegroundBackColors = PrecomputeLayerColors(world.ForegroundBack, world.Palette, emptyChar, GlyphBuilder.DefaultBackColor, world.DefaultBackColor);
         progress?.Report(3);
 
         var objectsIniContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_objects.ini")
             ?? throw new FileNotFoundException($"Missing required object placement definitions for world '{worldName}'.");
         var objectsIni = IniDocument.Parse(objectsIniContent);
 
-        var objectsContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_objects.txt")
-            ?? throw new FileNotFoundException($"Missing required object placement grid for world '{worldName}'.");
-        var objectsGrid = AssetTextReader.ParseFixedSizeGrid(objectsContent, width, height, emptyChar);
+        var objectsGrid = AssetTextReader.ParseFixedSizeGrid(objectsContentForSizing, width, height, emptyChar);
         progress?.Report(4);
 
         var spriteLoader = new SpriteLoader(fileProvider);
@@ -501,7 +545,7 @@ public class World2D
                 var hangable = objectSection.TryGetValue("Hangable", out var hangableText) && bool.TryParse(hangableText, out var parsedHangable) && parsedHangable;
 
                 IPhysicsBody? movingBody = null;
-                Body2D? spawnedBody = null;
+                Body2D spawnedBody;
 
                 switch (kind)
                 {
@@ -513,6 +557,7 @@ public class World2D
                         world.Player.Density = densityOverride ?? playerMaterial.Density;
                         world.Player.Friction = frictionOverride ?? playerMaterial.Friction;
                         world.Player.Restitution = restitutionOverride ?? playerMaterial.Restitution;
+                        world.Player.Viscosity = playerMaterial.Viscosity;
                         if (massOverride is not null)
                         {
                             world.Player.Mass = massOverride.Value;
@@ -649,6 +694,7 @@ public class World2D
                 spawnedBody.Density = densityOverride ?? material.Density;
                 spawnedBody.Friction = frictionOverride ?? material.Friction;
                 spawnedBody.Restitution = restitutionOverride ?? material.Restitution;
+                spawnedBody.Viscosity = material.Viscosity;
                 if (materialOverride is not null)
                 {
                     // Keep MaterialName consistent with the material this override just resolved,
@@ -679,6 +725,29 @@ public class World2D
         progress?.Report(6);
 
         return world;
+    }
+
+    /// <summary>
+    /// Resolves every cell of a background/foreground color-code layer against <paramref name="palette"/>
+    /// once at load time, producing the fully-resolved color grid consumed directly by
+    /// <see cref="Rendering.WorldRenderer"/> - see <see cref="BackgroundForeColors"/>.
+    /// </summary>
+    private static string?[,] PrecomputeLayerColors(char[,] codes, ColorPalette palette, char emptyChar, string? hardcodedFallback, char? levelDefault)
+    {
+        var height = codes.GetLength(0);
+        var width = codes.GetLength(1);
+        var resolved = new string?[height, width];
+
+        for (var row = 0; row < height; row++)
+        {
+            for (var col = 0; col < width; col++)
+            {
+                var code = GlyphBuilder.NullIfEmpty(codes[row, col], emptyChar);
+                resolved[row, col] = GlyphBuilder.ResolveColor(palette, hardcodedFallback, code, levelDefault);
+            }
+        }
+
+        return resolved;
     }
 
     private static async Task<SpriteAsset> GetOrLoadSpriteAsync(

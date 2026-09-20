@@ -488,12 +488,13 @@ subfolder (`Sprites/Player/Walk/`, `Sprites/Player/Crawl/`, ...).
 
 ## 3. World files
 
-Structurally, a world is just another multi-layer grid asset (background layer),
-plus an additional object-placement layer.
+Structurally, a world is a mandatory object-placement layer (the world's sole
+authoritative layout definition) plus optional purely-visual background/
+foreground art layers.
 
 ```
 Level1_settings.ini
-Level1_background_characters.txt
+Level1_background_characters.txt        (optional)
 Level1_background_foregroundcolors.txt
 Level1_background_backgroundcolors.txt
 Level1_background_materials.txt   (optional)
@@ -504,6 +505,15 @@ Level1_objects.txt
 Level1_objects.ini
 ```
 
+- `Level1_objects.txt`/`Level1_objects.ini` are the world's **mandatory,
+  sole authoritative** layout definition. `World2D.LoadAsync` always infers
+  the world's width/height from `Level1_objects.txt`'s own content (widest
+  line, line count) — never from the background or foreground layers, which
+  are always purely visual and optional, padded to those dimensions with
+  any missing rows/columns filled with `EmptyChar`, exactly like any other
+  secondary layer. `Level1_objects.txt` marks where object instances spawn;
+  it never overwrites or conflicts with the background/foreground layers —
+  all are composited independently at load/render time.
 - `Level1_background_*` follows the exact same rules as a sprite clip (empty
   cells, optional materials, `//end` frames — though a world background typically
   has a single frame). This layer is purely visual/background terrain (e.g. distant
@@ -514,6 +524,9 @@ Level1_objects.ini
   data — this is a documented design intent for a future alternative to
   defining solid terrain via `_objects.ini`, not a working feature today. Omit
   the file until this is implemented.
+  `Level1_background_characters.txt` itself is **optional** — a world with
+  none simply has nothing drawn on this layer, same as an absent
+  `Level1_foreground_characters.txt`.
 - `Level1_foreground_*` is the background layer's counterpart on the other side
   of the scene: purely visual, drawn last — on top of every game object,
   static or otherwise (see [Structure.md](Structure.md)'s Rendering/per-frame
@@ -524,21 +537,11 @@ Level1_objects.ini
   needing a full per-object z-order system. Entirely optional — a world with
   no `Level1_foreground_characters.txt` simply has nothing drawn on this
   layer, exactly as today. When present, it is **not** sized independently
-  from its own content — like `Level1_objects.txt`, its dimensions are fixed
-  to `Level1_background_characters.txt`'s own width/height, with any missing
+  from its own content — like the background layer, its dimensions are fixed
+  to the world's own width/height (from `Level1_objects.txt`), with any missing
   rows/columns padded with `EmptyChar`. No `_foreground_materials.txt`
   equivalent exists — this layer is always purely visual, never physically
   solid.
-- `Level1_objects.txt` is a **separate** grid, at the same dimensions as
-  `Level1_background_characters.txt`, used only to mark where object instances
-  spawn.
-  It never overwrites or conflicts with the background layers — both are
-  composited independently at load/render time. Its dimensions are **not**
-  inferred independently from its own content (most rows may be far shorter than
-  the world width, since they typically contain only one or two markers) —
-  instead the loader reads `Level1_background_characters.txt` first to
-  establish the world's width/height, then reads `Level1_objects.txt` against
-  those same dimensions, padding any missing rows/columns with `EmptyChar`.
 
 
 `Level1_settings.ini` mirrors an asset's `settings.ini` (§2.4), but at world
@@ -1193,6 +1196,7 @@ Character = ' '
 Density = 1.0
 Friction = 0.05
 Restitution = 0.0
+Viscosity = 0.15
 ForegroundColor = I
 BackgroundColor = H
 Character = ~
@@ -1202,6 +1206,18 @@ Fields:
 - **Density** — relative mass per world-cell "volume"; drives mass and buoyancy.
 - **Friction** — `0` = frictionless, `1` = very grippy.
 - **Restitution** — bounciness; `0` = no bounce, `1` = perfectly elastic.
+- **Viscosity** (optional, defaults to `0`) — quadratic-drag coefficient applied
+  continuously to any body immersed in this material as its ambient medium (see
+  §3's `IMediumAffected` discussion in docs/Structure.md and docs/Decisions.md);
+  `0` = no resistance, higher values resist motion more strongly, and much more
+  strongly the faster a body moves through it (force scales with velocity
+  squared, the physically accurate model for fluid drag at ordinary speeds).
+  The resulting force is also scaled by the immersed body's own frontal area
+  (its `Size.Y` for horizontal drag, `Size.X` for vertical drag - the 2D analog
+  of cross-sectional area), so a bigger body of a given `Viscosity` medium
+  feels proportionally more drag than a smaller one, not just more buoyancy
+  from its larger volume. Distinct from `Friction`, which only acts while in
+  solid contact.
 - **ForegroundColor**/**BackgroundColor** (optional) — a single-character
   color code (see §4.1), this material's own fallback tier in the render
   color-resolution chain (see the `ForegroundColor`/`BackgroundColor` object
