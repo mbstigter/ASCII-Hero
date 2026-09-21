@@ -122,6 +122,11 @@ core's own force/collision/medium math.
   deliberately distinct from `Friction`/`Restitution`, which only act at
   solid-contact time — buoyancy/drag act continuously while immersed,
   independent of any contact.
+- A body's own actively-generated force/impulse (walk/patrol motor force,
+  jump-off velocity kicks) is separately damped by the current medium's raw
+  `Viscosity` (`PhysicsSystem.ResolveMediumForceScale`), distinct from the
+  passive buoyancy/drag above — a stride or push-off through a viscous
+  medium is inherently less effective than the same effort on land.
 - Collision resolution between two finite-mass moving bodies
   (`CollisionSystem.ResolveAgainstMover`, sharing its math with solid-vs-mover
   resolution via `ResolveAgainstOtherBody`/`ResolveContact`) splits position

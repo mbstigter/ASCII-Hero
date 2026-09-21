@@ -85,9 +85,28 @@ public class PhysicsSystem
     // integrated over time. Graded by how much of the body's own momentum/leverage backs the
     // push-off: solid ground under both feet gives the strongest launch, a ladder rung under just
     // hands/feet is weaker, and swinging free from a single-handed pipe/rope grip is weakest.
-    private const double WalkJumpSpeed = 22.0;
+    private const double WalkJumpSpeed = 40.0;
     private const double ClimbJumpSpeed = 18.0;
-    private const double HangJumpSpeed = 14.0;
+    private const double HangJumpSpeed = 18.0;
+
+    /// <summary>
+    /// Tuning constant for <see cref="ResolveMediumForceScale"/>'s reciprocal falloff - larger
+    /// values make a given <see cref="Assets.Material.Viscosity"/> dampen self-generated force
+    /// more aggressively. Applied to raw <c>Viscosity</c> directly (see
+    /// <see cref="ResolveMediumForceScale"/>'s own doc comment for why), so even <c>Air</c>'s own
+    /// small authored baseline (0.02, see <c>Global/MaterialLibrary.ini</c>) applies a slight
+    /// land-side penalty; <see cref="WalkJumpSpeed"/> (and other jump/walk force constants) are
+    /// tuned to compensate so on-land feel stays close to its pre-damping baseline, while
+    /// <c>Water</c>'s much larger 0.15 still comes out clearly, noticeably weaker.
+    /// </summary>
+    private const double MediumForceScaleFalloff = 40.0;
+
+    /// <summary>
+    /// Floor <see cref="ResolveMediumForceScale"/> never scales self-generated force below, so an
+    /// extremely viscous medium still permits some self-propulsion rather than fully immobilizing
+    /// a body.
+    /// </summary>
+    private const double MinMediumForceScale = 0.15;
 
     private bool _wasUpKeyDown;
     private bool _wasDownKeyDown;
@@ -219,7 +238,7 @@ public class PhysicsSystem
                 // _suppressClimbUntilClear the very next frame would immediately re-grab the same
                 // ladder before the jump is ever visible.
                 player.IsClimbing = false;
-                velocity.Y = -ClimbJumpSpeed;
+                velocity.Y = -ClimbJumpSpeed * ResolveMediumForceScale(player.CurrentMedium);
                 _suppressClimbUntilClear = true;
             }
         }
@@ -244,7 +263,7 @@ public class PhysicsSystem
                 // Same debounce as the explicit let-go below, so the player can't instantly
                 // re-grab the exact surface they just launched off.
                 player.IsHanging = false;
-                velocity.Y = -HangJumpSpeed;
+                velocity.Y = -HangJumpSpeed * ResolveMediumForceScale(player.CurrentMedium);
                 player.SuppressHangUntilClear = true;
             }
             else if (!player.IsClambering && downPressedThisFrame)
@@ -368,7 +387,10 @@ public class PhysicsSystem
             // pressed, not a target the player's velocity converges toward over subsequent
             // frames - the same jump-off model as the ladder/hang variants above, just at the
             // strongest magnitude since it launches off solid ground with both legs planted.
-            velocity.Y = -WalkJumpSpeed;
+            // Scaled by the current medium's viscosity (see ResolveMediumForceScale) so a
+            // push-off through a viscous medium (e.g. water) can't launch as high as the same
+            // push-off through air, even though buoyancy has already cancelled most of gravity.
+            velocity.Y = -WalkJumpSpeed * ResolveMediumForceScale(player.CurrentMedium);
             // Clears IsGrounded immediately so the jump's own frame already shows airborne (jump
             // pose, re-jump gated out) instead of waiting for the next collision pass to notice
             // the player has left the surface.
@@ -408,6 +430,35 @@ public class PhysicsSystem
     /// <see cref="CollisionSystem"/>'s existing per-frame climbable/hangable overlap scans, rather
     /// than adding a new broad-phase spatial structure just for this.
     /// </summary>
+    /// <summary>
+    /// Maps a medium's <see cref="Assets.Material.Viscosity"/> to a multiplier in
+    /// <c>[MinMediumForceScale, 1.0]</c>, applied to a body's own actively-generated
+    /// force/impulse (walk/patrol motor force, jump-off impulses - see
+    /// <see cref="UpdateWalkForce"/>, <see cref="MovingEnemy2D.UpdatePatrolDirection"/>, and the
+    /// jump-off sites in <see cref="Step"/>) - never the passive buoyancy/drag forces already
+    /// computed in <see cref="StepMovingBodyWithForces"/>, which remain solely density/viscosity
+    /// driven as before. Deliberately keyed on <see cref="Assets.Material.Viscosity"/> alone, not
+    /// <see cref="Assets.Material.Density"/>: density already fully does its own job via
+    /// buoyancy (Archimedes' principle) - reusing it here too would double-count the same
+    /// property for two unrelated physical effects. Viscosity is the property that actually
+    /// resists a body's own stride/push-off against a surrounding fluid (the same property
+    /// already driving the existing quadratic drag term), so it is the physically appropriate
+    /// basis for damping self-generated force the way a swimmer's stroke or a push-off through
+    /// water is inherently less effective than the same effort on/through open air. Deliberately
+    /// uses the medium's raw <c>Viscosity</c> directly (not relative to any other medium's own
+    /// value) for pure, literal physical accuracy - even <c>Air</c>'s own small authored
+    /// <c>Viscosity</c> (see <c>Global/MaterialLibrary.ini</c>) applies a (very slight, by design)
+    /// penalty here, same as it already does for the existing passive drag term, rather than
+    /// treating whichever medium happens to be the ambient default as an artificial zero-point.
+    /// Falls off reciprocally toward <see cref="MinMediumForceScale"/>, which is never crossed so
+    /// a body is never fully unable to move under its own power, however viscous the medium.
+    /// </summary>
+    internal static double ResolveMediumForceScale(Assets.Material medium)
+    {
+        var scale = 1.0 / (1.0 + medium.Viscosity * MediumForceScaleFalloff);
+        return Math.Max(scale, MinMediumForceScale);
+    }
+
     private static Assets.Material ResolveCurrentMedium(World2D world, IPhysicsBody body)
     {
         var resolved = world.Materials.Get("Air");
@@ -485,9 +536,14 @@ public class PhysicsSystem
         // current Velocity.Y while airborne (see the call site in Step), so it contributes ~0
         // regardless and gravity/jump impulses remain entirely in charge of vertical motion.
         var horizontalMultiplier = player.IsGrounded ? player.WalkForceMultiplier : player.WalkForceMultiplier * AirControlMultiplier;
+        // Also scaled by the current medium's viscosity (see ResolveMediumForceScale) - a stride
+        // through a viscous medium is inherently less effective than the same muscular effort on
+        // solid ground/open air, independent of the passive buoyancy/drag already applied
+        // elsewhere in StepMovingBodyWithForces.
+        var mediumScale = ResolveMediumForceScale(player.CurrentMedium);
         player.WalkForce = new Vector2D(
-            (targetVelocityX - player.Velocity.X) * mass * horizontalMultiplier,
-            (targetVelocityY - player.Velocity.Y) * mass * player.WalkForceMultiplier);
+            (targetVelocityX - player.Velocity.X) * mass * horizontalMultiplier * mediumScale,
+            (targetVelocityY - player.Velocity.Y) * mass * player.WalkForceMultiplier * mediumScale);
     }
 
     /// <summary>
@@ -527,67 +583,85 @@ public class PhysicsSystem
             netForce.Y += mass * world.Gravity;
         }
 
+        // Ambient medium (see docs/Plans/AmbientMedium.md): resolved fresh every frame (mirroring
+        // IsGrounded's "derived, not stored" philosophy, just needing an explicit recompute call
+        // since it depends on spatial overlap rather than already-tracked contact state) and
+        // exposed via Body2D.CurrentMedium for other systems (e.g. a future swim pose) to read.
+        // Resolved up front (rather than after patrol/walk force below, as originally) so this
+        // same frame's medium - not a stale value from before this body's own contacts/position
+        // were last updated - is available for ResolveMediumForceScale to dampen this frame's own
+        // patrol/walk motor force by, below. body as Body2D is null for a non-Body2D IPhysicsBody
+        // (none currently exist, but the cast stays defensive); such a body simply never receives
+        // any medium-based scaling/force below.
+        var mediumBody = body as Body2D;
+        var medium = mediumBody is not null ? ResolveCurrentMedium(world, body) : Assets.MaterialLibrary.Undefined;
+        if (mediumBody is not null)
+        {
+            mediumBody.CurrentMedium = medium;
+        }
+
         // Patrolling bodies (see IPatrolBody) contribute their own horizontal force here,
         // recomputed each frame from their current position relative to their patrol bounds -
         // this is the "future force source" extension point this comment used to describe before
         // one actually existed; any further force source (wind, thrust, etc.) would sum in here
         // the same way, alongside gravity, before the single acceleration/integration step below.
+        // Scaled by ResolveMediumForceScale (see its own doc comment) so a patrolling body's own
+        // "muscle power" is dampened the same way the player's walk/jump forces are while immersed
+        // in a viscous medium - only meaningful for a body that is also IMediumAffected, since an
+        // unaffected body's CurrentMedium is still resolved above but never meant to influence it.
         if (body is IPatrolBody patrolBody)
         {
             patrolBody.UpdatePatrolDirection(world.Gravity);
-            netForce += patrolBody.PatrolForce;
+            var patrolForce = patrolBody.PatrolForce;
+            if (mediumBody is not null && body is IMediumAffected { MediumAffected: true })
+            {
+                var patrolMediumScale = ResolveMediumForceScale(medium);
+                patrolForce = new Vector2D(patrolForce.X * patrolMediumScale, patrolForce.Y * patrolMediumScale);
+            }
+            netForce += patrolForce;
         }
 
         // The player's ground-level walk/crawl (and climb/hang side-step) locomotion contributes
         // its own horizontal motor force here - see IWalkForceBody and UpdateWalkForce, called
-        // earlier this frame by Step before this integration runs.
+        // earlier this frame by Step before this integration runs. UpdateWalkForce already applies
+        // its own medium scaling using the player's CurrentMedium as of the *previous* frame's
+        // resolution (the only value available at the point in Step it runs); the small one-frame
+        // lag this implies is inconsequential given the medium rarely changes frame-to-frame.
         if (body is IWalkForceBody walkForceBody)
         {
             netForce += walkForceBody.WalkForce;
         }
 
-        // Ambient medium (see docs/Plans/AmbientMedium.md): resolved fresh every frame (mirroring
-        // IsGrounded's "derived, not stored" philosophy, just needing an explicit recompute call
-        // since it depends on spatial overlap rather than already-tracked contact state) and
-        // exposed via Body2D.CurrentMedium for other systems (e.g. a future swim pose) to read.
-        // Only bodies opting in via IMediumAffected receive the buoyancy/drag forces themselves -
-        // resolution of CurrentMedium itself is unconditional so it always reflects reality.
-        if (body is Body2D mediumBody)
+        if (mediumBody is not null && body is IMediumAffected { MediumAffected: true })
         {
-            var medium = ResolveCurrentMedium(world, body);
-            mediumBody.CurrentMedium = medium;
+            // Buoyancy: an upward (gravity-opposing) force equal to the weight of medium
+            // displaced by this body's own volume - Archimedes' principle. Volume is
+            // recovered from mass/density (mass = density * volume), using this body's own
+            // resolved density (falling back to 1.0 for an unconfigured body, same rationale
+            // as the mass fallback above) to avoid a divide-by-zero for a massless/density-
+            // less body.
+            var bodyDensity = mediumBody.Density > 0 ? mediumBody.Density : 1.0;
+            var volume = mass / bodyDensity;
+            netForce.Y -= medium.Density * volume * world.Gravity;
 
-            if (body is IMediumAffected { MediumAffected: true })
-            {
-                // Buoyancy: an upward (gravity-opposing) force equal to the weight of medium
-                // displaced by this body's own volume - Archimedes' principle. Volume is
-                // recovered from mass/density (mass = density * volume), using this body's own
-                // resolved density (falling back to 1.0 for an unconfigured body, same rationale
-                // as the mass fallback above) to avoid a divide-by-zero for a massless/density-
-                // less body.
-                var bodyDensity = mediumBody.Density > 0 ? mediumBody.Density : 1.0;
-                var volume = mass / bodyDensity;
-                netForce.Y -= medium.Density * volume * world.Gravity;
-
-                // Drag: a quadratic (velocity-squared) velocity-opposing force scaled by the
-                // medium's Viscosity and this body's own frontal area facing the direction of
-                // travel - the physically accurate model for fluid drag at ordinary (non-creeping)
-                // speeds, unlike a linear model which only holds for very slow motion through a
-                // thick medium. Scaling with the square of speed rather than speed itself means a
-                // fast impact (e.g. a body falling into water) sheds far more of its momentum than
-                // the same body drifting slowly - which is what keeps a body from significantly
-                // overshooting/bouncing back out after a hard entry. Scaling with frontal area
-                // (Size.Y facing horizontal travel, Size.X facing vertical travel - the 2D analog
-                // of cross-sectional area) means a bigger body of the same material displaces and
-                // pushes against more of the medium and so feels proportionally more drag than a
-                // smaller one, not just more buoyancy from its larger volume. Applied per-axis
-                // using each axis's own speed/area (not the combined velocity magnitude/a single
-                // area) to keep the two axes independent, consistent with every other force here.
-                // Continuous while immersed, independent of any solid contact, distinct from
-                // Coulomb friction (which only acts at contact time).
-                netForce.X -= medium.Viscosity * body.Size.Y * body.Velocity.X * Math.Abs(body.Velocity.X);
-                netForce.Y -= medium.Viscosity * body.Size.X * body.Velocity.Y * Math.Abs(body.Velocity.Y);
-            }
+            // Drag: a quadratic (velocity-squared) velocity-opposing force scaled by the
+            // medium's Viscosity and this body's own frontal area facing the direction of
+            // travel - the physically accurate model for fluid drag at ordinary (non-creeping)
+            // speeds, unlike a linear model which only holds for very slow motion through a
+            // thick medium. Scaling with the square of speed rather than speed itself means a
+            // fast impact (e.g. a body falling into water) sheds far more of its momentum than
+            // the same body drifting slowly - which is what keeps a body from significantly
+            // overshooting/bouncing back out after a hard entry. Scaling with frontal area
+            // (Size.Y facing horizontal travel, Size.X facing vertical travel - the 2D analog
+            // of cross-sectional area) means a bigger body of the same material displaces and
+            // pushes against more of the medium and so feels proportionally more drag than a
+            // smaller one, not just more buoyancy from its larger volume. Applied per-axis
+            // using each axis's own speed/area (not the combined velocity magnitude/a single
+            // area) to keep the two axes independent, consistent with every other force here.
+            // Continuous while immersed, independent of any solid contact, distinct from
+            // Coulomb friction (which only acts at contact time).
+            netForce.X -= medium.Viscosity * body.Size.Y * body.Velocity.X * Math.Abs(body.Velocity.X);
+            netForce.Y -= medium.Viscosity * body.Size.X * body.Velocity.Y * Math.Abs(body.Velocity.Y);
         }
 
         var acceleration = new Vector2D(netForce.X / mass, netForce.Y / mass);

@@ -81,6 +81,30 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `IMediumAffected` (mirroring `IGravityAffected`) receive these forces; `CurrentMedium`
   itself is still resolved/exposed for every body regardless, for future systems (e.g.
   a swim pose) to read.
+- **A body's own actively-generated force/impulse (motor force, jump-off) is separately
+  dampened by ambient medium viscosity, distinct from the passive buoyancy/drag above**
+  (`PhysicsSystem.ResolveMediumForceScale`): maps `Material.Viscosity` alone (never
+  `Density`, which already fully does its own job via buoyancy - reusing it here too
+  would double-count the same property for two unrelated effects) to a multiplier in
+  `[MinMediumForceScale, 1.0]`, applied to `Player2D`'s `UpdateWalkForce` motor force and
+  all three jump-off impulses (`WalkJumpSpeed`/`ClimbJumpSpeed`/`HangJumpSpeed`), and to
+  `MovingEnemy2D`'s `PatrolForce` (any `IMediumAffected` body that is also
+  `IWalkForceBody`/`IPatrolBody`). Uses each medium's raw `Viscosity` directly (not
+  relative to any other medium's value) for pure, literal physical accuracy - even
+  `Air`'s own small authored baseline (0.02, `Global/MaterialLibrary.ini`) applies a
+  slight, deliberate penalty on land, same as it already does for the existing passive
+  drag term, rather than treating whichever medium happens to be ambient as an
+  artificial zero-point. A denser fluid's higher `Viscosity` (e.g. `Water`'s 0.15 vs.
+  `Air`'s 0.02) falls off reciprocally toward the floor, so a
+  push-off/stride genuinely struggles more the more viscous the medium - fixing an
+  issue where a water jump, once buoyancy had already cancelled most of gravity, still
+  launched off a fixed ground-level impulse and so leapt unrealistically high. The floor
+  keeps a body from ever being fully unable to move under its own power, however viscous
+  the medium. `StepMovingBodyWithForces` resolves `CurrentMedium` up front (before
+  patrol/walk force summation) so `PatrolForce` scaling uses the current frame's medium;
+  `UpdateWalkForce`/the jump-off sites read `Player2D.CurrentMedium` as of the *previous*
+  frame's resolution (the only value available at that point in `Step`) - an accepted
+  one-frame lag, inconsequential since medium rarely changes frame-to-frame.
 - **Physics/Collision run on a fixed timestep accumulator, not a variable/capped
   per-frame step** (`GameLoop.OnPlayingFrameAsync`'s `_physicsAccumulatorSeconds`,
   `PhysicsSystem.FixedPhysicsStepSeconds`): an earlier "cap the step size and
@@ -160,9 +184,10 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **Ground and hang each have their own structured "stance ladder"**
   (Crawl<->Walk on the ground; Clamber<->Hang while hanging, inverted to
   match arm position rather than screen direction), and each locomotion mode
-  has its own jump-off speed, graded by how much of the body's own
-  leverage/grip backs the push-off (`WalkJumpSpeed` > `ClimbJumpSpeed` >
-  `HangJumpSpeed`).
+  has its own jump-off speed (`WalkJumpSpeed`/`ClimbJumpSpeed`/`HangJumpSpeed`),
+  graded by how much of the body's own leverage/grip backs the push-off -
+  currently `WalkJumpSpeed` highest, with `ClimbJumpSpeed`/`HangJumpSpeed` tuned
+  independently and not required to stay in strict order relative to each other.
 - **A short debounce** (`IHangerBody.SuppressHangUntilClear`, and the
   climbing equivalent) prevents an immediate re-grab of the same
   ladder/pipe the same frame a jump/swing-off begins.

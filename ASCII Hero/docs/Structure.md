@@ -285,13 +285,21 @@ The live game state and the entity types that make it up.
   calls for - mirroring `IPatrolBody.PatrolForce`'s role for a patrolling
   enemy, just proportional to the remaining speed gap rather than a fixed
   direction, so the player still reaches (and then holds) the target speed
-  promptly without overshooting or oscillating. Jump-off impulses (a
-  standing jump, or letting go of a ladder/pipe with an upward launch) are
-  the one exception, and deliberately so: each is a genuine instantaneous
-  velocity kick applied once on the frame it triggers, not a sustained,
-  ongoing motion to converge toward, so they remain direct velocity
-  assignments on purpose - discrete state-machine transitions, not the
-  continuous locomotion `WalkForce` drives. Also resolves
+  promptly without overshooting or oscillating. Both `WalkForce` and
+  `PatrolForce` are further scaled by `PhysicsSystem.ResolveMediumForceScale`,
+  which maps the body's current medium's raw `Viscosity` (see above) to a
+  multiplier in `[MinMediumForceScale, 1.0]` - distinct from the passive
+  buoyancy/drag terms above, this damps a body's own actively-generated
+  motor force, so a stride/push-off through a viscous medium (e.g. `Water`)
+  is inherently less effective than the same effort on land. Jump-off
+  impulses (a standing jump, or letting go of a ladder/pipe with an upward
+  launch) are the one exception to the continuous-force model, and
+  deliberately so: each is a genuine instantaneous velocity kick applied
+  once on the frame it triggers (also scaled by the same
+  `ResolveMediumForceScale`), not a sustained, ongoing motion to converge
+  toward, so they remain direct velocity assignments on purpose - discrete
+  state-machine transitions, not the continuous locomotion `WalkForce`
+  drives. Also resolves
   the player's stance (Walk/Crawl, toggled by input) and pose (which swaps to
   a visual-only "Jump" pose while airborne, independent of the underlying
   stance). Also engages/disengages `IsClimbing`/`IsHanging` (on any
