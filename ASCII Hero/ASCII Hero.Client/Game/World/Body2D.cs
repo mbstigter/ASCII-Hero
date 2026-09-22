@@ -329,22 +329,17 @@ public abstract class Body2D
 
     /// <summary>
     /// This body's mass, used by <see cref="Physics.CollisionSystem"/>'s impulse resolution and
-    /// (for non-player bodies) <see cref="Physics.PhysicsSystem"/>'s force integration. Defaults
-    /// to <see cref="Density"/> times the body's current footprint area (<see cref="Size"/>'s
-    /// width times height) - the simplest reasonable 2D proxy for volume, per docs/Decisions.md -
-    /// but a placement may instead set an explicit <c>Mass</c> ini override (see
-    /// <see cref="World.World2D.LoadAsync"/>) when the density-times-footprint default would be
-    /// unrealistic for that body's actual shape/weight. Static bodies are always treated as
+    /// (for non-player bodies) <see cref="Physics.PhysicsSystem"/>'s force integration. Computed
+    /// as <see cref="Density"/> times the body's current footprint area (<see cref="Size"/>'s
+    /// width times height) - the simplest reasonable 2D proxy for volume, per docs/Decisions.md.
+    /// A creature whose real-world mass shouldn't just fall out of its footprint size (e.g. a
+    /// snake being much lighter than a human despite a similar bounding box) should instead use a
+    /// dedicated, appropriately-calibrated material (see <c>Global/MaterialLibrary.ini</c>)
+    /// rather than an ad hoc per-placement override. Static bodies are always treated as
     /// effectively immovable regardless of this value (gated by <see cref="IsStatic"/>, not by
     /// mass), so a static placement's mass is never actually used in collision math.
     /// </summary>
-    public double Mass
-    {
-        get => _massOverride ?? Density * Size.X * Size.Y;
-        set => _massOverride = value;
-    }
-
-    private double? _massOverride;
+    public double Mass => Density * Size.X * Size.Y;
 
     /// <summary>The clip currently being displayed/collided against (e.g. "idle").</summary>
     public SpriteClip Clip { get; private set; } = null!;

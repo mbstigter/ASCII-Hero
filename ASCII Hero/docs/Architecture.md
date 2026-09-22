@@ -81,14 +81,16 @@ core's own force/collision/medium math.
   `Restitution`, and any body resting against the floor is considered
   grounded (`IPhysicsBody.IsGrounded`), exactly as if it were resting on a
   platform.
-- Every body's physical properties — `Density`, `Friction`, `Restitution`,
-  and computed `Mass` (`Density * Size.X * Size.Y`) — are resolved once at
-  spawn time from a named material (`Body2D.MaterialName`, derived from the
-  dominant non-empty material of the active sprite frame's per-cell
-  `_materials.txt`/`DefaultMaterial` layer) looked up in `World2D.Materials`
-  (a `MaterialLibrary` that merges `Global/MaterialLibrary.ini` with an optional
-  level-local override, mirroring `ColorPalette`'s Global+Level pattern). A
-  level placement's ini section can override the resolved material name via
+- Every body's physical properties — `Density`, `Friction`, `Restitution` —
+  are resolved once at spawn time from a named material (`Body2D.MaterialName`,
+  derived from the dominant non-empty material of the active sprite frame's
+  per-cell `_materials.txt`/`DefaultMaterial` layer) looked up in
+  `World2D.Materials` (a `MaterialLibrary` that merges
+  `Global/MaterialLibrary.ini` with an optional level-local override,
+  mirroring `ColorPalette`'s Global+Level pattern); `Mass` is always
+  computed from the resolved `Density` and the body's current footprint
+  (`Density * Size.X * Size.Y`) rather than being independently overridable.
+  A level placement's ini section can override the resolved material name via
   `Material`, or just the resulting `Restitution` via `Restitution`, without
   needing a distinct sprite asset. `CollisionSystem` combines two contacting
   bodies' `Restitution`/`Friction` via a simple average (`Combine`, see

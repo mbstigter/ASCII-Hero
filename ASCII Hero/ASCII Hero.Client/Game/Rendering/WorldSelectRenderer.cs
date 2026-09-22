@@ -1,4 +1,5 @@
 using ASCII_Hero.Client.Game.Assets;
+using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.Menu;
 
 namespace ASCII_Hero.Client.Game.Rendering;
@@ -15,7 +16,6 @@ namespace ASCII_Hero.Client.Game.Rendering;
 /// </summary>
 public static class WorldSelectRenderer
 {
-    internal const string WorldSelectForeColor = "#00ff00";
     // One cell of breathing room to either side of a slot's 16-wide thumbnail, used to draw the
     // selector box's left/right border without needing extra space reserved between slots.
     private const int SlotHorizontalPadding = 1;
@@ -95,7 +95,7 @@ public static class WorldSelectRenderer
         var startCol = (viewportWidthCells - totalRowWidth) / 2;
         var startRow = (viewportHeightCells - BlockHeight) / 2;
 
-        var logoLabel = new UILabel((viewportWidthCells - LogoWidth) / 2, startRow - LogoGapRows - LogoHeight, width: LogoWidth, height: LogoHeight, foreColor: WorldSelectForeColor);
+        var logoLabel = new UILabel((viewportWidthCells - LogoWidth) / 2, startRow - LogoGapRows - LogoHeight, width: LogoWidth, height: LogoHeight, foreColor: RenderConstants.DefaultForeColor);
         logoLabel.Lines.AddRange(LogoLines);
         UIRenderer.AddLabel(glyphs, logoLabel, cellWidthPixels, cellHeightPixels);
 
@@ -158,7 +158,7 @@ public static class WorldSelectRenderer
                 }
 
                 glyphs.Add(GlyphBuilder.BuildGlyph(
-                    (arrowCol + col) * cellWidthPixels, (arrowRow + row) * cellHeightPixels, character, WorldSelectForeColor, null));
+                    (arrowCol + col) * cellWidthPixels, (arrowRow + row) * cellHeightPixels, character, RenderConstants.DefaultForeColor, null));
             }
         }
     }
@@ -172,7 +172,7 @@ public static class WorldSelectRenderer
             : world.Title;
         var titleStartCol = thumbCol + (WorldCatalog.ThumbnailWidth - title.Length) / 2.0;
 
-        var label = new UILabel(titleStartCol, titleRow, width: title.Length, height: 1, foreColor: WorldSelectForeColor);
+        var label = new UILabel(titleStartCol, titleRow, width: title.Length, height: 1, foreColor: RenderConstants.DefaultForeColor);
         label.Lines.Add(title);
         UIRenderer.AddLabel(glyphs, label, cellWidthPixels, cellHeightPixels);
     }
@@ -182,7 +182,7 @@ public static class WorldSelectRenderer
         double cellWidthPixels, double cellHeightPixels)
     {
         var top = thumbRow - SlotVerticalPadding;
-        var frame = new UIFrame(slotOriginCol, top, SlotPitch, WorldCatalog.ThumbnailHeight + SlotVerticalPadding + 1, foreColor: WorldSelectForeColor);
+        var frame = new UIFrame(slotOriginCol, top, SlotPitch, WorldCatalog.ThumbnailHeight + SlotVerticalPadding + 1, foreColor: RenderConstants.DefaultForeColor);
         UIRenderer.AddFrame(glyphs, frame, cellWidthPixels, cellHeightPixels);
     }
 
@@ -202,8 +202,8 @@ public static class WorldSelectRenderer
                     continue;
                 }
 
-                var foreColor = GlyphBuilder.ResolveColor(world.Palette, GlyphBuilder.DefaultForeColor, GlyphBuilder.NullIfEmpty(frame.Fore[row, col], world.EmptyChar));
-                var backColor = GlyphBuilder.ResolveColor(world.Palette, GlyphBuilder.DefaultBackColor, GlyphBuilder.NullIfEmpty(frame.Back[row, col], world.EmptyChar), world.DefaultBackColor);
+                var foreColor = GlyphBuilder.ResolveColor(world.Palette, RenderConstants.DefaultForeColor, GlyphBuilder.NullIfEmpty(frame.Fore[row, col], world.EmptyChar));
+                var backColor = GlyphBuilder.ResolveColor(world.Palette, RenderConstants.DefaultBackColor, GlyphBuilder.NullIfEmpty(frame.Back[row, col], world.EmptyChar), world.DefaultBackColor);
                 glyphs.Add(GlyphBuilder.BuildGlyph(
                     (thumbCol + col) * cellWidthPixels, (thumbRow + row) * cellHeightPixels, character, foreColor, backColor));
             }

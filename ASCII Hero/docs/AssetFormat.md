@@ -418,8 +418,10 @@ Swim = swim_idle, swim_left, swim_right, swim_up, swim_down
   will visibly float above the ground (shrink) or sink into it (grow) instead
   of keeping its feet planted, since the top-left corner staying fixed moves
   the *bottom* edge. Convey a "shorter"/"crouched" pose by leaving authored
-  rows blank (as `Player_crawl_*` does - a full-height box with an empty top
-  row) rather than by actually authoring a smaller grid.
+  rows/columns blank (a full-size box with an empty edge, the same way a
+  pose narrower than its walk-cycle peers would leave empty side columns
+  rather than a truly narrower grid) rather than by actually authoring a
+  smaller grid.
 - For an asset whose pose set is dictated by code rather than purely by
   world design (the player being the main example - `PhysicsSystem`/its
   capability interfaces can put it into any pose it supports, e.g.
@@ -766,8 +768,8 @@ shared template section for common properties.
 
 Throughout the rest of this section, "an object type" (or "a section") means
 one `[SectionName]` block in a world's `{WorldName}_objects.ini` (e.g.
-`[Goblin]` above), not one specific occurrence in the level. Every key
-described below (`Material`, `Friction`, `Mass`, `Restitution`, `PatrolForce`,
+Every key
+described below (`Material`, `Friction`, `Density`, `Restitution`, `PatrolForceMultiplier`,
 `WalkSpeed`, etc.) is set once per section and therefore applies to every
 cell in `{WorldName}_objects.txt` that uses that section's code - placing the
 same code at five different spots spawns five bodies that all share that one
@@ -891,13 +893,13 @@ PatrolMaxX = 35
 ```
 
 Further optional keys tune the patrol force itself rather than its range:
-`PatrolForce` (a number, default `60`) scales how strongly - i.e. how
+`PatrolForceMultiplier` (a number, default `60`) scales how strongly - i.e. how
 "strong" this enemy is, its "muscle power" - it accelerates toward its
 cruising speed on either axis (mass-scaled like gravity, converging on that
 target speed rather than accelerating forever - see docs/Decisions.md);
-`PatrolCruiseSpeed` (cells/second, default `6`) is the target horizontal
+`PatrolCruiseSpeedX` (cells/second, default `6`) is the target horizontal
 speed, i.e. how fast this enemy patrols along X once it gets there;
-`PatrolCruiseSpeedY` (cells/second, defaults to `PatrolCruiseSpeed` if unset)
+`PatrolCruiseSpeedY` (cells/second, defaults to `PatrolCruiseSpeedX` if unset)
 is the equivalent target speed for vertical patrol, letting a diagonally- or
 vertically-patrolling enemy cruise at a different pace on each axis;
 `PatrolInitialDirectionX` (`Left` or `Right`) overrides which way it starts
@@ -912,8 +914,8 @@ Asset = Goblin
 Clip = idle
 Kind = MovingEnemy
 Patrol = true
-PatrolForce = 90
-PatrolCruiseSpeed = 10
+PatrolForceMultiplier = 90
+PatrolCruiseSpeedX = 10
 PatrolInitialDirectionX = Right
 ```
 
@@ -1004,14 +1006,14 @@ CameraTarget = true
 ```
 
 The `Player` section may additionally override its own "muscle power" and
-target ground speeds, the same concepts `MovingEnemy`'s `PatrolForce`/
-`PatrolCruiseSpeed` expose for a patrolling enemy - deliberately the same
+target ground speeds, the same concepts `MovingEnemy`'s `PatrolForceMultiplier`/
+`PatrolCruiseSpeedX` expose for a patrolling enemy - deliberately the same
 key/property name (`ForceMultiplier`) for both, since they are the exact same
 "force gain converging toward a target speed" concept either way:
 `WalkForceMultiplier` (a number, default from
-`PhysicsSystem.DefaultWalkForceMultiplier`) scales how strongly the player
+`GameDefaults.WalkForceMultiplier`) scales how strongly the player
 accelerates toward its target speed; `WalkSpeed`/`CrawlSpeed` (cells/second,
-defaulting from `PhysicsSystem.DefaultWalkSpeed`/`DefaultCrawlSpeed`) are the
+defaulting from `GameDefaults.WalkSpeed`/`CrawlSpeed`) are the
 target ground speeds while standing/walking vs. crouched/crawling,
 respectively. Only one force multiplier exists for the player (covering both
 Walk and Crawl) rather than a separate one per pose, because Climb/Hang are
@@ -1024,9 +1026,9 @@ and independent of one another:
 Asset = Hero
 Clip = idle
 Kind = Player
-WalkForceMultiplier = 55 ; Default = PhysicsSystem.DefaultWalkForceMultiplier (40)
-WalkSpeed = 16 ; Default = PhysicsSystem.DefaultWalkSpeed (12)
-CrawlSpeed = 8 ; Default = PhysicsSystem.DefaultCrawlSpeed (6)
+WalkForceMultiplier = 55 ; Default = GameDefaults.WalkForceMultiplier (40)
+WalkSpeed = 16 ; Default = GameDefaults.WalkSpeed (12)
+CrawlSpeed = 8 ; Default = GameDefaults.CrawlSpeed (6)
 ```
 
 Any object type may also override its spawned body's material and/or color away
@@ -1069,20 +1071,15 @@ ForegroundColor = Y
   outright, independent of `Material`/`Friction`/`Restitution` (e.g. a body
   whose effective density differs from its shared material's for just this
   one type, or changes per-instance/at runtime — think water that's been
-  heated). Feeds into `Mass`'s density-times-footprint default the same way
-  the material's own density normally would (see `Mass` below), unless
-  `Mass` is itself also overridden.
-- **`Mass`** — overrides the spawned body's default mass, which is otherwise
-  always `Density * width * height` (a simple 2D-volume proxy — see
-  docs/Decisions.md; that `Density` is itself this section's own resolved
-  Density above, whether from `Material`/the sprite's default or a `Density`
-  override). `Mass` only replaces the *combination* of that density with
-  this body's on-screen footprint - use it when that 2D-volume proxy would
-  be unrealistic for a particular body's actual shape/weight (e.g. a small
-  but very heavy prop, or a large but hollow/light one), the same way
-  `Friction`/`Restitution`/`Density` above let this one type deviate from
-  its resolved material's other physical defaults.
-  Applies to `Player` too, not just non-player object types.
+  heated). Feeds into this body's mass (`Density * width * height`, a simple
+  2D-volume proxy — see docs/Decisions.md) the same way the material's own
+  density normally would. There is no separate `Mass` override key — a
+  creature whose real-world mass shouldn't just fall out of its footprint
+  size (e.g. a snake much lighter than a human despite a similar bounding
+  box) should instead be given its own dedicated, appropriately-calibrated
+  material (see `Global/MaterialLibrary.ini`) rather than an ad hoc
+  per-placement mass value.
+
 - **`ForegroundColor`**/**`BackgroundColor`** — a single-character color code
   (see `Global/ColorPalette.ini`), a tier in `WorldRenderer`'s color-resolution
   chain, in precedence order after the cell's own per-cell code:
@@ -1238,6 +1235,39 @@ Fields:
 Game-wide defaults that apply unless overridden by a more specific per-asset
 `settings.ini` (e.g. default gravity, default empty-char). Extended as new
 game-wide concepts emerge.
+
+The `[Render]` section configures the font/viewport sizing used by the whole
+game (see `game-interop.js`'s `initialize`):
+
+```ini
+[Render]
+FontFamily = "Web437IbmVga8x14", monospace
+ViewportColumns = 80
+ViewportRows = 25
+FontWidthPixels = 16
+FontHeightPixels = 28
+```
+
+- **`FontFamily`** — the CSS font family used to render the ASCII grid. Must
+  already be available to the browser (e.g. via an `@font-face` declaration
+  in app.css/standalone.css, or an installed system font) — naming a font
+  here does not itself load any new font asset.
+- **`FontWidthPixels`/`FontHeightPixels`** — mandatory; the final on-screen
+  cell size (in pixels) used to render one character, normally an integer
+  multiple of the font's own documented native size (e.g. the bundled font is
+  natively 8x14, so 16/28 here gives a 2x zoomed-in look) — a deliberately
+  non-uniform pair can squeeze/stretch the font in one direction if ever
+  desired. There is no separate scale key: a browser's text-measuring API
+  cannot reliably report a true bitmap font's real native pixel size (a
+  browser may only rasterize/measure such a font precisely at specific
+  sizes), so rather than an unreliable auto-detect plus a scale multiplier,
+  the final size is supplied directly. `GameLoop.StartAsync` throws if
+  either key is missing.
+- **`ViewportColumns`/`ViewportRows`** — the size of the viewport, in whole
+  character columns/rows. The canvas element's actual pixel size is always
+  `columns * cellWidthPixels` by `rows * cellHeightPixels` — never a fixed
+  pixel constant — so it adapts automatically to whichever font size is
+  configured.
 
 ### 4.4 `Global/Worlds.ini`
 

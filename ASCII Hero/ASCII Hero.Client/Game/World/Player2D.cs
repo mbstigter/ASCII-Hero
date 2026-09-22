@@ -1,4 +1,5 @@
 using ASCII_Hero.Client.Game.Assets;
+using ASCII_Hero.Client.Game.Constants;
 
 namespace ASCII_Hero.Client.Game.World;
 
@@ -71,7 +72,7 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// "Muscle power" - the mass-scaled force gain applied to converge <see cref="Velocity"/>
     /// toward the current target walk/crawl/climb/hang velocity (see
     /// <see cref="Physics.PhysicsSystem.UpdateWalkForce"/>). Defaults to
-    /// <see cref="Physics.PhysicsSystem.DefaultWalkForceMultiplier"/>, but a placement may
+    /// <see cref="GameDefaults.WalkForceMultiplier"/>, but a placement may
     /// override it via the <c>WalkForceMultiplier</c> ini key (see <see cref="World2D.LoadAsync"/>) -
     /// same name/role as <see cref="MovingEnemy2D.PatrolForceMultiplier"/> for a patrolling enemy,
     /// since both represent the exact same "muscle power toward a target speed" concept. One
@@ -79,22 +80,22 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// kind of ongoing, motor-driven locomotion, just converging toward a different target
     /// velocity depending on the current pose/state (see <see cref="Physics.PhysicsSystem.Step"/>).
     /// </summary>
-    public double WalkForceMultiplier { get; set; } = Physics.PhysicsSystem.DefaultWalkForceMultiplier;
+    public double WalkForceMultiplier { get; set; } = GameDefaults.WalkForceMultiplier;
 
 
     /// <summary>
     /// Target ground speed (in world cells/second) while standing/walking (<see cref="Pose"/> ==
-    /// "Walk"). Defaults to <see cref="Physics.PhysicsSystem.DefaultWalkSpeed"/>, but a placement
+    /// "Walk"). Defaults to <see cref="GameDefaults.WalkSpeed"/>, but a placement
     /// may override it via the <c>WalkSpeed</c> ini key (see <see cref="World2D.LoadAsync"/>).
     /// </summary>
-    public double WalkSpeed { get; set; } = Physics.PhysicsSystem.DefaultWalkSpeed;
+    public double WalkSpeed { get; set; } = GameDefaults.WalkSpeed;
 
     /// <summary>
     /// Target ground speed (in world cells/second) while crouched/crawling (<see cref="Pose"/> ==
-    /// "Crawl"). Defaults to <see cref="Physics.PhysicsSystem.DefaultCrawlSpeed"/>, but a placement
+    /// "Crawl"). Defaults to <see cref="GameDefaults.CrawlSpeed"/>, but a placement
     /// may override it via the <c>CrawlSpeed</c> ini key (see <see cref="World2D.LoadAsync"/>).
     /// </summary>
-    public double CrawlSpeed { get; set; } = Physics.PhysicsSystem.DefaultCrawlSpeed;
+    public double CrawlSpeed { get; set; } = GameDefaults.CrawlSpeed;
 
     public Player2D()
     {

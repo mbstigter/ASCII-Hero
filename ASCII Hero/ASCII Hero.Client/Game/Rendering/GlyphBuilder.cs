@@ -1,4 +1,5 @@
 using ASCII_Hero.Client.Game.Assets;
+using ASCII_Hero.Client.Game.Constants;
 
 namespace ASCII_Hero.Client.Game.Rendering;
 
@@ -10,20 +11,6 @@ namespace ASCII_Hero.Client.Game.Rendering;
 /// </summary>
 public static class GlyphBuilder
 {
-    /// <summary>
-    /// Default foreground color used by any renderer (<see cref="WorldRenderer"/>,
-    /// <see cref="WorldSelectRenderer"/>, <see cref="UIRenderer"/>) when nothing more specific is
-    /// resolved (no palette match, or no explicit color set) - the single app-wide place this hex
-    /// value is defined, so it isn't hardcoded independently in each renderer.
-    /// </summary>
-    public const string DefaultForeColor = "#00ff00";
-
-    /// <summary>
-    /// Default background color used by any renderer when nothing more specific is resolved -
-    /// null means no fill (fully transparent, letting the canvas show through). The single
-    /// app-wide place this default is defined, so it isn't hardcoded independently in each renderer.
-    /// </summary>
-    public const string? DefaultBackColor = null;
 
     /// <summary>
     /// Resolves a cell's color by trying each code in <paramref name="codesInPrecedenceOrder"/> in
@@ -49,9 +36,9 @@ public static class GlyphBuilder
         return hardcodedFallback;
     }
 
-    /// <summary>Builds a glyph at an already-resolved pixel position, falling back to <see cref="DefaultForeColor"/>/<see cref="DefaultBackColor"/> if <paramref name="foreColor"/>/<paramref name="backColor"/> are null.</summary>
+    /// <summary>Builds a glyph at an already-resolved pixel position, falling back to <see cref="RenderConstants.DefaultForeColor"/>/<see cref="RenderConstants.DefaultBackColor"/> if <paramref name="foreColor"/>/<paramref name="backColor"/> are null.</summary>
     public static Glyph BuildGlyph(double pixelX, double pixelY, char character, string? foreColor, string? backColor) =>
-        new(pixelX, pixelY, character, foreColor ?? DefaultForeColor, backColor ?? DefaultBackColor);
+        new(pixelX, pixelY, character, foreColor ?? RenderConstants.DefaultForeColor, backColor ?? RenderConstants.DefaultBackColor);
 
     /// <summary>
     /// Returns <paramref name="code"/> unless it equals the grid's "no code here" marker

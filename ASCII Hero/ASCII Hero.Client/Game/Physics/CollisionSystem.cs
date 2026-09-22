@@ -1,3 +1,4 @@
+using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.World;
 
 namespace ASCII_Hero.Client.Game.Physics;
@@ -10,42 +11,14 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// </summary>
 public class CollisionSystem
 {
-    /// <summary>
-    /// Speed (in cells/second) above which a body is moving too fast to snap onto a
-    /// climbable/hangable surface on first touch; it keeps falling/moving through instead.
-    /// </summary>
-    private const double MaxSnapSpeed = 24.0;
-
-    /// <summary>
-    /// Amount <see cref="SnapOntoHangable"/> pulls the hanger's top edge above the hangable
-    /// surface's bottom edge, keeping the two rectangles genuinely overlapping (per
-    /// <see cref="Rect.Overlaps"/>'s strict inequalities) rather than merely touching, so
-    /// <see cref="IHangerBody.IsTouchingHangable"/> stays true on the frame right after snapping.
-    /// </summary>
-    private const double HangOverlapEpsilon = 0.01;
-
-    /// <summary>
-    /// World-space size (in cells) of one broad-phase spatial-grid bucket - see
-    /// <see cref="SpatialGrid{T}"/>.
-    /// </summary>
-    private const double GridCellSize = 4.0;
-
-    /// <summary>
-    /// Number of times the solids-and-movers narrow phase re-detects and re-resolves every
-    /// candidate contact each frame, so simultaneous contacts (a corner formed by two solids, a
-    /// body sandwiched between two others) converge instead of fighting - see the remarks in
-    /// <see cref="Resolve"/>.
-    /// </summary>
-    private const int SolverIterations = 4;
-
     /// <summary>Reused across frames to avoid an allocation every call for what is normally a tiny list.</summary>
     private readonly List<IPhysicsBody> _movingBodies = [];
 
     /// <summary>Broad-phase spatial grid over this frame's static, non-passable solids - see <see cref="SpatialGrid{T}"/>.</summary>
-    private readonly SpatialGrid<Body2D> _solidsGrid = new(GridCellSize);
+    private readonly SpatialGrid<Body2D> _solidsGrid = new(PhysicsConstants.GridCellSize);
 
     /// <summary>Broad-phase spatial grid over this frame's moving bodies - see <see cref="SpatialGrid{T}"/>.</summary>
-    private readonly SpatialGrid<IPhysicsBody> _movingBodiesGrid = new(GridCellSize);
+    private readonly SpatialGrid<IPhysicsBody> _movingBodiesGrid = new(PhysicsConstants.GridCellSize);
 
     /// <summary>
     /// A placeholder <see cref="Body2D"/> representing the world's own floor/walls/ceiling for
@@ -130,7 +103,7 @@ public class CollisionSystem
         // earlier in the same pass. Re-running the same detection-and-resolution passes several
         // times lets those corrections converge, each later iteration re-detecting overlap from
         // the current, already partially corrected, positions.
-        for (var iteration = 0; iteration < SolverIterations; iteration++)
+        for (var iteration = 0; iteration < PhysicsConstants.SolverIterations; iteration++)
         {
             foreach (var body in _movingBodies)
             {
@@ -203,7 +176,7 @@ public class CollisionSystem
     /// <remarks>
     /// A ladder can be grabbed from any side (climbing up into it, sideways into it mid-jump, or
     /// falling down onto/through it), so climbable overlap has no directional restriction - just
-    /// overlap plus a speed gate (see <see cref="MaxSnapSpeed"/>). A hangable surface only
+    /// overlap plus a speed gate (see <see cref="PhysicsConstants.MaxSnapSpeed"/>). A hangable surface only
     /// triggers when approaching from underneath (see <see cref="WouldSnapFromBelow"/>), not
     /// merely brushing its top while landing on it, and is likewise gated on speed.
     /// </remarks>
@@ -279,16 +252,16 @@ public class CollisionSystem
 
         var bodyTop = hanger.CollisionRects.Min(rect => rect.Top);
         var topOffset = bodyTop - hanger.Position.Y;
-        hanger.Position = new Vector2D(hanger.Position.X, contact.OtherRect.Bottom - topOffset - HangOverlapEpsilon);
+        hanger.Position = new Vector2D(hanger.Position.X, contact.OtherRect.Bottom - topOffset - PhysicsConstants.HangOverlapEpsilon);
     }
 
     /// <summary>
     /// Whether <paramref name="body"/> is moving slowly enough to snap onto a climbable/hangable
     /// surface on first touch, rather than passing straight through it - see
-    /// <see cref="MaxSnapSpeed"/>. Checked against overall speed, not just one axis.
+    /// <see cref="PhysicsConstants.MaxSnapSpeed"/>. Checked against overall speed, not just one axis.
     /// </summary>
     private static bool IsWithinSnapSpeed(Vector2D velocity) =>
-        Math.Sqrt(velocity.X * velocity.X + velocity.Y * velocity.Y) <= MaxSnapSpeed;
+        Math.Sqrt(velocity.X * velocity.X + velocity.Y * velocity.Y) <= PhysicsConstants.MaxSnapSpeed;
 
     /// <summary>
     /// Combines two materials' restitution/friction values for a single collision response as a

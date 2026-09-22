@@ -1,4 +1,5 @@
 using ASCII_Hero.Client.Game.Assets;
+using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.Rendering;
 
 namespace ASCII_Hero.Client.Game.World;
@@ -135,7 +136,7 @@ public class World2D
     public MaterialLibrary Materials { get; private set; } = null!;
 
     /// <summary>Gravity acceleration, in world cells per second squared.</summary>
-    public double Gravity { get; private set; } = 40;
+    public double Gravity { get; private set; } = Constants.PhysicsConstants.DefaultGravity;
 
     /// <summary>
     /// Width of the world, in cells - always derived from <c>_objects.txt</c>'s own content (the
@@ -231,10 +232,10 @@ public class World2D
         // Background/foreground layers are static level data - resolve every cell's actual
         // color once here (rather than every frame in WorldRenderer) now that the palette and
         // every color code/default this world will ever have are already final.
-        world.BackgroundForeColors = PrecomputeLayerColors(world.BackgroundFore, world.Palette, emptyChar, GlyphBuilder.DefaultForeColor, world.DefaultForeColor);
-        world.BackgroundBackColors = PrecomputeLayerColors(world.BackgroundBack, world.Palette, emptyChar, GlyphBuilder.DefaultBackColor, world.DefaultBackColor);
-        world.ForegroundForeColors = PrecomputeLayerColors(world.ForegroundFore, world.Palette, emptyChar, GlyphBuilder.DefaultForeColor, world.DefaultForeColor);
-        world.ForegroundBackColors = PrecomputeLayerColors(world.ForegroundBack, world.Palette, emptyChar, GlyphBuilder.DefaultBackColor, world.DefaultBackColor);
+        world.BackgroundForeColors = PrecomputeLayerColors(world.BackgroundFore, world.Palette, emptyChar, RenderConstants.DefaultForeColor, world.DefaultForeColor);
+        world.BackgroundBackColors = PrecomputeLayerColors(world.BackgroundBack, world.Palette, emptyChar, RenderConstants.DefaultBackColor, world.DefaultBackColor);
+        world.ForegroundForeColors = PrecomputeLayerColors(world.ForegroundFore, world.Palette, emptyChar, RenderConstants.DefaultForeColor, world.DefaultForeColor);
+        world.ForegroundBackColors = PrecomputeLayerColors(world.ForegroundBack, world.Palette, emptyChar, RenderConstants.DefaultBackColor, world.DefaultBackColor);
         progress?.Report(3);
 
         var objectsIniContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_objects.ini")
@@ -411,20 +412,15 @@ public class World2D
                 var restitutionOverride = objectSection.TryGetValue("Restitution", out var restitutionText) && IniValueParser.TryParseDouble(restitutionText, out var parsedRestitution)
                     ? (double?)parsedRestitution
                     : null;
-                // Mass/Friction/Density mirror Restitution above: absent means "use whatever the
+                // Friction/Density mirror Restitution above: absent means "use whatever the
                 // spawned body's resolved material/computed footprint provides", only an explicit
-                // ini value overrides that. Mass lets this object type replace the density-times-
-                // footprint default (see Body2D.Mass) when that 2D-volume proxy would be
-                // unrealistic for its actual shape/weight; Friction lets this object type override
-                // its material's default grip independent of any other type sharing that
-                // material; Density lets this object type override its material's default density
-                // outright (e.g. a body whose effective density changes at runtime/per-instance,
-                // like boiling water) while still inheriting that material's Friction/Restitution
-                // and (unless Mass is also set) still having Mass computed from this overridden
-                // Density rather than the material's own.
-                var massOverride = objectSection.TryGetValue("Mass", out var massText) && IniValueParser.TryParseDouble(massText, out var parsedMass)
-                    ? (double?)parsedMass
-                    : null;
+                // ini value overrides that. Friction lets this object type override its
+                // material's default grip independent of any other type sharing that material;
+                // Density lets this object type override its material's default density outright
+                // (e.g. a body whose effective density changes at runtime/per-instance, like
+                // boiling water) while still inheriting that material's Friction/Restitution and
+                // still having Mass (see Body2D.Mass) computed from this overridden Density rather
+                // than the material's own.
                 var frictionOverride = objectSection.TryGetValue("Friction", out var frictionText) && IniValueParser.TryParseDouble(frictionText, out var parsedFriction)
                     ? (double?)parsedFriction
                     : null;
@@ -465,23 +461,23 @@ public class World2D
                 var patrolMaxXOverride = objectSection.TryGetValue("PatrolMaxX", out var patrolMaxXText) && IniValueParser.TryParseDouble(patrolMaxXText, out var parsedPatrolMaxX)
                     ? (double?)parsedPatrolMaxX
                     : null;
-                // PatrolForce lets a placement tune how strongly (and so how quickly it reaches
+                // PatrolForceMultiplier lets a placement tune how strongly (and so how quickly it reaches
                 // its cruising speed, mass-scaled like gravity) this enemy patrols, defaulting to
-                // MovingEnemy2D's own default when unset. PatrolCruiseSpeed sets the actual
+                // MovingEnemy2D's own default when unset. PatrolCruiseSpeedX sets the actual
                 // steady-state patrol speed the force converges to and holds, also defaulting to
                 // MovingEnemy2D's own default when unset. PatrolInitialDirectionX ("Left"/"Right") -
                 // named to match KinematicObject's own per-axis PatrolInitialDirectionX/Y below,
                 // since a future vertically-patrolling enemy would need the same X/Y distinction -
                 // overrides which way it starts heading, instead of the default inference toward
                 // whichever bound is farther.
-                var patrolForceOverride = objectSection.TryGetValue("PatrolForce", out var patrolForceText) && IniValueParser.TryParseDouble(patrolForceText, out var parsedPatrolForce)
+                var patrolForceOverride = objectSection.TryGetValue("PatrolForceMultiplier", out var patrolForceText) && IniValueParser.TryParseDouble(patrolForceText, out var parsedPatrolForce)
                     ? (double?)parsedPatrolForce
                     : null;
-                var patrolCruiseSpeedOverride = objectSection.TryGetValue("PatrolCruiseSpeed", out var patrolCruiseSpeedText) && IniValueParser.TryParseDouble(patrolCruiseSpeedText, out var parsedPatrolCruiseSpeed)
+                var patrolCruiseSpeedOverride = objectSection.TryGetValue("PatrolCruiseSpeedX", out var patrolCruiseSpeedText) && IniValueParser.TryParseDouble(patrolCruiseSpeedText, out var parsedPatrolCruiseSpeed)
                     ? (double?)parsedPatrolCruiseSpeed
                     : null;
                 // PatrolCruiseSpeedY lets a MovingEnemy's vertical patrol cruise at a different
-                // speed than its horizontal one (PatrolCruiseSpeed); falls back to PatrolCruiseSpeed
+                // speed than its horizontal one (PatrolCruiseSpeedX); falls back to PatrolCruiseSpeedX
                 // itself (then MovingEnemy2D's own default) so a level author patrolling only one
                 // axis, or wanting the same pace on both, doesn't need to repeat the value.
                 var patrolCruiseSpeedYOverride = objectSection.TryGetValue("PatrolCruiseSpeedY", out var patrolCruiseSpeedYText) && IniValueParser.TryParseDouble(patrolCruiseSpeedYText, out var parsedPatrolCruiseSpeedY)
@@ -558,10 +554,6 @@ public class World2D
                         world.Player.Friction = frictionOverride ?? playerMaterial.Friction;
                         world.Player.Restitution = restitutionOverride ?? playerMaterial.Restitution;
                         world.Player.Viscosity = playerMaterial.Viscosity;
-                        if (massOverride is not null)
-                        {
-                            world.Player.Mass = massOverride.Value;
-                        }
                         // Player-only "muscle power"/cruising-speed overrides - default to
                         // PhysicsSystem's own constants (see Player2D.WalkForceMultiplier/WalkSpeed/
                         // CrawlSpeed) unless this world's Player section sets its own.
@@ -639,10 +631,10 @@ public class World2D
 
                             movingEnemy.SetPatrol(
                                 enemyPatrolMinX, enemyPatrolMaxX,
-                                patrolCruiseSpeedOverride ?? MovingEnemy2D.DefaultPatrolCruiseSpeed,
+                                patrolCruiseSpeedOverride ?? Constants.GameDefaults.PatrolCruiseSpeed,
                                 patrolMinYOverride, patrolMaxYOverride,
-                                patrolCruiseSpeedYOverride ?? patrolCruiseSpeedOverride ?? MovingEnemy2D.DefaultPatrolCruiseSpeed,
-                                patrolForceOverride ?? MovingEnemy2D.DefaultPatrolForceMultiplier,
+                                patrolCruiseSpeedYOverride ?? patrolCruiseSpeedOverride ?? Constants.GameDefaults.PatrolCruiseSpeed,
+                                patrolForceOverride ?? Constants.GameDefaults.PatrolForceMultiplier,
                                 patrolInitialDirectionRight,
                                 patrolInitialDirectionDownEnemy);
                         }
@@ -682,14 +674,15 @@ public class World2D
                 // Density/Friction always come from the spawned body's own resolved material
                 // (see Body2D.MaterialName/ApplyFrame) unless this object type's ini section
                 // overrides it via Material (e.g. TestPhysics re-using the Ball asset with
-                // different materials); Restitution/Friction/Density/Mass can each be
-                // independently overridden too - Restitution (e.g. TestMovement's "weightless,
-                // perfectly elastic" placeholder ball tuning), Friction (grip independent of the
-                // shared material), Density (this one object type's density independent of the
-                // shared material, e.g. a body whose effective density changes per-instance/at
-                // runtime), and Mass (replacing the density-times-footprint default when that 2D-
-                // volume proxy would be unrealistic for this body's actual shape/weight - computed
-                // from the overridden Density above when Mass itself isn't also overridden).
+                // different materials); Restitution/Friction/Density can each be independently
+                // overridden too - Restitution (e.g. TestMovement's "weightless, perfectly
+                // elastic" placeholder ball tuning), Friction (grip independent of the shared
+                // material), Density (this one object type's density independent of the shared
+                // material, e.g. a body whose effective density changes per-instance/at runtime).
+                // Mass itself (see Body2D.Mass) is always computed from Density times footprint -
+                // a body whose real-world mass shouldn't just fall out of its footprint size (e.g.
+                // a snake much lighter than a human despite a similar bounding box) should use a
+                // dedicated, appropriately-calibrated material instead (see Global/MaterialLibrary.ini).
                 var material = world.Materials.Get(materialOverride ?? spawnedBody.MaterialName);
                 spawnedBody.Density = densityOverride ?? material.Density;
                 spawnedBody.Friction = frictionOverride ?? material.Friction;
@@ -704,10 +697,6 @@ public class World2D
                     // for a placement that overrode Material to something else (e.g. Plastic),
                     // silently ignoring that override's own ForegroundColor/BackgroundColor.
                     spawnedBody.MaterialName = materialOverride;
-                }
-                if (massOverride is not null)
-                {
-                    spawnedBody.Mass = massOverride.Value;
                 }
 
                 if (movingBody is not null && IsCameraTarget(objectSection))

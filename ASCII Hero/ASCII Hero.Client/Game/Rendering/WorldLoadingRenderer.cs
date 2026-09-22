@@ -1,3 +1,4 @@
+using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.Menu;
 
 namespace ASCII_Hero.Client.Game.Rendering;
@@ -35,7 +36,7 @@ public static class WorldLoadingRenderer
         var col = (viewportWidthCells - LoadingBarWidth) / 2;
         var row = startRow + WorldSelectRenderer.BlockHeight + LoadingBarGapRows;
 
-        return new UIBar(col, row, LoadingBarWidth, height: 1, minValue: 0, maxValue: stepCount, foreColor: WorldSelectRenderer.WorldSelectForeColor)
+        return new UIBar(col, row, LoadingBarWidth, height: 1, minValue: 0, maxValue: stepCount, foreColor: RenderConstants.DefaultForeColor)
         {
             CurrentValue = 0,
         };
@@ -56,7 +57,7 @@ public static class WorldLoadingRenderer
 
         var labelCol = loadingBar.Col + (loadingBar.Width - LoadingLabelText.Length) / 2.0;
         var labelRow = loadingBar.Row - 1;
-        var label = new UILabel(labelCol, labelRow, width: LoadingLabelText.Length, height: 1, foreColor: WorldSelectRenderer.WorldSelectForeColor);
+        var label = new UILabel(labelCol, labelRow, width: LoadingLabelText.Length, height: 1, foreColor: RenderConstants.DefaultForeColor);
         label.Lines.Add(LoadingLabelText);
         UIRenderer.AddLabel(glyphs, label, cellWidthPixels, cellHeightPixels);
 

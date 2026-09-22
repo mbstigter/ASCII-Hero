@@ -1,5 +1,6 @@
 using ASCII_Hero.Client.Game.Assets;
 using ASCII_Hero.Client.Game.Browser;
+using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.Menu;
 using ASCII_Hero.Client.Game.Physics;
 using ASCII_Hero.Client.Game.Rendering;
@@ -15,12 +16,7 @@ namespace ASCII_Hero.Client.Game;
 /// </summary>
 public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFileProvider)
 {
-    private const int ViewportWidthPixels = 1280;
-    // 700 = 25 x 28, an exact multiple of the fixed 28px cell height both fonts are
-    // scaled to match (see TARGET_CELL_HEIGHT_PX in game-interop.js). Keeping this
-    // an exact multiple avoids a partial, clipped row of cells at the bottom of
-    // the canvas.
-    private const int ViewportHeightPixels = 700;
+
 
     /// <summary>
     /// The three strictly-separate states <see cref="OnFrame"/> can be in. Exactly one of these
@@ -74,23 +70,21 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// </summary>
     private Task? _loadWorldTask;
 
-    private const string HudForeColor = "#00ff00";
-
     /// <summary>
     /// Test HUD overlay shown in the top-left corner while playing, using the independent
     /// <see cref="UIFrame"/>/<see cref="UILabel"/> screen-space primitives directly - eventually
     /// meant for a real score/collectable-count readout, not just this one placeholder line.
     /// </summary>
-    private readonly UILabel _hudText = new(col: 2, row: 2, width: 20, height: 1, foreColor: HudForeColor);
+    private readonly UILabel _hudText = new(col: 2, row: 2, width: 20, height: 1, foreColor: RenderConstants.DefaultForeColor);
 
-    private readonly UIFrame _hudBox = new(col: 1, row: 1, width: 22, height: 3, foreColor: HudForeColor);
+    private readonly UIFrame _hudBox = new(col: 1, row: 1, width: 22, height: 3, foreColor: RenderConstants.DefaultForeColor);
 
     /// <summary>
     /// Test horizontal gauge shown below the HUD frame while playing, using the independent
     /// <see cref="UIBar"/> screen-space primitive - eventually meant for a health/stamina style
     /// readout, not just this placeholder value.
     /// </summary>
-    private readonly UIBar _hudBar = new(col: 2, row: 4, width: 20, height: 1, minValue: 0, maxValue: 100, foreColor: HudForeColor) { CurrentValue = 75 };
+    private readonly UIBar _hudBar = new(col: 2, row: 4, width: 20, height: 1, minValue: 0, maxValue: 100, foreColor: RenderConstants.DefaultForeColor) { CurrentValue = 75 };
 
     /// <summary>
     /// Dev/testing FPS overlay, toggled by <see cref="InputState.IsFpsToggleKeyPressed"/> (see
@@ -100,7 +94,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// own independent <see cref="UILabel"/> rather than reusing <see cref="_hudText"/>, so it
     /// never competes with real HUD content for the same screen space.
     /// </summary>
-    private readonly UILabel _fpsLabel = new(col: 0, row: 0, width: 12, height: 1, foreColor: HudForeColor);
+    private readonly UILabel _fpsLabel = new(col: 0, row: 0, width: 12, height: 1, foreColor: RenderConstants.DefaultForeColor);
 
     private bool _showFpsOverlay;
 
@@ -127,12 +121,12 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// Unspent real elapsed time carried forward between frames for the fixed-timestep Physics/
     /// Collision accumulator in <see cref="OnPlayingFrameAsync"/> (the standard "fix your
     /// timestep" pattern) - each frame adds that frame's <c>deltaSeconds</c> here, then drains
-    /// whatever whole multiple of <see cref="PhysicsSystem.FixedPhysicsStepSeconds"/> is currently
+    /// whatever whole multiple of <see cref="PhysicsConstants.FixedPhysicsStepSeconds"/> is currently
     /// available, leaving any remainder (always strictly less than one fixed step) sitting here
     /// for the next frame to pick up, rather than folding it into an odd-sized partial step this
     /// frame. This is what keeps every Physics/Collision step identically sized regardless of how
     /// the real frame rate happens to fluctuate frame to frame - see
-    /// <see cref="PhysicsSystem.FixedPhysicsStepSeconds"/>'s own doc comment for why an
+    /// <see cref="PhysicsConstants.FixedPhysicsStepSeconds"/>'s own doc comment for why an
     /// inconsistent step size was itself enough to visibly perturb collision/pose resolution,
     /// independent of the earlier oversized-single-step tunneling concern.
     /// </summary>
@@ -150,6 +144,8 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
     private double _viewportWidthCells;
     private double _viewportHeightCells;
+    private int _viewportWidthPixels;
+    private int _viewportHeightPixels;
 
     public async Task StartAsync(string canvasElementId)
     {
@@ -157,8 +153,33 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         // they're loaded up front alongside everything else the selection screen needs.
         var worlds = await WorldCatalog.LoadAllAsync(assetFileProvider);
 
-        var cellMetrics = await canvasBridge.InitializeAsync(canvasElementId, this);
-        ApplyCellMetrics(cellMetrics);
+        var globalSettingsContent = await assetFileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/Settings.ini");
+        var globalSettings = IniDocument.Parse(globalSettingsContent ?? string.Empty);
+        var fontFamily = globalSettings.TryGetValue("Render", "FontFamily") ?? RenderConstants.DefaultFontFamily;
+        var viewportColumns = IniValueParser.TryParseInt(globalSettings.TryGetValue("Render", "ViewportColumns"), out var parsedColumns)
+            ? parsedColumns
+            : RenderConstants.DefaultViewportColumns;
+        var viewportRows = IniValueParser.TryParseInt(globalSettings.TryGetValue("Render", "ViewportRows"), out var parsedRows)
+            ? parsedRows
+            : RenderConstants.DefaultViewportRows;
+
+        // The font's own true native pixel size has no default: a browser's text-measuring API
+        // cannot reliably report it for a true bitmap font (see docs/Decisions.md's Rendering &
+        // Camera section), so it must always be supplied explicitly. There is no separate scale
+        // factor either - these values are the final, already-scaled on-screen cell size (e.g. an
+        // 8x14 font at 2x zoom is simply configured as 16/28), so a deliberately non-uniform value
+        // (e.g. 15x28) can squeeze/stretch the font in one direction if ever desired.
+        if (!IniValueParser.TryParseInt(globalSettings.TryGetValue("Render", "FontWidthPixels"), out var fontWidthPixels))
+        {
+            throw new InvalidOperationException("Global/Settings.ini is missing a required [Render] FontWidthPixels value.");
+        }
+        if (!IniValueParser.TryParseInt(globalSettings.TryGetValue("Render", "FontHeightPixels"), out var fontHeightPixels))
+        {
+            throw new InvalidOperationException("Global/Settings.ini is missing a required [Render] FontHeightPixels value.");
+        }
+
+        var cellMetrics = await canvasBridge.InitializeAsync(canvasElementId, this, fontFamily, viewportColumns, viewportRows, fontWidthPixels, fontHeightPixels);
+        ApplyCellMetrics(cellMetrics, viewportColumns, viewportRows);
 
         var visibleSlotCount = WorldSelectRenderer.ComputeVisibleSlotCount(_viewportWidthCells, worlds.Count);
         _worldSelect = new WorldSelectScreen(worlds, visibleSlotCount);
@@ -201,7 +222,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             _viewportHeightCells);
     }
 
-    private void ApplyCellMetrics(CellMetrics cellMetrics)
+    private void ApplyCellMetrics(CellMetrics cellMetrics, int viewportColumns, int viewportRows)
     {
         // Defensive guard: if the browser ever reports a non-finite or non-positive cell size
         // (e.g. a font measurement taken before layout/font-load settled), fall back to the
@@ -212,18 +233,23 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
         if (!double.IsFinite(width) || width <= 0)
         {
-            width = _renderer.CellWidthPixels > 0 ? _renderer.CellWidthPixels : 16;
+            width = _renderer.CellWidthPixels > 0 ? _renderer.CellWidthPixels : RenderConstants.DefaultCellWidthPixels;
         }
         if (!double.IsFinite(height) || height <= 0)
         {
-            height = _renderer.CellHeightPixels > 0 ? _renderer.CellHeightPixels : 24;
+            height = _renderer.CellHeightPixels > 0 ? _renderer.CellHeightPixels : RenderConstants.DefaultCellHeightPixels;
         }
 
         _renderer.CellWidthPixels = width;
         _renderer.CellHeightPixels = height;
 
-        _viewportWidthCells = ViewportWidthPixels / _renderer.CellWidthPixels;
-        _viewportHeightCells = ViewportHeightPixels / _renderer.CellHeightPixels;
+        // The viewport is always exactly viewportColumns/Rows cells - never a division of a fixed
+        // pixel size by the cell size - so it's an exact whole number of cells regardless of which
+        // font/scale is active (see RenderConstants.DefaultViewportColumns/Rows's own doc comment).
+        _viewportWidthCells = viewportColumns;
+        _viewportHeightCells = viewportRows;
+        _viewportWidthPixels = (int)Math.Round(viewportColumns * _renderer.CellWidthPixels);
+        _viewportHeightPixels = (int)Math.Round(viewportRows * _renderer.CellHeightPixels);
     }
 
     [JSInvokable]
@@ -310,9 +336,9 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         // comment). Physics/Collision are instead run in a fixed-timestep accumulator (the
         // standard "fix your timestep" pattern): this frame's deltaSeconds is added to
         // _physicsAccumulatorSeconds, then drained in however many whole
-        // PhysicsSystem.FixedPhysicsStepSeconds-sized steps are currently available, leaving any
+        // PhysicsConstants.FixedPhysicsStepSeconds-sized steps are currently available, leaving any
         // remainder for next frame rather than folding it into an odd-sized partial step this
-        // frame - see PhysicsSystem.FixedPhysicsStepSeconds's own doc comment for why every step
+        // frame - see PhysicsConstants.FixedPhysicsStepSeconds's own doc comment for why every step
         // must be identically sized, not just capped, to avoid perturbing collision/pose
         // resolution right at a grounded/airborne boundary. Collision is resolved once per fixed
         // step (not once for the whole frame) so a large catch-up delta can't let a body integrate
@@ -323,12 +349,12 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         // remain once per real frame using the full original deltaSeconds - both are purely
         // presentational and already tolerant of a larger delta.
         _physicsAccumulatorSeconds += deltaSeconds;
-        while (_physicsAccumulatorSeconds >= PhysicsSystem.FixedPhysicsStepSeconds)
+        while (_physicsAccumulatorSeconds >= PhysicsConstants.FixedPhysicsStepSeconds)
         {
-            _physics.Step(_world, _input, PhysicsSystem.FixedPhysicsStepSeconds);
+            _physics.Step(_world, _input, PhysicsConstants.FixedPhysicsStepSeconds);
             _collision.Resolve(_world);
             _world.ApplyPendingRemovals();
-            _physicsAccumulatorSeconds -= PhysicsSystem.FixedPhysicsStepSeconds;
+            _physicsAccumulatorSeconds -= PhysicsConstants.FixedPhysicsStepSeconds;
         }
 
         _animation.Update(_world, deltaSeconds);
@@ -363,7 +389,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             UIRenderer.AddLabel(glyphs, _fpsLabel, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         }
 
-        await canvasBridge.DrawFrameAsync(ViewportWidthPixels, ViewportHeightPixels, glyphs);
+        await canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs);
     }
 
     /// <summary>
@@ -394,7 +420,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         var glyphs = WorldSelectRenderer.BuildFrame(
             _worldSelect, _viewportWidthCells, _viewportHeightCells,
             _renderer.CellWidthPixels, _renderer.CellHeightPixels);
-        await canvasBridge.DrawFrameAsync(ViewportWidthPixels, ViewportHeightPixels, glyphs);
+        await canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs);
     }
 
     /// <summary>
@@ -414,7 +440,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         var glyphs = WorldLoadingRenderer.BuildLoadingFrame(
             _worldSelect, _loadingBar, _viewportWidthCells, _viewportHeightCells,
             _renderer.CellWidthPixels, _renderer.CellHeightPixels);
-        await canvasBridge.DrawFrameAsync(ViewportWidthPixels, ViewportHeightPixels, glyphs);
+        await canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs);
 
         if (_loadWorldTask.IsCompleted)
         {

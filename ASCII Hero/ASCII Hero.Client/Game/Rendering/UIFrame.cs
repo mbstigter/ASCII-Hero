@@ -21,7 +21,7 @@ public class UIFrame(double col, double row, double width, double height, string
     /// <summary>Total height, in cells, including the border itself. At least 2 (both border rows, no interior).</summary>
     public double Height { get; set; } = height;
 
-    /// <summary>Foreground color of the border characters, or null to fall back to <see cref="GlyphBuilder.DefaultForeColor"/>.</summary>
+    /// <summary>Foreground color of the border characters, or null to fall back to <see cref="Constants.RenderConstants.DefaultForeColor"/>.</summary>
     public string? ForeColor { get; set; } = foreColor;
 
     /// <summary>Background fill of the border cells, or null for no fill (transparent).</summary>

@@ -2,28 +2,24 @@
 // This module intentionally contains no game logic: it only forwards keyboard events
 // to C#, drives the requestAnimationFrame loop, and draws glyphs onto the canvas.
 
+// Fallback glyph color applied when the canvas context is (re)configured, before the first real
+// frame is drawn (every actual glyph draw sets its own color from the C#-supplied per-glyph data -
+// see drawFrame - so this value is never otherwise visible).
+const FALLBACK_FORE_COLOR = '#00ff00';
+
 let ctx = null;
 let dotNetRef = null;
 let rafHandle = null;
 let lastTimestamp = null;
+// Keydown/keyup listeners are stored (rather than passed as inline arrow functions) so dispose()
+// can remove the exact same function instances that were added - removeEventListener is a no-op
+// unless given a reference equal to the one originally passed to addEventListener.
 let keydownHandler = null;
 let keyupHandler = null;
 
-// Fixed on-screen cell size the bundled bitmap font is scaled to fit.
-const TARGET_CELL_WIDTH_PX = 16;
-const TARGET_CELL_HEIGHT_PX = 28;
-
-// The bundled retro CP437 bitmap font (see wwwroot/fonts and its @font-face
-// declaration in app.css/standalone.css).
-const FONT_FAMILY = '"Web437IbmVga8x14", monospace';
-
-let currentHorizontalScale = 1;
-
-export async function initialize(canvasElementId, dotNetObjectRef) {
+export async function initialize(canvasElementId, dotNetObjectRef, fontFamily, viewportColumns, viewportRows, fontWidthPixels, fontHeightPixels) {
     const canvas = document.getElementById(canvasElementId);
     ctx = canvas.getContext('2d');
-    ctx.textBaseline = 'top';
-    ctx.fillStyle = '#00ff00';
 
     dotNetRef = dotNetObjectRef;
 
@@ -43,44 +39,32 @@ export async function initialize(canvasElementId, dotNetObjectRef) {
     lastTimestamp = null;
     rafHandle = window.requestAnimationFrame(onAnimationFrame);
 
-    // Report the measured cell size back to C# (camelCase property names match
-    // System.Text.Json's default naming policy, mapping onto
+    // fontWidthPixels/fontHeightPixels (Global/Settings.ini's [Render] FontWidthPixels/
+    // FontHeightPixels) are already the final on-screen cell size (see RenderConstants.cs's own
+    // doc comment), so they're used directly to resize the canvas element to fit the viewport
+    // (columns/rows times that cell size), and returned as-is to C# (camelCase property names
+    // match System.Text.Json's default naming policy, mapping onto
     // CellMetrics.CellWidthPixels/CellHeightPixels).
-    return await loadFont();
+    //
+    // Resizing a canvas element resets its 2D context state (font/fillStyle/
+    // textBaseline all revert to defaults), so the canvas must be resized
+    // *before* the font is applied to the context - otherwise the canvas ends
+    // up drawing with the tiny default font instead.
+    canvas.width = fontWidthPixels * viewportColumns;
+    canvas.height = fontHeightPixels * viewportRows;
+    applyFontToContext(fontFamily, fontHeightPixels);
+    return { cellWidthPixels: fontWidthPixels, cellHeightPixels: fontHeightPixels };
 }
 
-// Computes the font-size and horizontal scale needed to make the bundled bitmap
-// font fill exactly TARGET_CELL_WIDTH_PX x TARGET_CELL_HEIGHT_PX pixel cells,
-// and returns those fixed target dimensions.
-async function loadFont() {
-    // Ensure the font is loaded before measuring it, otherwise the measurement
-    // could use a fallback system font with different metrics.
-    await document.fonts.load(`16px ${FONT_FAMILY}`);
-
-    // Probe the font's aspect ratio at a large size to minimize rounding error.
-    const probeSizePx = 100;
-    ctx.font = `${probeSizePx}px ${FONT_FAMILY}`;
-    const probeMetrics = ctx.measureText('#');
-    const probeAscent = probeMetrics.fontBoundingBoxAscent ?? probeMetrics.actualBoundingBoxAscent;
-    const probeDescent = probeMetrics.fontBoundingBoxDescent ?? probeMetrics.actualBoundingBoxDescent;
-    const probeHeight = probeAscent + probeDescent;
-
-    // Scale the font-size so the measured cell height matches the fixed target,
-    // then re-measure at that size to get the resulting cell width.
-    const sizePx = TARGET_CELL_HEIGHT_PX * (probeSizePx / probeHeight);
-    ctx.font = `${sizePx}px ${FONT_FAMILY}`;
+// Applies the configured font (and the fillStyle/textBaseline drawing glyphs rely on) to the
+// canvas context. Must run *after* the canvas element's width/height are set, since resizing a
+// canvas resets its 2D context state.
+function applyFontToContext(fontFamily, cellHeightPixels) {
+    // A font-size in px directly corresponds to one cell's height in px, so the configured cell
+    // height is used as the font-size verbatim - no further scaling/derivation needed.
+    ctx.font = `${cellHeightPixels}px ${fontFamily}`;
     ctx.textBaseline = 'top';
-    ctx.fillStyle = '#00ff00';
-
-    const measuredCellWidth = ctx.measureText('#').width;
-
-    // Guard against a zero/invalid measurement (would otherwise produce an
-    // Infinity scale factor) by defaulting to a scale of 1.
-    currentHorizontalScale = measuredCellWidth > 0
-        ? TARGET_CELL_WIDTH_PX / measuredCellWidth
-        : 1;
-
-    return { cellWidthPixels: TARGET_CELL_WIDTH_PX, cellHeightPixels: TARGET_CELL_HEIGHT_PX };
+    ctx.fillStyle = FALLBACK_FORE_COLOR;
 }
 
 function onAnimationFrame(timestamp) {
@@ -95,33 +79,27 @@ function onAnimationFrame(timestamp) {
     rafHandle = window.requestAnimationFrame(onAnimationFrame);
 }
 
-export function drawFrame(width, height, characters, xs, ys, foreColors, backColors) {
+export function drawFrame(width, height, cellWidthPixels, cellHeightPixels, characters, xs, ys, foreColors, backColors) {
     if (!ctx) {
         return;
     }
 
     ctx.clearRect(0, 0, width, height);
 
-    // Apply the horizontal scale computed in setFont() so glyphs fill
-    // TARGET_CELL_WIDTH_PX cells. ctx.scale affects x coordinates too, so each x
-    // position is counter-scaled to keep glyph positions correct on screen.
-    ctx.save();
-    ctx.scale(currentHorizontalScale, 1);
     for (let i = 0; i < characters.length; i++) {
-        const x = xs[i] / currentHorizontalScale;
+        const x = xs[i];
         const y = ys[i];
 
-        // Background fill (if any) is drawn as a rect sized to the fixed target
-        // cell dimensions, behind the glyph.
+        // Background fill (if any) is drawn as a rect sized to one cell, behind
+        // the glyph.
         if (backColors[i]) {
             ctx.fillStyle = backColors[i];
-            ctx.fillRect(x, y, TARGET_CELL_WIDTH_PX / currentHorizontalScale, TARGET_CELL_HEIGHT_PX);
+            ctx.fillRect(x, y, cellWidthPixels, cellHeightPixels);
         }
 
         ctx.fillStyle = foreColors[i];
         ctx.fillText(characters[i], x, y);
     }
-    ctx.restore();
 }
 
 export function dispose() {
@@ -138,3 +116,4 @@ export function dispose() {
     ctx = null;
     dotNetRef = null;
 }
+

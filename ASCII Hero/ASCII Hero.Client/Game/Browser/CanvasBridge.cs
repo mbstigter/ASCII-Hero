@@ -19,14 +19,14 @@ public class CanvasBridge(IJSRuntime jsRuntime) : IAsyncDisposable
     private IJSObjectReference? _module;
     private DotNetObjectReference<GameLoop>? _dotNetRef;
 
-    public async Task<CellMetrics> InitializeAsync(string canvasElementId, GameLoop gameLoop)
+    public async Task<CellMetrics> InitializeAsync(string canvasElementId, GameLoop gameLoop, string fontFamily, int viewportColumns, int viewportRows, int fontWidthPixels, int fontHeightPixels)
     {
         _module = await jsRuntime.InvokeAsync<IJSObjectReference>("import", ModulePath);
         _dotNetRef = DotNetObjectReference.Create(gameLoop);
-        return await _module.InvokeAsync<CellMetrics>("initialize", canvasElementId, _dotNetRef);
+        return await _module.InvokeAsync<CellMetrics>("initialize", canvasElementId, _dotNetRef, fontFamily, viewportColumns, viewportRows, fontWidthPixels, fontHeightPixels);
     }
 
-    public async Task DrawFrameAsync(int width, int height, IReadOnlyList<Rendering.Glyph> glyphs)
+    public async Task DrawFrameAsync(int width, int height, double cellWidthPixels, double cellHeightPixels, IReadOnlyList<Rendering.Glyph> glyphs)
     {
         if (_module is null)
         {
@@ -39,7 +39,7 @@ public class CanvasBridge(IJSRuntime jsRuntime) : IAsyncDisposable
         var foreColors = glyphs.Select(g => g.ForeColor).ToArray();
         var backColors = glyphs.Select(g => g.BackColor).ToArray();
 
-        await _module.InvokeVoidAsync("drawFrame", width, height, characters, xs, ys, foreColors, backColors);
+        await _module.InvokeVoidAsync("drawFrame", width, height, cellWidthPixels, cellHeightPixels, characters, xs, ys, foreColors, backColors);
     }
 
     public async ValueTask DisposeAsync()

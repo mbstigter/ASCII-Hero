@@ -47,7 +47,7 @@ public class UIBar(double col, double row, double width, double height, double m
     /// </summary>
     public double CurrentValue { get; set; } = maxValue;
 
-    /// <summary>Foreground color of the filled cells, or null to fall back to <see cref="GlyphBuilder.DefaultForeColor"/>.</summary>
+    /// <summary>Foreground color of the filled cells, or null to fall back to <see cref="Constants.RenderConstants.DefaultForeColor"/>.</summary>
     public string? ForeColor { get; set; } = foreColor;
 
     /// <summary>Background fill of the empty cells, or null for no fill (transparent).</summary>

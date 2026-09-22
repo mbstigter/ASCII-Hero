@@ -24,7 +24,7 @@ public class UILabel(double col, double row, int width, int height, string? fore
     /// <summary>The lines of text to draw, top to bottom. A line longer than <see cref="Width"/> is truncated.</summary>
     public List<string> Lines { get; } = [];
 
-    /// <summary>Foreground color of the text, or null to fall back to <see cref="GlyphBuilder.DefaultForeColor"/>.</summary>
+    /// <summary>Foreground color of the text, or null to fall back to <see cref="Constants.RenderConstants.DefaultForeColor"/>.</summary>
     public string? ForeColor { get; set; } = foreColor;
 
     /// <summary>Background fill behind the text cells, or null for no fill (transparent).</summary>

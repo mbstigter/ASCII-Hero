@@ -1,3 +1,4 @@
+using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.World;
 
 namespace ASCII_Hero.Client.Game.Rendering;
@@ -16,13 +17,13 @@ public class Camera
     public Vector2D Position { get; private set; }
 
     /// <summary>How quickly the camera catches up once it starts scrolling (higher = snappier).</summary>
-    public double FollowSpeed { get; set; } = 8.0;
+    public double FollowSpeed { get; set; } = GameDefaults.CameraFollowSpeed;
 
     /// <summary>
     /// How close (in world cells) the target's bounding box may get to the edge of the current
     /// view before the camera starts scrolling to keep up with it.
     /// </summary>
-    public double EdgeMarginCells { get; set; } = 6.0;
+    public double EdgeMarginCells { get; set; } = GameDefaults.CameraEdgeMarginCells;
 
     /// <summary>
     /// Immediately centers the camera on a target's bounding box (no smoothing), clamped to the

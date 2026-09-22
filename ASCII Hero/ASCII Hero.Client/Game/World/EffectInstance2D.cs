@@ -1,4 +1,5 @@
 using ASCII_Hero.Client.Game.Assets;
+using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.Rendering;
 
 namespace ASCII_Hero.Client.Game.World;
@@ -17,9 +18,6 @@ namespace ASCII_Hero.Client.Game.World;
 /// </summary>
 public class EffectInstance2D : Body2D
 {
-    /// <summary>Fallback lifetime, in seconds, used when the spawned clip has no configured frame duration (i.e. isn't animated).</summary>
-    private const double DefaultLifetimeSeconds = 0.5;
-
     private double _remainingSeconds;
 
     /// <summary>
@@ -54,7 +52,7 @@ public class EffectInstance2D : Body2D
         var clip = sprite.GetClip(clipName);
         _remainingSeconds = clip.FrameDurationSeconds is { } frameDuration
             ? clip.Frames.Count * frameDuration
-            : DefaultLifetimeSeconds;
+            : GameDefaults.EffectLifetimeSeconds;
     }
 
     /// <summary>

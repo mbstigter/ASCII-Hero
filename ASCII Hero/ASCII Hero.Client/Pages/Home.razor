@@ -16,8 +16,14 @@
     would blur those sharp edges when the canvas is scaled by the browser
     (e.g. on high-DPI displays), undermining the retro look we bundled the
     font for in the first place.
+
+    No fixed width/height here: CanvasBridge.InitializeAsync (via
+    game-interop.js's initialize()) resizes the canvas element itself to fit
+    the configured viewport (columns/rows x the active font's cell size - see
+    Global/Settings.ini's [Render] section), since that size now depends on
+    the chosen font/scale rather than being a fixed pixel constant.
 -->
-<canvas id="game-canvas" width="1280" height="700" style="background:black; display:block; margin:0 auto; image-rendering:pixelated;"></canvas>
+<canvas id="game-canvas" style="background:black; display:block; margin:0 auto; image-rendering:pixelated;"></canvas>
 
 @code {
     private CanvasBridge? _canvasBridge;

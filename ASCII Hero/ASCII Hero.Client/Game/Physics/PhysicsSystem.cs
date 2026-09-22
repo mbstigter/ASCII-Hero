@@ -1,5 +1,6 @@
 using ASCII_Hero.Client.Game.Assets;
 using ASCII_Hero.Client.Game.Browser;
+using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.World;
 
 namespace ASCII_Hero.Client.Game.Physics;
@@ -14,99 +15,16 @@ namespace ASCII_Hero.Client.Game.Physics;
 public class PhysicsSystem
 {
     /// <summary>
-    /// The fixed duration of every single Physics/Collision update (<see cref="Step"/> plus the
-    /// caller's own <see cref="CollisionSystem.Resolve"/> call) - see
-    /// <see cref="GameLoop.OnPlayingFrameAsync"/>, which accumulates each real animation frame's
-    /// reported <c>deltaSeconds</c> and drains that accumulator in however many whole steps of
-    /// exactly this size are currently available, carrying any leftover remainder forward to next
-    /// frame's accumulator rather than folding it into an odd-sized partial step (the standard
-    /// "fix your timestep" pattern). Force integration (see <see cref="StepMovingBodyWithForces"/>)
-    /// scales velocity and position directly by <c>deltaSeconds</c>, and collision detection (see
-    /// <see cref="CollisionSystem"/>) is purely discrete (no continuous/swept detection) - both an
-    /// unusually large step (e.g. after a real frame hitch - GC pause, a slow JS interop
-    /// round-trip, a dropped/re-entrant frame, see <c>GameLoop._isProcessingFrame</c> - which
-    /// could move a body far enough in one step to jitter erratically or tunnel straight through
-    /// a wall) and an inconsistent step size varying frame to frame with ordinary frame-rate
-    /// jitter (which, even well short of any tunneling risk, was enough on its own to visibly
-    /// flicker a body's pose right at a grounded/airborne boundary, since the exact instant
-    /// contact is gained/lost - and how far ahead of that instant the query lands - shifts based
-    /// on the immediately preceding step's size) are avoided by this constant always being the
-    /// step size, deterministically, regardless of how the frame rate happens to fluctuate.
-    /// Deliberately generous relative to a typical ~1/60s frame (this only needs to guard against
-    /// rare outlier frames, not shrink the ordinary per-frame cost) yet small enough that even a
-    /// body moving at a high multiple of ordinary walking speed can't clear a full cell in one
-    /// step.
-    /// </summary>
-    public const double FixedPhysicsStepSeconds = 1.0 / 60.0;
-
-    /// <summary>Default target ground speed while standing/walking - see <see cref="Player2D.WalkSpeed"/>.</summary>
-    public const double DefaultWalkSpeed = 12.0;
-
-    /// <summary>Default target ground speed while crouched/crawling - see <see cref="Player2D.CrawlSpeed"/>.</summary>
-    public const double DefaultCrawlSpeed = 6.0;
-
-    /// <summary>
-    /// Default magnitude of the mass-scaled horizontal "motor" force applied to converge the
-    /// player's <see cref="Player2D.Velocity"/>.X toward the current target walk/crawl speed (see
-    /// <see cref="UpdateWalkForce"/>) - same name/role as <see cref="MovingEnemy2D.DefaultPatrolForceMultiplier"/>
-    /// for a patrolling enemy, proportional to the remaining speed gap so the player accelerates
-    /// promptly yet still settles at exactly the target speed rather than overshooting it every
-    /// frame. See <see cref="Player2D.WalkForceMultiplier"/>.
-    /// </summary>
-    public const double DefaultWalkForceMultiplier = 40.0;
-
-    /// <summary>
-    /// Fraction of the ordinary (grounded) horizontal <see cref="UpdateWalkForce"/> strength
-    /// applied while airborne - deliberately much weaker than the full ground motor so that
-    /// horizontal velocity at the moment of jump-off (which may include a moving platform's own
-    /// carried speed, per <see cref="Body2D.GetSurfaceVelocityX"/>) decays/steers gradually over
-    /// the jump's arc instead of snapping to the absolute walk-speed target within a single frame.
-    /// The full-strength ground motor exists to make grounded input feel immediately responsive
-    /// (see <see cref="UpdateWalkForce"/>'s own doc comment); in the air there is no such
-    /// "instantly responsive" expectation, and a real jumping body's horizontal momentum is
-    /// governed far more by whatever speed it left the ground with than by mid-air steering
-    /// input, so a soft, gradual air-control force is the more physically honest (and more
-    /// forgiving-feeling) choice. Only scales the horizontal component - the vertical target
-    /// while airborne is already just the player's own current <see cref="Vector2D"/>.Y (see the
-    /// call site in <see cref="Step"/>), so its force contribution is already ~0 regardless.
-    /// </summary>
-    private const double AirControlMultiplier = 0.25;
-
-    private const double ClimbHorizontalSpeed = 8.0;
-    private const double ClimbVerticalSpeed = 10.0;
-    private const double HangSpeed = 8.0;
-    private const double ClamberSpeed = 5.0;
-
-    // Jump-off impulses: an instantaneous velocity change (Delta-v), not a target speed to
-    // converge toward like the continuous motor forces above - a real jump/push-off is over in a
-    // single instant (the leg/arm extends and releases contact), not something sustained across
-    // multiple frames, so it is modeled as one direct vertical velocity kick (added to whatever
-    // vertical velocity already exists - see the jump-off sites in Step) rather than a force
-    // integrated over time. Graded by how much of the body's own momentum/leverage backs the
-    // push-off: solid ground under both feet gives the strongest launch, a ladder rung under just
-    // hands/feet is weaker, and swinging free from a single-handed pipe/rope grip is weakest.
-    private const double WalkJumpSpeed = 40.0;
-    private const double ClimbJumpSpeed = 18.0;
-    private const double HangJumpSpeed = 18.0;
-
-    /// <summary>
     /// Tuning constant for <see cref="ResolveMediumForceScale"/>'s reciprocal falloff - larger
     /// values make a given <see cref="Assets.Material.Viscosity"/> dampen self-generated force
     /// more aggressively. Applied to raw <c>Viscosity</c> directly (see
     /// <see cref="ResolveMediumForceScale"/>'s own doc comment for why), so even <c>Air</c>'s own
     /// small authored baseline (0.02, see <c>Global/MaterialLibrary.ini</c>) applies a slight
-    /// land-side penalty; <see cref="WalkJumpSpeed"/> (and other jump/walk force constants) are
-    /// tuned to compensate so on-land feel stays close to its pre-damping baseline, while
-    /// <c>Water</c>'s much larger 0.15 still comes out clearly, noticeably weaker.
+    /// land-side penalty; <see cref="GameDefaults.WalkJumpSpeed"/> (and other jump/walk force
+    /// constants in <see cref="GameDefaults"/>) are tuned to compensate so on-land feel stays
+    /// close to its pre-damping baseline, while <c>Water</c>'s much larger 0.15 still comes out
+    /// clearly, noticeably weaker. Moved to <see cref="PhysicsConstants.MediumForceScaleFalloff"/>.
     /// </summary>
-    private const double MediumForceScaleFalloff = 40.0;
-
-    /// <summary>
-    /// Floor <see cref="ResolveMediumForceScale"/> never scales self-generated force below, so an
-    /// extremely viscous medium still permits some self-propulsion rather than fully immobilizing
-    /// a body.
-    /// </summary>
-    private const double MinMediumForceScale = 0.15;
 
     private bool _wasUpKeyDown;
     private bool _wasDownKeyDown;
@@ -115,7 +33,7 @@ public class PhysicsSystem
     /// <summary>
     /// Set the instant the player jumps off a ladder (see the pose ladder in <see cref="Step"/>),
     /// and held until <see cref="IClimberBody.IsTouchingClimbable"/> goes false again. Without
-    /// this, <see cref="ClimbJumpSpeed"/> is slow enough that the player is still both overlapping
+    /// this, <see cref="GameDefaults.ClimbJumpSpeed"/> is slow enough that the player is still both overlapping
     /// the same ladder and holding Up/Down on the very next frame or two, which would otherwise
     /// immediately re-engage <see cref="IClimberBody.IsClimbing"/> before the jump is even visible
     /// - mirroring <see cref="IHangerBody.SuppressHangUntilClear"/> for the same underlying reason.
@@ -238,7 +156,7 @@ public class PhysicsSystem
                 // _suppressClimbUntilClear the very next frame would immediately re-grab the same
                 // ladder before the jump is ever visible.
                 player.IsClimbing = false;
-                velocity.Y = -ClimbJumpSpeed * ResolveMediumForceScale(player.CurrentMedium);
+                velocity.Y = -GameDefaults.ClimbJumpSpeed * ResolveMediumForceScale(player.CurrentMedium);
                 _suppressClimbUntilClear = true;
             }
         }
@@ -263,7 +181,7 @@ public class PhysicsSystem
                 // Same debounce as the explicit let-go below, so the player can't instantly
                 // re-grab the exact surface they just launched off.
                 player.IsHanging = false;
-                velocity.Y = -HangJumpSpeed * ResolveMediumForceScale(player.CurrentMedium);
+                velocity.Y = -GameDefaults.HangJumpSpeed * ResolveMediumForceScale(player.CurrentMedium);
                 player.SuppressHangUntilClear = true;
             }
             else if (!player.IsClambering && downPressedThisFrame)
@@ -292,8 +210,8 @@ public class PhysicsSystem
         // movement uses its own dedicated (and slower still while Clambering) speed rather than
         // reusing the ground Walk/Crawl speeds, since swinging/shimmying along a hangable surface
         // is its own distinct kind of locomotion.
-        var horizontalSpeed = player.IsClimbing ? ClimbHorizontalSpeed
-            : player.IsHanging ? (player.IsClambering ? ClamberSpeed : HangSpeed)
+        var horizontalSpeed = player.IsClimbing ? GameDefaults.ClimbHorizontalSpeed
+            : player.IsHanging ? (player.IsClambering ? GameDefaults.ClamberSpeed : GameDefaults.HangSpeed)
             : moveSpeed;
         // Target velocity is expressed relative to whatever solid the player is currently
         // grounded on (see GetGroundVelocityX) rather than an absolute world-frame speed: without
@@ -352,11 +270,11 @@ public class PhysicsSystem
             targetVelocityY = 0;
             if (input.IsUpPressed)
             {
-                targetVelocityY -= ClimbVerticalSpeed;
+                targetVelocityY -= GameDefaults.ClimbVerticalSpeed;
             }
             if (input.IsDownPressed)
             {
-                targetVelocityY += ClimbVerticalSpeed;
+                targetVelocityY += GameDefaults.ClimbVerticalSpeed;
             }
             // IsGrounded is derived from this frame's SurfaceBottom contact (see Body2D.IsGrounded);
             // clearing it immediately here (rather than waiting for the next collision pass) means
@@ -390,7 +308,7 @@ public class PhysicsSystem
             // Scaled by the current medium's viscosity (see ResolveMediumForceScale) so a
             // push-off through a viscous medium (e.g. water) can't launch as high as the same
             // push-off through air, even though buoyancy has already cancelled most of gravity.
-            velocity.Y = -WalkJumpSpeed * ResolveMediumForceScale(player.CurrentMedium);
+            velocity.Y = -GameDefaults.WalkJumpSpeed * ResolveMediumForceScale(player.CurrentMedium);
             // Clears IsGrounded immediately so the jump's own frame already shows airborne (jump
             // pose, re-jump gated out) instead of waiting for the next collision pass to notice
             // the player has left the surface.
@@ -450,13 +368,13 @@ public class PhysicsSystem
     /// <c>Viscosity</c> (see <c>Global/MaterialLibrary.ini</c>) applies a (very slight, by design)
     /// penalty here, same as it already does for the existing passive drag term, rather than
     /// treating whichever medium happens to be the ambient default as an artificial zero-point.
-    /// Falls off reciprocally toward <see cref="MinMediumForceScale"/>, which is never crossed so
+    /// Falls off reciprocally toward <see cref="PhysicsConstants.MinMediumForceScale"/>, which is never crossed so
     /// a body is never fully unable to move under its own power, however viscous the medium.
     /// </summary>
     internal static double ResolveMediumForceScale(Assets.Material medium)
     {
-        var scale = 1.0 / (1.0 + medium.Viscosity * MediumForceScaleFalloff);
-        return Math.Max(scale, MinMediumForceScale);
+        var scale = 1.0 / (1.0 + medium.Viscosity * PhysicsConstants.MediumForceScaleFalloff);
+        return Math.Max(scale, PhysicsConstants.MinMediumForceScale);
     }
 
     private static Assets.Material ResolveCurrentMedium(World2D world, IPhysicsBody body)
@@ -507,7 +425,7 @@ public class PhysicsSystem
     /// <paramref name="targetVelocityY"/>) - the walk/crawl/climb/hang speed the current input
     /// calls for - mirrors <see cref="MovingEnemy2D.UpdatePatrolDirection"/>'s role for a
     /// patrolling enemy, but proportional to the remaining speed gap (scaled by
-    /// <see cref="Player2D.WalkForceMultiplier"/>, reduced by <see cref="AirControlMultiplier"/>
+    /// <see cref="Player2D.WalkForceMultiplier"/>, reduced by <see cref="GameDefaults.AirControlMultiplier"/>
     /// while airborne) rather than a fixed-direction force, so the
     /// player still promptly reaches and then holds the target speed while grounded - the "no
     /// acceleration/friction" ground feel from the old direct-assignment model - instead of
@@ -535,7 +453,7 @@ public class PhysicsSystem
         // ground motor. Vertical strength is left untouched: it already targets the player's own
         // current Velocity.Y while airborne (see the call site in Step), so it contributes ~0
         // regardless and gravity/jump impulses remain entirely in charge of vertical motion.
-        var horizontalMultiplier = player.IsGrounded ? player.WalkForceMultiplier : player.WalkForceMultiplier * AirControlMultiplier;
+        var horizontalMultiplier = player.IsGrounded ? player.WalkForceMultiplier : player.WalkForceMultiplier * GameDefaults.AirControlMultiplier;
         // Also scaled by the current medium's viscosity (see ResolveMediumForceScale) - a stride
         // through a viscous medium is inherently less effective than the same muscular effort on
         // solid ground/open air, independent of the passive buoyancy/drag already applied

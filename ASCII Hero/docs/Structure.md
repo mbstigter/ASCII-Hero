@@ -133,9 +133,10 @@ The live game state and the entity types that make it up.
   follow. `World2D.LoadAsync` is the world loader: it reads a world's
   settings, background, and object-placement files, resolves each
   placement's sprite and concrete body type, resolves each spawned body's
-  `Density`/`Friction`/`Restitution`/`Mass` from its material (a placement's
-  ini section may override the resolved material name via `Material`, or
-  just the resulting `Restitution` via `Restitution`), and assembles the
+  `Density`/`Friction`/`Restitution` from its material (a placement's ini
+  section may override the resolved material name via `Material`, or just
+  the resulting `Restitution` via `Restitution`), computes `Mass` from
+  the resolved `Density` and the body's footprint, and assembles the
   finished world. Also owns deferred removal (`QueueRemoval`/`ApplyPendingRemovals`),
   so nothing mutates the `Objects` list mid-iteration.
 - **`Body2D`** - the base class for anything living in the world at a
@@ -542,10 +543,13 @@ The live game state and the entity types that make it up.
 ### Browser
 
 - **`CanvasBridge`** - the sole interop boundary between C# and the browser's
-  Canvas/keyboard APIs (via `game-interop.js`). Initializes the canvas and
-  measures the active font's real pixel cell size (`CellMetrics`), switches
-  fonts at runtime, and draws a frame's glyphs. No other game code talks to
-  JavaScript directly.
+  Canvas/keyboard APIs (via `game-interop.js`). Initializes the canvas with
+  the configured font family, cell size, and viewport columns/rows (see
+  `Global/Settings.ini`'s `[Render]` section - `FontWidthPixels`/
+  `FontHeightPixels` are the final, already-scaled on-screen cell size, not
+  measured by the browser), resizes the canvas element to
+  `columns/rows * cellSize`, and draws a frame's glyphs. No other game code
+  talks to JavaScript directly.
 - **`InputState`** - tracks which keyboard keys are currently held down and
   exposes them as game-oriented queries (`IsLeftPressed`, `IsUpPressed`,
   etc.), so gameplay code never depends on raw DOM key codes. Two full,
@@ -653,7 +657,7 @@ large jumps after e.g. a tab switch):
    Physics/Collision with a fixed-timestep accumulator (the standard "fix
    your timestep" pattern, via `_physicsAccumulatorSeconds`): each frame's
    elapsed time is added to the accumulator, which is then drained in
-   however many whole steps of exactly `PhysicsSystem.FixedPhysicsStepSeconds`
+   however many whole steps of exactly `PhysicsConstants.FixedPhysicsStepSeconds`
    are currently available, leaving any remainder (always strictly less
    than one fixed step) for next frame rather than folding it into an
    odd-sized partial step this frame - so every single step is identically

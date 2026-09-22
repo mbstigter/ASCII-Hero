@@ -75,7 +75,7 @@ not like a pixel-art game with ASCII characters placed on top.
   (where the debounce is released on landing as well as loss of overlap) -
   still to be designed.
 - **Material-Based Collision Response.** Largely done - a body's
-  `Density`/`Friction`/`Restitution`/`Mass` are resolved from a named
+  `Density`/`Friction`/`Restitution` are resolved from a named
   material (`MaterialLibrary.ini`, see [Decisions.md](Decisions.md)) rather
   than ad-hoc per-body-type checks, and two contacting bodies' values
   combine generically via `CollisionSystem.Combine`. Still open: any

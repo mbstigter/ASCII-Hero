@@ -1,4 +1,5 @@
 using ASCII_Hero.Client.Game.Assets;
+using ASCII_Hero.Client.Game.Constants;
 
 namespace ASCII_Hero.Client.Game.World;
 
@@ -18,14 +19,6 @@ namespace ASCII_Hero.Client.Game.World;
 /// </summary>
 public class KinematicObject2D : Body2D, IPhysicsBody
 {
-    /// <summary>
-    /// How close (in world cells) this body must get to a configured patrol bound before
-    /// reversing direction on that axis - mirrors <see cref="MovingEnemy2D"/>'s equivalent
-    /// threshold, so a patrolling platform reverses just shy of its bound instead of oscillating
-    /// exactly on it.
-    /// </summary>
-    private const double PatrolTurnThreshold = 0.25;
-
     private bool _patrolMovingTowardMaxX = true;
     private bool _patrolMovingTowardMaxY = true;
 
@@ -124,7 +117,7 @@ public class KinematicObject2D : Body2D, IPhysicsBody
     /// <summary>
     /// Advances this body's prescribed motion by one frame: recomputes each configured axis's
     /// velocity component toward its current target bound (reversing once within
-    /// <see cref="PatrolTurnThreshold"/> of it), leaves any un-patrolled axis's velocity component
+    /// <see cref="GameDefaults.PatrolTurnThreshold"/> of it), leaves any un-patrolled axis's velocity component
     /// untouched, then integrates <see cref="Body2D.Position"/> from the resulting
     /// <see cref="Velocity"/> - called once per frame by <see cref="Physics.PhysicsSystem"/>
     /// instead of the gravity/force-based integration every other moving body goes through.
@@ -136,7 +129,7 @@ public class KinematicObject2D : Body2D, IPhysicsBody
         if (PatrolMinX is { } minX && PatrolMaxX is { } maxX)
         {
             var targetX = _patrolMovingTowardMaxX ? maxX : minX;
-            if (Math.Abs(Position.X - targetX) <= PatrolTurnThreshold)
+            if (Math.Abs(Position.X - targetX) <= GameDefaults.PatrolTurnThreshold)
             {
                 _patrolMovingTowardMaxX = !_patrolMovingTowardMaxX;
                 targetX = _patrolMovingTowardMaxX ? maxX : minX;
@@ -148,7 +141,7 @@ public class KinematicObject2D : Body2D, IPhysicsBody
         if (PatrolMinY is { } minY && PatrolMaxY is { } maxY)
         {
             var targetY = _patrolMovingTowardMaxY ? maxY : minY;
-            if (Math.Abs(Position.Y - targetY) <= PatrolTurnThreshold)
+            if (Math.Abs(Position.Y - targetY) <= GameDefaults.PatrolTurnThreshold)
             {
                 _patrolMovingTowardMaxY = !_patrolMovingTowardMaxY;
                 targetY = _patrolMovingTowardMaxY ? maxY : minY;

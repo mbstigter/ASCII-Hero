@@ -25,9 +25,12 @@ capture the "why" behind a decision without needing a lengthy narrative.
   Coulomb friction** (`CollisionSystem.ResolveContact`/`ApplyCoulombFriction`),
   generalized so an immovable solid acts as an infinite-mass second body -
   replacing an earlier flat "multiply by `1 - friction`" approximation.
-- **A body's `Density`/`Friction`/`Restitution`/`Mass` are resolved from a
+- **A body's `Density`/`Friction`/`Restitution` are resolved from a
   named material** (`MaterialLibrary`, merging Global+World-local ini,
-  mirroring `ColorPalette`), with per-placement overrides. Two contacting
+  mirroring `ColorPalette`), with per-placement overrides; `Mass` is always
+  computed as `Density * width * height` and has no separate override - a
+  creature needing a distinct mass should get its own dedicated material
+  instead. Two contacting
   bodies' restitution/friction combine via a simple average
   (`CollisionSystem.Combine`), not one side dominating.
 - **The solids/movers narrow phase re-runs several times per frame**
@@ -107,7 +110,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   one-frame lag, inconsequential since medium rarely changes frame-to-frame.
 - **Physics/Collision run on a fixed timestep accumulator, not a variable/capped
   per-frame step** (`GameLoop.OnPlayingFrameAsync`'s `_physicsAccumulatorSeconds`,
-  `PhysicsSystem.FixedPhysicsStepSeconds`): an earlier "cap the step size and
+  `PhysicsConstants.FixedPhysicsStepSeconds`): an earlier "cap the step size and
   sub-step to cover the frame" approach still let each step's size vary with
   ordinary frame-rate jitter, which alone (independent of any oversized-single-step
   tunneling concern) was enough to visibly perturb collision/pose resolution right
@@ -194,6 +197,23 @@ capture the "why" behind a decision without needing a lengthy narrative.
 
 ## Rendering & Camera
 
+- **Cell/canvas pixel size is a configured, final on-screen value - not
+  measured by the browser, not a fixed pixel constant, and not a separate
+  base-size-plus-scale pair.** `Global/Settings.ini`'s `[Render]` section
+  requires `FontWidthPixels`/`FontHeightPixels` as the final cell size
+  already at whatever zoom is wanted (`GameLoop.StartAsync` throws if either
+  is missing); `GameLoop`/`CanvasBridge` then size the canvas element and the
+  gameplay viewport as `ViewportColumns`/`ViewportRows` (character counts)
+  times that cell size (see docs/AssetFormat.md §4.3). Switching fonts or
+  zoom level never requires touching game code - just updating the ini
+  values - superseding both an earlier approach that hardcoded a 16x28
+  target cell size and a fixed 1280x700 canvas, and a later attempt at
+  auto-detecting the native size via the browser's `measureText` plus a
+  separate integer `FontScale` multiplier (dropped because `measureText`
+  doesn't reliably report a true bitmap font's real native size - the
+  bundled 8x14 font measured back as 9.143x16 at a 16px probe size - and the
+  extra scale key was redundant once the final size is just configured
+  directly).
 - **`WorldRenderer` only builds glyphs for what's inside the camera's current
   viewport** - physics, collision, and animation are unaffected and keep
   simulating every body regardless of visibility.
