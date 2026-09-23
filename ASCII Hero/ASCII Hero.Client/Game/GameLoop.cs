@@ -37,7 +37,23 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
         /// <summary>Driving the normal per-frame Physics/Collision/Camera/Render tick against a loaded <see cref="World2D"/>.</summary>
         Playing,
+
+        /// <summary>
+        /// The player reached a <see cref="World.CollectableType.LevelEnd"/> collectable (see
+        /// <see cref="World2D.LevelCompleted"/>). Freezes gameplay, shows a brief message, then
+        /// returns to <see cref="WorldSelecting"/> after <see cref="LevelCompleteDisplaySeconds"/>.
+        /// </summary>
+        LevelComplete,
     }
+
+    /// <summary>How long <see cref="GameMode.LevelComplete"/> is shown before returning to the world-select screen.</summary>
+    private const double LevelCompleteDisplaySeconds = 2.0;
+
+    /// <summary>Elapsed time since entering <see cref="GameMode.LevelComplete"/>, driving its return-to-selection timer.</summary>
+    private double _levelCompleteElapsedSeconds;
+
+    /// <summary>Message shown centered on screen while <see cref="GameMode.LevelComplete"/> is active.</summary>
+    private readonly UILabel _levelCompleteLabel = new(col: 0, row: 0, width: 20, height: 1, foreColor: RenderConstants.DefaultForeColor) { Lines = { "Level Complete!" } };
 
     private readonly InputState _input = new();
     private readonly PhysicsSystem _physics = new();
@@ -71,13 +87,17 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private Task? _loadWorldTask;
 
     /// <summary>
-    /// Test HUD overlay shown in the top-left corner while playing, using the independent
-    /// <see cref="UIFrame"/>/<see cref="UILabel"/> screen-space primitives directly - eventually
-    /// meant for a real score/collectable-count readout, not just this one placeholder line.
+    /// HUD overlay shown in the top-left corner while playing, using the independent
+    /// <see cref="UIFrame"/>/<see cref="UILabel"/> screen-space primitives directly. Refreshed
+    /// every <see cref="OnPlayingFrameAsync"/> tick from <see cref="World.Player2D.Health"/>/
+    /// <see cref="World.Player2D.Score"/>. Sized to fit 3-digit values for both numbers (the
+    /// widest either is ever expected to get) so the frame never needs to resize as they grow -
+    /// each number is also right-aligned to a fixed 3-character field so the surrounding text
+    /// doesn't shift/jitter as a value's own digit count changes.
     /// </summary>
-    private readonly UILabel _hudText = new(col: 2, row: 2, width: 20, height: 1, foreColor: RenderConstants.DefaultForeColor);
+    private readonly UILabel _hudText = new(col: 2, row: 2, width: 24, height: 1, foreColor: RenderConstants.DefaultForeColor);
 
-    private readonly UIFrame _hudBox = new(col: 1, row: 1, width: 22, height: 3, foreColor: RenderConstants.DefaultForeColor);
+    private readonly UIFrame _hudBox = new(col: 1, row: 1, width: 26, height: 3, foreColor: RenderConstants.DefaultForeColor);
 
     /// <summary>
     /// Test horizontal gauge shown below the HUD frame while playing, using the independent
@@ -103,6 +123,11 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// the key down would toggle the overlay on/off every single frame instead of once per press.</summary>
     private bool _wasFpsToggleKeyDown;
 
+    /// <summary>Edge-detection state for <see cref="InputState.IsRespawnDebugKeyPressed"/> - without
+    /// this, holding the key down would call <see cref="World.World2D.Respawn"/> every single frame
+    /// instead of once per press.</summary>
+    private bool _wasRespawnDebugKeyDown;
+
     /// <summary>
     /// Smoothed frames-per-second reading shown by <see cref="_fpsLabel"/>, updated once per real
     /// animation frame in <see cref="OnFrame"/> from that frame's own *unclamped* deltaSeconds
@@ -116,6 +141,22 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private double _smoothedFps;
 
     private const double FpsSmoothingFactor = 0.1;
+
+    /// <summary>
+    /// Dev/testing world object-count overlay, toggled by
+    /// <see cref="InputState.IsObjectCounterToggleKeyPressed"/> (see <see cref="OnFrame"/>) - off
+    /// by default, shown directly under <see cref="_fpsLabel"/> (row 1) so the two overlays stack
+    /// in the top-right corner without competing for the same row. Lets a level author watch
+    /// <see cref="World.World2D.Objects"/>'s count live, e.g. to see it drop as collectables
+    /// (such as the new points stars) are picked up.
+    /// </summary>
+    private readonly UILabel _objectCounterLabel = new(col: 0, row: 1, width: 12, height: 1, foreColor: RenderConstants.DefaultForeColor);
+
+    private bool _showObjectCounterOverlay;
+
+    /// <summary>Edge-detection state for <see cref="InputState.IsObjectCounterToggleKeyPressed"/>,
+    /// mirroring <see cref="_wasFpsToggleKeyDown"/>'s own pattern/rationale.</summary>
+    private bool _wasObjectCounterToggleKeyDown;
 
     /// <summary>
     /// Unspent real elapsed time carried forward between frames for the fixed-timestep Physics/
@@ -211,7 +252,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         // Placeholder readout - no actual points/rings tracking exists yet; this just shows
         // what the HUD text line is eventually meant to display (see _hudText's own doc comment).
         _hudText.Lines.Clear();
-        _hudText.Lines.Add("Points: 0   Rings: 0");
+        _hudText.Lines.Add($"Health: {_world.Player.Health,3}   Score: {_world.Player.Score,3}");
 
         _camera.SnapTo(
             _world.CameraTarget.Position,
@@ -280,6 +321,15 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             }
             _wasFpsToggleKeyDown = fpsToggleKeyDown;
 
+            // Same edge-triggered pattern as the FPS toggle above - see _wasObjectCounterToggleKeyDown's
+            // own doc comment.
+            var objectCounterToggleKeyDown = _input.IsObjectCounterToggleKeyPressed;
+            if (objectCounterToggleKeyDown && !_wasObjectCounterToggleKeyDown)
+            {
+                _showObjectCounterOverlay = !_showObjectCounterOverlay;
+            }
+            _wasObjectCounterToggleKeyDown = objectCounterToggleKeyDown;
+
             // Uses this frame's raw, unclamped deltaSeconds - see _smoothedFps's own doc comment
             // for why the simulation clamp below must not affect this reading. Guarded against a
             // zero/negative delta (e.g. the very first frame, or an unexpected browser timestamp
@@ -310,6 +360,9 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
                     // Playing once that task completes.
                     await OnLoadingWorldFrameAsync();
                     break;
+                case GameMode.LevelComplete:
+                    await OnLevelCompleteFrameAsync(deltaSeconds);
+                    break;
             }
         }
         finally
@@ -329,6 +382,16 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             _mode = GameMode.WorldSelecting;
             return;
         }
+
+        // Dev/testing shortcut: instantly respawn the player (see World2D.Respawn) regardless of
+        // current health - edge-triggered the same way the FPS/object-counter overlay toggles are,
+        // so holding the key down doesn't respawn every single frame.
+        var respawnDebugKeyDown = _input.IsRespawnDebugKeyPressed;
+        if (respawnDebugKeyDown && !_wasRespawnDebugKeyDown)
+        {
+            _world.Respawn();
+        }
+        _wasRespawnDebugKeyDown = respawnDebugKeyDown;
 
         // A single real animation frame's deltaSeconds can vary - from ordinary frame-to-frame
         // jitter, or occasionally far more than ordinary after a real hitch (a GC pause, a slow
@@ -357,6 +420,13 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             _physicsAccumulatorSeconds -= PhysicsConstants.FixedPhysicsStepSeconds;
         }
 
+        if (_world.LevelCompleted)
+        {
+            _mode = GameMode.LevelComplete;
+            _levelCompleteElapsedSeconds = 0;
+            return;
+        }
+
         _animation.Update(_world, deltaSeconds);
 
         _camera.Follow(
@@ -370,6 +440,8 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
         var glyphs = _renderer.BuildFrame(_world, _camera, _viewportWidthCells, _viewportHeightCells);
         UIRenderer.AddFrame(glyphs, _hudBox, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+        _hudText.Lines.Clear();
+        _hudText.Lines.Add($"Health: {_world.Player.Health,3}   Score: {_world.Player.Score,3}");
         UIRenderer.AddLabel(glyphs, _hudText, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         UIRenderer.AddBar(glyphs, _hudBar, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
 
@@ -389,6 +461,40 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             UIRenderer.AddLabel(glyphs, _fpsLabel, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         }
 
+        if (_showObjectCounterOverlay)
+        {
+            // Same right-aligned-by-actual-text-length approach as _fpsLabel above, stacked
+            // directly underneath it (row 1).
+            var objectCountText = $"{_world.Objects.Count} Obj";
+            _objectCounterLabel.Col = _viewportWidthCells - objectCountText.Length;
+            _objectCounterLabel.Lines.Clear();
+            _objectCounterLabel.Lines.Add(objectCountText);
+            UIRenderer.AddLabel(glyphs, _objectCounterLabel, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+        }
+
+        await canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs);
+    }
+
+    /// <summary>
+    /// Drives one frame of <see cref="GameMode.LevelComplete"/>: keeps drawing the last playing
+    /// frame's glyphs (gameplay is frozen - no Physics/Collision/Animation/Camera update) with a
+    /// centered "Level Complete!" message on top, then returns to <see cref="GameMode.WorldSelecting"/>
+    /// once <see cref="LevelCompleteDisplaySeconds"/> has elapsed.
+    /// </summary>
+    private async Task OnLevelCompleteFrameAsync(double deltaSeconds)
+    {
+        _levelCompleteElapsedSeconds += deltaSeconds;
+        if (_levelCompleteElapsedSeconds >= LevelCompleteDisplaySeconds)
+        {
+            _worldSelect.ResetConfirmation();
+            _mode = GameMode.WorldSelecting;
+            return;
+        }
+
+        var glyphs = _renderer.BuildFrame(_world, _camera, _viewportWidthCells, _viewportHeightCells);
+        _levelCompleteLabel.Col = (_viewportWidthCells - _levelCompleteLabel.Lines[0].Length) / 2;
+        _levelCompleteLabel.Row = _viewportHeightCells / 2;
+        UIRenderer.AddLabel(glyphs, _levelCompleteLabel, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         await canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs);
     }
 

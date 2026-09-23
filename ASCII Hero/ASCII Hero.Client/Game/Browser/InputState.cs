@@ -40,4 +40,13 @@ public class InputState
     /// <summary>Dev/testing shortcut - toggles the FPS debug overlay (see
     /// <see cref="GameLoop.OnFrame"/>). "F" is otherwise unused by any gameplay input.</summary>
     public bool IsFpsToggleKeyPressed => IsPressed("KeyF");
+
+    /// <summary>Dev/testing shortcut - toggles the world object-count debug overlay (see
+    /// <see cref="GameLoop.OnFrame"/>). "O" is otherwise unused by any gameplay input.</summary>
+    public bool IsObjectCounterToggleKeyPressed => IsPressed("KeyO");
+
+    /// <summary>Dev/testing shortcut - instantly respawns the player (see
+    /// <see cref="World.World2D.Respawn"/>), regardless of current health. "R" is otherwise
+    /// unused by any gameplay input.</summary>
+    public bool IsRespawnDebugKeyPressed => IsPressed("KeyR");
 }

@@ -264,9 +264,46 @@ capture the "why" behind a decision without needing a lengthy narrative.
   This is a distinct scheme from `KinematicObject2D`'s own constant-velocity,
   non-force patrol (chosen to leave room for non-linear future paths without
   redesigning the body).
-- **Hazard contact detection exists but applies no effect yet** - there is no
-  health/damage system in the game yet; this is intentionally a detected,
-  no-op stub.
+- **Ordinary (non-fatal) hazard contact deducts 1 health from the player**,
+  once per fresh contact (rising edge on `_activeHazardContacts`, the same
+  gate already used for the contact effect), clamped at 0. The instant a hit
+  brings health to exactly 0, `CollisionSystem` calls `World2D.Respawn()` -
+  see the respawn bullet below.
+- **A world's starting health is a placement-independent `[World] Health`
+  key in that world's own `_settings.ini`** (default
+  `GameDefaults.PlayerStartingHealth`), applied to `Player2D.Health` when the
+  player object is spawned - mirroring how `[World] Title` and `[Physics]
+  Gravity` are already world-level settings rather than per-placement keys.
+- **Collectable variants are driven by a required `Type` key on the
+  placement's ini section** (`CollectableType`: `Points`/`Health`/
+  `Checkpoint`/`LevelEnd`/`Key`), not a distinct `Kind` value and not an
+  asset-level `_settings.ini` key - matching how
+  `Killable`/`EffectPersists`/`EffectClip` are already placement-level keys,
+  and keeping the same sprite asset (e.g. `Ring`) reusable across multiple
+  collectable variants. `Collectable2D.Type` is nullable with no default
+  variant: an omitted/unrecognized `Type` is left `null`, which
+  `CollisionSystem` treats as inert (no effect, not removed, no player state
+  changed) - deliberately, so a placement that forgets `Type` fails loudly
+  during testing instead of silently behaving like some other variant.
+  `Points`/`Health` are removed on pickup and increment
+  `Player2D.Score`/`Health` respectively;
+  `Key` is removed on pickup with no unlock wiring yet (a future door/gate
+  mechanic's placeholder). `Checkpoint`/`LevelEnd` are also removed on
+  pickup like every other collectable; a collectable's own
+  `Collectable2D.EffectPersists` (mirroring `IKillableBody.EffectPersists`
+  on hazards/enemies) controls whether its pickup effect remains in its
+  place afterward as a permanent "already used" marker instead of fading
+  away - used by `Checkpoint`/`LevelEnd` in practice, but available to any
+  collectable variant.
+  `Checkpoint` records `World2D.RespawnPoint`, not yet consumed by anything
+  (no death/respawn system exists); `LevelEnd` sets `World2D.LevelCompleted`,
+  consumed by `GameLoop`'s `GameMode.LevelComplete` (see below).
+- **Level completion is a minimal, fixed-duration `GameMode`**, not a full
+  win screen: `GameLoop` freezes gameplay (no Physics/Collision/Animation/
+  Camera update) for `LevelCompleteDisplaySeconds`, shows a centered "Level
+  Complete!" `UILabel` over the last rendered frame, then returns to
+  `GameMode.WorldSelecting` - reusing the same reset path as the existing
+  Escape-to-quit shortcut rather than adding a second one.
 
 ## Player Movement & Input
 
@@ -345,6 +382,25 @@ capture the "why" behind a decision without needing a lengthy narrative.
   number leading (e.g. "144 FPS"), right-aligned so the label's column is
   recomputed each frame from its own rendered length and stays flush with
   the top-right corner regardless of digit count.
+- **A second dev/testing overlay shows the world's live object count**
+  (`GameLoop._showObjectCounterOverlay`, `InputState.IsObjectCounterToggleKeyPressed`
+  bound to `O`), stacked directly under the FPS overlay (same row-1 vs.
+  row-0 top-right corner), displaying `World2D.Objects.Count` (e.g. "42 Obj")
+  - added so a level author can watch the count drop live as collectables
+  (e.g. the points stars) are picked up. Off by default, same
+  right-aligned-by-rendered-length approach as the FPS overlay.
+- **`World2D.Respawn()` resets the player's position, velocity, and health**
+  (position to `RespawnPoint` if a `Checkpoint` has been reached, else
+  `PlayerSpawnPosition` - the original `Player` placement position recorded
+  once at load; velocity to `Vector2D.Zero` so no pre-death momentum
+  carries over; health back to `StartingHealth`). Called automatically by
+  `CollisionSystem` the instant hazard damage brings health to exactly 0
+  (guarded so an already-dead/mid-respawn player can't retrigger it every
+  frame), and separately exposed as an instant dev/testing action via a
+  third debug key, `InputState.IsRespawnDebugKeyPressed` bound to `R`
+  (edge-triggered like `F`/`O`, alongside `GameLoop`'s existing FPS/object-
+  count overlay toggles), for testing respawn without needing to actually
+  lose all health first.
 - **Background/foreground layer colors are precomputed once at world load**
   (`World2D.BackgroundForeColors`/`BackgroundBackColors`/`ForegroundForeColors`/
   `ForegroundBackColors`), instead of resolving each visible cell's color code

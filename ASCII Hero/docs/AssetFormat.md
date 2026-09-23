@@ -577,7 +577,10 @@ in world cells per second squared.
 
 **`[World]`** (optional) — `Title`, a short human-readable name shown above
 this world's thumbnail on the world-selection screen (see §3.2). Falls back
-to the world's own folder/asset name (e.g. `Level1`) if omitted.
+to the world's own folder/asset name (e.g. `Level1`) if omitted. `Health`
+(default the built-in starting health), the player's health when this world
+is loaded — spent one point at a time on ordinary (non-fatal) contact with a
+hazard/enemy.
 
 ### 3.1 World thumbnail (`{Name}_thumb_*`)
 
@@ -1003,6 +1006,42 @@ Asset = Ball
 Clip = default
 Kind = DynamicObject
 CameraTarget = true
+```
+
+A `Kind = Collectable` placement must set a `Type` key choosing what picking
+it up actually does — there is no default variant; an omitted or unrecognized
+`Type` makes the collectable inert (no effect, not removed, no player state
+changed) on pickup. Every variant below is removed from the level on pickup;
+a placement's own `EffectPersists = true` (see below) leaves its pickup
+effect behind in its place afterward as a permanent "already used" marker,
+instead of the effect fading away like an ordinary pickup:
+
+- `Points` — awards a point of score.
+- `Health` — restores a point of the player's health.
+- `Checkpoint` — records itself as where the player should next respawn
+  from. Typically paired with `EffectPersists = true` so the checkpoint
+  stays visibly marked as reached.
+- `LevelEnd` — finishes the level. Typically paired with
+  `EffectPersists = true` for the same reason as `Checkpoint`.
+- `Key` — reserved for a future door/gate-unlock mechanic; currently has no
+  unlock effect of its own, behaving like an ordinary `Health`/`Points`
+  pickup.
+
+```ini
+[Ring]
+Asset = Ring
+Clip = default
+Kind = Collectable
+Type = Health
+EffectClip = fade
+
+[Checkpoint]
+Asset = Checkpoint
+Clip = default
+Kind = Collectable
+Type = Checkpoint
+EffectClip = reached
+EffectPersists = true
 ```
 
 The `Player` section may additionally override its own "muscle power" and

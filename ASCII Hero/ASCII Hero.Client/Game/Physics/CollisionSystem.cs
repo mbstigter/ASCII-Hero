@@ -325,26 +325,111 @@ public class CollisionSystem
                     continue;
                 }
 
-                // TODO: apply damage once a health/damage system exists. Detection is generic;
-                // only the effect is not wired yet.
+                // Ordinary (non-killing) hazard contact: the moving body's own effect plays and,
+                // if the moving body is the player, 1 health is deducted - both gated to the
+                // first frame of a fresh contact so a sustained overlap doesn't repeat every frame.
+                // If that deduction is what brings health to exactly 0 (a fresh death, not an
+                // already-dead player standing in a hazard), the player is respawned immediately.
                 var contact = (hazard, movingBody);
                 currentHazardContacts.Add(contact);
                 if (!_activeHazardContacts.Contains(contact))
                 {
                     SpawnEffectIfConfigured(body, world);
+                    if (body is Player2D player && player.Health > 0)
+                    {
+                        player.Health = Math.Max(0, player.Health - 1);
+                        if (player.Health == 0)
+                        {
+                            world.Respawn();
+                        }
+                    }
                 }
             }
 
             foreach (var collectable in collectables)
             {
-                if (movingBody is ICollectorBody && Overlaps(movingBody, collectable))
+                if (movingBody is not ICollectorBody || !Overlaps(movingBody, collectable))
                 {
-                    // Only the collectable's own effect fires here (e.g. a ring's pickup fade) -
-                    // the collector side is deliberately left silent so a collector's own
-                    // EffectClipName (e.g. a player's hazard-hit spark) never fires on an
-                    // unrelated pickup.
+                    continue;
+                }
+
+                // Only the collectable's own effect fires here (e.g. a ring's pickup fade) -
+                // the collector side is deliberately left silent so a collector's own
+                // EffectClipName (e.g. a player's hazard-hit spark) never fires on an
+                // unrelated pickup.
+                if (collectable is not Collectable2D typedCollectable)
+                {
                     SpawnEffectIfConfigured(collectable, world);
                     world.QueueRemoval(collectable);
+                    continue;
+                }
+
+                // Every variant below is removed on pickup and spawns its own effect (if
+                // configured), honoring EffectPersists the same way a killed hazard/enemy's
+                // effect can persist as a husk in KillableEnemy's place - so any collectable
+                // variant can be turned into a permanent "used" marker via its placement's own
+                // EffectPersists key, not just Checkpoint/LevelEnd.
+                switch (typedCollectable.Type)
+                {
+                    case CollectableType.Points:
+                        SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
+                        world.QueueRemoval(collectable);
+                        if (movingBody is Player2D pointsPlayer)
+                        {
+                            pointsPlayer.Score++;
+                        }
+                        break;
+
+                    case CollectableType.Health:
+                        SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
+                        world.QueueRemoval(collectable);
+                        if (movingBody is Player2D healthPlayer)
+                        {
+                            healthPlayer.Health++;
+                        }
+                        break;
+
+                    case CollectableType.Checkpoint:
+                        // Same as Points/Health, but records the respawn point instead of
+                        // adjusting a player stat, and - if the collector is the player - also
+                        // plays the player's own CheckpointEffectClipName (e.g. a "happy" clip)
+                        // as a second, independent effect alongside the checkpoint's own.
+                        SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
+                        world.QueueRemoval(collectable);
+                        if (movingBody is Player2D checkpointPlayer)
+                        {
+                            world.RespawnPoint = collectable.Position;
+                            if (checkpointPlayer.CheckpointEffectClipName is { } checkpointEffectClipName)
+                            {
+                                SpawnEffect(checkpointPlayer, checkpointEffectClipName, world);
+                            }
+                        }
+                        break;
+
+                    case CollectableType.LevelEnd:
+                        // Same as Points/Health, but signals level completion for GameLoop to act
+                        // on instead of adjusting a player stat.
+                        SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
+                        world.QueueRemoval(collectable);
+                        if (movingBody is Player2D)
+                        {
+                            world.LevelCompleted = true;
+                        }
+                        break;
+
+                    case CollectableType.Key:
+                        // Placeholder: behaves like an ordinary pickup for now. No door/gate-unlock
+                        // target wiring exists yet.
+                        SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
+                        world.QueueRemoval(collectable);
+                        break;
+
+                    case null:
+                        // This placement's Type key was omitted/unrecognized in {World}_objects.ini -
+                        // deliberately inert (no effect, not removed, no player state changed) so a
+                        // missing Type is visibly "broken" during testing rather than silently
+                        // behaving like some default variant.
+                        break;
                 }
             }
         }
@@ -363,10 +448,26 @@ public class CollisionSystem
     {
         if (body is IEffectTrigger { EffectClipName: { } clipName })
         {
-            var effect = new EffectInstance2D();
-            effect.Spawn(body.Sprite, clipName, body.Position, persists);
-            world.Objects.Add(effect);
+            SpawnEffect(body, clipName, world, persists);
         }
+    }
+
+    /// <summary>
+    /// Spawns a cosmetic <see cref="EffectInstance2D"/> playing <paramref name="clipName"/> (on
+    /// <paramref name="body"/>'s own <see cref="Body2D.Sprite"/>) at <paramref name="body"/>'s
+    /// current position - the same underlying spawn as <see cref="SpawnEffectIfConfigured"/>, but
+    /// for an explicit, call-site-chosen clip rather than a body's own single configured
+    /// <see cref="IEffectTrigger.EffectClipName"/>. Lets one body (e.g. the player) play
+    /// different effects for different situations (e.g. a hazard-hit spark vs. a
+    /// checkpoint-reached happy clip) as independent, possibly-overlapping
+    /// <see cref="EffectInstance2D"/> instances, instead of being limited to one fixed,
+    /// ini-configured clip.
+    /// </summary>
+    private static void SpawnEffect(Body2D body, string clipName, World2D world, bool persists = false)
+    {
+        var effect = new EffectInstance2D();
+        effect.Spawn(body.Sprite, clipName, body.Position, persists);
+        world.Objects.Add(effect);
     }
 
     private static bool Overlaps(IPhysicsBody a, Body2D b)

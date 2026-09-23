@@ -197,4 +197,10 @@ public static class GameDefaults
     /// any ini file.
     /// </summary>
     public const double EffectLifetimeSeconds = 0.5;
+
+    /// <summary>
+    /// Starting <see cref="World.Player2D.Health"/> for a freshly-loaded world. Not overridable
+    /// via any ini file (no death/damage system exists yet to make tuning this meaningful).
+    /// </summary>
+    public const int PlayerStartingHealth = 3;
 }

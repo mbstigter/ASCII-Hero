@@ -185,11 +185,18 @@ The live game state and the entity types that make it up.
 	`move_left`/`move_right`) from its own resolved velocity each frame. Chase
 	behavior is not yet implemented.
   - `Collectable2D` - a static, non-solid item removed from the world when a
-	collector body touches it (e.g. a coin or power-up).
+	collector body touches it (e.g. a coin or power-up), regardless of its
+	`Type` (`CollectableType`: `Health`/`Points`/`Checkpoint`/`LevelEnd`/`Key`,
+	set from the placement's optional `Type` ini key, default `Health`) - see
+	`CollisionSystem.ResolveHazardsAndCollectables` below for the actual
+	per-type pickup behavior. `Checkpoint`/`LevelEnd` typically set
+	`EffectPersists = true` so their pickup effect remains in the removed
+	collectable's place as a permanent "already used" marker, the same way a
+	killed hazard's effect can persist as a husk.
   - `EffectInstance2D` - a purely cosmetic, non-collidable body that plays a
 	short visual effect clip (a pickup fade, a kill "crumble") and then
 	either self-removes or persists as a permanent decorative husk.
-- **Capability interfaces** - rather than checking concrete types, every
+
   system that needs to act on "any body that can X" checks one of these
   instead. Some are bare markers (no state, just identity); others carry
   real per-instance state:
@@ -223,9 +230,14 @@ The live game state and the entity types that make it up.
 	one shared rule every horizontally-facing implementer (`Player2D`,
 	`MovingEnemy2D`) derives `Facing.Left`/`Right`/`Idle` from.
   - `IHazardBody` - damages a body on contact (marker only; the actual damage
-	effect is not yet implemented, as there is no health/damage system yet).
+	is applied by `CollisionSystem.ResolveHazardsAndCollectables`, which
+	deducts 1 from `Player2D.Health` on the first frame of a fresh, non-fatal
+	contact - clamped at 0, calling `World2D.Respawn()` the instant a hit
+	brings health to exactly 0).
   - `ICollectableBody` - removed from the world on contact with a collector
-	(marker only).
+	(marker only); see `Collectable2D`'s own entry above for how its
+	`EffectPersists` can leave its pickup effect behind as a permanent marker
+	(used by `Checkpoint`/`LevelEnd` in practice).
   - `ICollectorBody` - can pick up collectables on contact (e.g. the player).
   - `IKillerBody` - can "kill" a killable hazard by landing on top of it
 	(e.g. the player); kept independent of `ICollectorBody` since the two
@@ -235,7 +247,14 @@ The live game state and the entity types that make it up.
 	otherwise-killable type should be killable in every placement.
   - `IEffectTrigger` - can optionally name a cosmetic effect clip
 	(`EffectClipName`) to play on contact, reusing a clip already defined on
-	that same body's own sprite asset.
+	that same body's own sprite asset. `CollisionSystem`'s private
+	`SpawnEffect` helper can also spawn an explicit, call-site-chosen clip
+	independent of `EffectClipName` - used so the player can have more than
+	one distinct effect for different situations (e.g. `Player2D`'s ordinary
+	`EffectClipName` "spark" on a hazard hit vs. its own separate
+	`CheckpointEffectClipName` "happy" clip on reaching a `Checkpoint`) as
+	independent, possibly-overlapping `EffectInstance2D`s, rather than being
+	limited to one fixed clip per body.
   - `IClimberBody` - can climb an `IsClimbable` surface (e.g. a ladder);
 	carries `IsTouchingClimbable` (mere overlap, recomputed every frame) and
 	`IsClimbing` (actually engaged, driven by input). Independent of
@@ -616,12 +635,15 @@ The live game state and the entity types that make it up.
   screen, one loaded `World2D`. Driven entirely by JavaScript's
   `requestAnimationFrame` calling back into C# - never by Blazor's
   `StateHasChanged`.
-  - Internally a strict three-state `GameMode` (`WorldSelecting` ->
-    `LoadingWorld` -> `Playing`) - never more than one is active, and
+  - Internally a strict four-state `GameMode` (`WorldSelecting` ->
+    `LoadingWorld` -> `Playing` -> `LevelComplete` -> back to
+    `WorldSelecting`) - never more than one is active, and
     `OnFrame` switches on it to decide whether to drive
     `WorldSelectScreen`/`WorldSelectRenderer`, redraw the frozen selection
     layout plus a filling "Loading..." `UIBar` (a world's `World2D.LoadAsync`
-    is in flight), or run the normal gameplay tick.
+    is in flight), run the normal gameplay tick, or freeze gameplay and show
+    a brief "Level Complete!" message (see below) before looping back to
+    world selection.
   - `OnFrame` is invoked by JS in a fire-and-forget fashion - the next
     `requestAnimationFrame` call is scheduled without waiting for the
     previous call's `Task` to finish (see game-interop.js) - so a frame that
@@ -713,8 +735,15 @@ large jumps after e.g. a tab switch):
    additionally requiring approaching the surface from underneath) once per
    fixed step - not once for the whole frame - so a large catch-up delta
    can't let a body integrate several times before ever being
-   collision-checked. `World2D.ApplyPendingRemovals` (removes anything
-   queued for removal - a picked-up collectable, a killed enemy, an expired
+   collision-checked. Collectable pickup itself branches on `Collectable2D.Type`
+   (`CollectableType`): all variants are removed on pickup. `Health`/`Points`
+   additionally increment `Player2D.Health`/`Score` respectively; `Checkpoint`
+   records `World2D.RespawnPoint`; `LevelEnd` sets `World2D.LevelCompleted`
+   for `GameLoop` to act on. `Checkpoint`/`LevelEnd` (and any other
+   collectable with `EffectPersists = true`) spawn their pickup effect as a
+   permanent husk in their place, the same way a killed hazard's effect can
+   persist. `World2D.ApplyPendingRemovals`
+   (removes anything queued for removal - a picked-up collectable, a killed enemy, an expired
    effect - deferred from the systems above so nothing mutates the object
    list mid-iteration) likewise runs after every fixed step, not just once
    at the end, so a later step's collision pass never sees a body that
@@ -738,7 +767,8 @@ large jumps after e.g. a tab switch):
    `_hudText`/`_hudBar`) to that same list, so the HUD is always drawn last -
    on top of the foreground layer and everything else - before
    `CanvasBridge.DrawFrameAsync` sends the complete list to JavaScript to
-   paint onto the canvas. An additional dev/testing FPS overlay
+   paint onto the canvas. `_hudText` is refreshed every `Playing` frame from
+   `World2D.Player.Health`/`.Score`. An additional dev/testing FPS overlay
    (`InputState.IsFpsToggleKeyPressed`, bound to `F`) can be toggled on top
    of the HUD, showing a smoothed frames-per-second reading computed each
    frame from that frame's own raw, unclamped elapsed time (not the fixed
@@ -746,7 +776,27 @@ large jumps after e.g. a tab switch):
    - recomputed each frame from the rendered text's own length (leading with
      the number, e.g. "144 FPS") so the label stays flush with the corner
      regardless of digit count - so it stays pinned to the top-right corner;
-   off by default so it never appears for an ordinary player.
+   off by default so it never appears for an ordinary player. A second
+   dev/testing overlay (`InputState.IsObjectCounterToggleKeyPressed`, bound
+   to `O`) stacks directly under the FPS overlay, showing `World2D.Objects`'s
+   live count (e.g. "42 Obj") - same right-aligned-by-rendered-length
+   approach, also off by default. A third debug key
+   (`InputState.IsRespawnDebugKeyPressed`, bound to `R`) instantly calls
+   `World2D.Respawn()` - the same respawn `CollisionSystem` triggers
+   automatically once hazard damage brings `Player2D.Health` to exactly 0
+   (see Collision above), letting it be tested without needing to actually
+   lose all health first.
+
+When `World2D.LevelCompleted` becomes true (set by `CollisionSystem` on a
+`CollectableType.LevelEnd` pickup - see above), `GameLoop` switches from
+`GameMode.Playing` into a `GameMode.LevelComplete` state instead of running
+the per-frame tick above: gameplay is frozen (no Physics/Collision/Animation/
+Camera update), the last rendered world frame is redrawn with a centered
+"Level Complete!" message on top for a fixed duration
+(`LevelCompleteDisplaySeconds`), then `GameLoop` returns to
+`GameMode.WorldSelecting`, the same reset path used by the existing Escape-
+to-quit shortcut.
+
 
 
 

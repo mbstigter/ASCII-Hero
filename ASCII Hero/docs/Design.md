@@ -83,12 +83,13 @@ not like a pixel-art game with ASCII characters placed on top.
 - **Enhance sprites**, especially Crawl and Clamber, which currently feel
   underdeveloped compared to Walk/Hang - consider adding a third animation
   frame for these (and other) animated clips.
-- **Single per-body `EffectClipName` may not scale.** `IEffectTrigger` (see
-  `CollisionSystem.ResolveHazardsAndCollectables`) currently exposes one
-  static clip name per body, e.g. the player's is reserved for an ordinary
-  (non-fatal) hazard contact "spark". That's fine while hazard contact is the
-  only situation triggering a player effect, but if more situations are added
-  later (e.g. fall damage, a death animation, a power-up flash) they would
-  all compete for the same single clip slot and overwrite each other. If that
-  happens, revisit this as an effect *request* (e.g. a method call or queued
-  clip name per contact/event) rather than a static per-body property.
+- **`World2D.Respawn()` has no cosmetic feedback of its own** - no death
+  animation, effect, or brief invulnerability window on respawn; it's an
+  instant, silent position/velocity/health reset (see docs/Decisions.md).
+  Revisit if reaching 0 health ever needs to feel more like an event.
+- **`CollectableType.Key` has no unlock target.** Picking one up currently
+  behaves like an ordinary `Health`/`Points` pickup (removed, plays its
+  effect) with no other effect - it's a placeholder for a future door/gate
+  mechanic that would need its own way of naming which door/gate a given key
+  unlocks (e.g. a shared `KeyId` placement key matched against a locked
+  object's own `KeyId`).

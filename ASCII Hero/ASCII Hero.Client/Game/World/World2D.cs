@@ -139,6 +139,14 @@ public class World2D
     public double Gravity { get; private set; } = Constants.PhysicsConstants.DefaultGravity;
 
     /// <summary>
+    /// The player's health when this world is loaded - from this world's own <c>[World] Health</c>
+    /// settings.ini key, falling back to <see cref="GameDefaults.PlayerStartingHealth"/> when
+    /// absent. Applied to <see cref="Player2D.Health"/> once the player is spawned in
+    /// <see cref="LoadAsync"/>.
+    /// </summary>
+    public int StartingHealth { get; private set; } = GameDefaults.PlayerStartingHealth;
+
+    /// <summary>
     /// Width of the world, in cells - always derived from <c>_objects.txt</c>'s own content (the
     /// world's sole authoritative layout definition, along with <c>_objects.ini</c>), never from
     /// the purely-visual/optional background or foreground art layers.
@@ -147,6 +155,44 @@ public class World2D
 
     /// <summary>Height of the world, in cells - see <see cref="WidthCells"/> for how it's derived.</summary>
     public int HeightCells { get; private set; }
+
+    /// <summary>
+    /// The last <see cref="CollectableType.Checkpoint"/> collectable's position the player
+    /// triggered, set by <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/>. Null
+    /// until the first checkpoint is triggered. Consumed by <see cref="Respawn"/> as the
+    /// preferred respawn position, falling back to <see cref="PlayerSpawnPosition"/> when null.
+    /// </summary>
+    public Vector2D? RespawnPoint { get; set; }
+
+    /// <summary>
+    /// The player's original spawn position, recorded once from its <c>Player</c> placement in
+    /// <c>{World}_objects.ini</c> during <see cref="LoadAsync"/>. Used by <see cref="Respawn"/> as
+    /// the fallback respawn position when <see cref="RespawnPoint"/> hasn't been set yet (no
+    /// checkpoint reached).
+    /// </summary>
+    public Vector2D PlayerSpawnPosition { get; private set; }
+
+    /// <summary>
+    /// Set by <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/> when the player
+    /// triggers a <see cref="CollectableType.LevelEnd"/> collectable. Polled by <see cref="GameLoop"/>
+    /// each frame while playing to transition into its level-complete flow.
+    /// </summary>
+    public bool LevelCompleted { get; set; }
+
+    /// <summary>
+    /// Resets the player back to a respawn state - position to <see cref="RespawnPoint"/> if set,
+    /// otherwise <see cref="PlayerSpawnPosition"/>; velocity to <see cref="Vector2D.Zero"/> so it
+    /// doesn't retain any pre-death momentum; and health back to <see cref="StartingHealth"/>.
+    /// Called automatically by <see cref="Physics.CollisionSystem"/> the moment
+    /// <see cref="Player2D.Health"/> first reaches 0, and available as an instant debug/testing
+    /// action too (see <see cref="Browser.InputState.IsRespawnDebugKeyPressed"/>).
+    /// </summary>
+    public void Respawn()
+    {
+        Player.Position = RespawnPoint ?? PlayerSpawnPosition;
+        Player.Velocity = Vector2D.Zero;
+        Player.Health = StartingHealth;
+    }
 
     /// <summary>
     /// Total number of logical steps <see cref="LoadAsync"/> reports through its optional
@@ -181,6 +227,9 @@ public class World2D
         world.EmptyChar = emptyChar;
         world.DefaultForeColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultForegroundColor"));
         world.DefaultBackColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
+        world.StartingHealth = IniValueParser.TryParseInt(settings.TryGetValue("World", "Health"), out var startingHealth)
+            ? startingHealth
+            : GameDefaults.PlayerStartingHealth;
 
         var globalSettingsContent = await fileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/Settings.ini");
         var globalSettings = IniDocument.Parse(globalSettingsContent ?? string.Empty);
@@ -275,6 +324,7 @@ public class World2D
 
             var clipName = objectSection.TryGetValue("Clip", out var clip) ? clip : "default";
             var effectClipName = objectSection.TryGetValue("EffectClip", out var effectClipText) ? effectClipText : null;
+            var checkpointEffectClipName = objectSection.TryGetValue("CheckpointEffectClip", out var checkpointEffectClipText) ? checkpointEffectClipText : null;
 
             if (!clipNamesByAsset.TryGetValue(assetName, out var clipNames))
             {
@@ -286,6 +336,10 @@ public class World2D
             if (effectClipName is not null)
             {
                 clipNames.Add(effectClipName);
+            }
+            if (checkpointEffectClipName is not null)
+            {
+                clipNames.Add(checkpointEffectClipName);
             }
         }
 
@@ -352,11 +406,13 @@ public class World2D
                 string clipName;
                 int frameIndex;
                 string? effectClipName;
+                string? checkpointEffectClipName;
 
                 if (hasAsset)
                 {
                     clipName = objectSection.TryGetValue("Clip", out var clip) ? clip : "default";
                     effectClipName = objectSection.TryGetValue("EffectClip", out var effectClipText) ? effectClipText : null;
+                    checkpointEffectClipName = objectSection.TryGetValue("CheckpointEffectClip", out var checkpointEffectClipText) ? checkpointEffectClipText : null;
 
                     // The sprite (with every clip this section could ever need, including its
                     // effect clip if any) was already loaded and cached during the pre-scan above.
@@ -402,6 +458,7 @@ public class World2D
                     clipName = "default";
                     frameIndex = 0;
                     effectClipName = null;
+                    checkpointEffectClipName = null;
                 }
 
 
@@ -548,7 +605,10 @@ public class World2D
                     case "Player":
                         world.Player.Spawn(sprite);
                         world.Player.Position = position;
+                        world.PlayerSpawnPosition = position;
                         world.Player.EffectClipName = effectClipName;
+                        world.Player.CheckpointEffectClipName = checkpointEffectClipName;
+                        world.Player.Health = world.StartingHealth;
                         var playerMaterial = world.Materials.Get(materialOverride ?? world.Player.MaterialName);
                         world.Player.Density = densityOverride ?? playerMaterial.Density;
                         world.Player.Friction = frictionOverride ?? playerMaterial.Friction;
@@ -654,9 +714,17 @@ public class World2D
                         break;
 
                     case "Collectable":
+                        // Type distinguishes what picking this up actually does (see
+                        // CollectableType). Required per-placement: an absent/unrecognized Type is
+                        // left null so the collectable does nothing on pickup, rather than
+                        // silently falling back to some default variant.
+                        var collectableType = objectSection.TryGetValue("Type", out var collectableTypeText) && Enum.TryParse<CollectableType>(collectableTypeText, ignoreCase: true, out var parsedCollectableType)
+                            ? parsedCollectableType
+                            : (CollectableType?)null;
                         var collectable = new Collectable2D();
-                        collectable.Spawn(sprite, clipName, frameIndex, position, repeatCount);
+                        collectable.Spawn(sprite, clipName, frameIndex, position, collectableType, repeatCount);
                         collectable.EffectClipName = effectClipName;
+                        collectable.EffectPersists = effectPersists;
                         world.Objects.Add(collectable);
                         spawnedBody = collectable;
                         break;

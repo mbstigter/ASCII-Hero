@@ -58,9 +58,19 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
 
     /// <summary>
     /// Optional clip name (on this instance's own <see cref="Body2D.Sprite"/>) to play as a
-    /// cosmetic effect on contact (e.g. a hazard-hit spark). Null (the default) means no effect.
+    /// cosmetic effect on an ordinary (non-fatal) hazard hit. Null (the default) means no effect.
     /// </summary>
     public string? EffectClipName { get; set; }
+
+    /// <summary>
+    /// Optional clip name (on this instance's own <see cref="Body2D.Sprite"/>) to play as a
+    /// cosmetic effect when a <see cref="CollectableType.Checkpoint"/> is reached. Null (the
+    /// default) means no effect. Kept as its own separate slot rather than reusing
+    /// <see cref="EffectClipName"/> so the player can have a distinct reaction per situation (e.g.
+    /// a hazard-hit spark vs. a checkpoint-reached happy clip) - see
+    /// <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/>.
+    /// </summary>
+    public string? CheckpointEffectClipName { get; set; }
 
     /// <summary>
     /// The mass-scaled force this frame's sustained locomotion input contributes - computed each
@@ -106,6 +116,21 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// may override it via the <c>CrawlSpeed</c> ini key (see <see cref="World2D.LoadAsync"/>).
     /// </summary>
     public double CrawlSpeed { get; set; } = GameDefaults.CrawlSpeed;
+
+    /// <summary>
+    /// Current score, incremented by picking up a <see cref="CollectableType.Points"/> collectable
+    /// (see <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/>).
+    /// </summary>
+    public int Score { get; set; }
+
+    /// <summary>
+    /// Current health, incremented by picking up a <see cref="CollectableType.Health"/> collectable
+    /// and decremented by a non-fatal hazard hit (see
+    /// <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/>). Defaults to
+    /// <see cref="GameDefaults.PlayerStartingHealth"/>. Reaching exactly 0 triggers an automatic
+    /// <see cref="World2D.Respawn"/>, which also resets this back to <see cref="World2D.StartingHealth"/>.
+    /// </summary>
+    public int Health { get; set; } = GameDefaults.PlayerStartingHealth;
 
     public Player2D()
     {
