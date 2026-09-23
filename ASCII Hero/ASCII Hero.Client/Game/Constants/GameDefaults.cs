@@ -14,12 +14,20 @@ public static class GameDefaults
     /// <summary>
     /// Default target ground speed while standing/walking - see <see cref="World.Player2D.WalkSpeed"/>.
     /// Overridable per-placement via the <c>WalkSpeed</c> ini key in a world's <c>objects.ini</c>.
+    /// This is the anchor speed for every pose's walk_left/walk_right (and crawl/climb/hang/clamber)
+    /// animation rate - see the <c>FrameDurationSeconds = 2.4 / speed</c> formula noted at the top
+    /// of the <c>[Animation]</c> section in <c>Player_settings.ini</c>. Changing this value shifts
+    /// that 2.4 anchor constant (WalkSpeed * walk_left/right's own FrameDurationSeconds), so every
+    /// other pose's moving-clip FrameDurationSeconds should be recomputed from the formula too.
     /// </summary>
     public const double WalkSpeed = 12.0;
 
     /// <summary>
     /// Default target ground speed while crouched/crawling - see <see cref="World.Player2D.CrawlSpeed"/>.
     /// Overridable per-placement via the <c>CrawlSpeed</c> ini key in a world's <c>objects.ini</c>.
+    /// If tweaked, recompute crawl_left/crawl_right's FrameDurationSeconds in Player_settings.ini
+    /// via <c>2.4 / CrawlSpeed</c> (see the formula noted at the top of its <c>[Animation]</c>
+    /// section) so the crawl animation's pace stays correlated with its actual move speed.
     /// </summary>
     public const double CrawlSpeed = 6.0;
 
@@ -32,6 +40,10 @@ public static class GameDefaults
 
     /// <summary>
     /// Target vertical climb speed while climbing a ladder. Not overridable via any ini file.
+    /// If tweaked, recompute climb_up/climb_down's FrameDurationSeconds in Player_settings.ini via
+    /// <c>2.4 / ClimbVerticalSpeed</c> (see the formula noted at the top of its <c>[Animation]</c>
+    /// section) - climb is a vertical-only pose, so this is the one climb speed its animation rate
+    /// tracks, regardless of any simultaneous <see cref="ClimbHorizontalSpeed"/> side-step.
     /// </summary>
     public const double ClimbVerticalSpeed = 10.0;
 
@@ -39,6 +51,8 @@ public static class GameDefaults
     /// Target movement speed while hanging from a pipe/bar - its own dedicated (slower) speed
     /// rather than reusing the ground Walk/Crawl speeds, since swinging/shimmying along a
     /// hangable surface is its own distinct kind of locomotion. Not overridable via any ini file.
+    /// If tweaked, recompute hang_left/hang_right's FrameDurationSeconds in Player_settings.ini via
+    /// <c>2.4 / HangSpeed</c> (see the formula noted at the top of its <c>[Animation]</c> section).
     /// </summary>
     public const double HangSpeed = 8.0;
 
@@ -46,15 +60,42 @@ public static class GameDefaults
     /// Target movement speed while clambering - the crouched, arms-and-legs-gripping counterpart
     /// to <see cref="HangSpeed"/>'s fully-stretched hang (the "Crawl" to hang's "Walk", if you
     /// will) - slower still than <see cref="HangSpeed"/>. Not overridable via any ini file.
+    /// If tweaked, recompute clamber_left/clamber_right's FrameDurationSeconds in
+    /// Player_settings.ini via <c>2.4 / ClamberSpeed</c> (see the formula noted at the top of its
+    /// <c>[Animation]</c> section).
     /// </summary>
     public const double ClamberSpeed = 5.0;
 
     /// <summary>
-    /// Target movement speed while swimming. Reserved for the planned Swim capability (see
-    /// docs/Design.md's "Swim stance" item) - not yet consumed anywhere, since no swim pose exists
-    /// yet. Not overridable via any ini file.
+    /// Target horizontal swim speed while swimming left/right. Its own dedicated speed rather
+    /// than reusing Walk/Crawl/Hang, since swimming is its own distinct kind of locomotion -
+    /// slower than Walk but faster than Crawl, roughly comparable to Hang. Not overridable via
+    /// any ini file. If tweaked, recompute swim_left/swim_right's FrameDurationSeconds in
+    /// Player_settings.ini via <c>2.4 / SwimHorizontalSpeed</c> (see the formula noted at the top
+    /// of its <c>[Animation]</c> section).
     /// </summary>
-    public const double SwimSpeed = 8.0;
+    public const double SwimHorizontalSpeed = 9.0;
+
+    /// <summary>
+    /// Target vertical swim speed (rising/sinking - depth control) while swimming up/down. Its
+    /// own dedicated constant, distinct from <see cref="SwimHorizontalSpeed"/>, since vertical
+    /// thrust against buoyancy/gravity is a different kind of effort than horizontal strokes. Not
+    /// overridable via any ini file. If tweaked, recompute swim_up/swim_down's
+    /// FrameDurationSeconds in Player_settings.ini via <c>2.4 / SwimVerticalSpeed</c> (see the
+    /// formula noted at the top of its <c>[Animation]</c> section).
+    /// </summary>
+    public const double SwimVerticalSpeed = 5.0;
+
+    /// <summary>
+    /// Deadzone (in world cells/second) below which <see cref="World.Player2D.UpdatePose"/>
+    /// treats horizontal swim velocity as "not really moving sideways" and falls back to vertical
+    /// facing (swim_up/swim_down) instead - see <see cref="World.Player2D.UpdatePose"/>'s own doc
+    /// comment for why swim facing is velocity-based (unlike every other pose's intent-based
+    /// facing) and needs a deadzone at all (raw velocity is a continuous float that's essentially
+    /// never exactly zero, unlike the ordinary +1/0/-1 intent signal). Not overridable via any
+    /// ini file.
+    /// </summary>
+    public const double SwimHorizontalFacingDeadzone = 0.5;
 
     // --- Jump-off speeds (instantaneous velocity kicks, not sustained speeds), in world cells/second ---
 
@@ -75,7 +116,7 @@ public static class GameDefaults
     public const double ClimbJumpSpeed = 18.0;
 
     /// <summary>Instantaneous vertical velocity kick for jumping off while hanging. Not overridable via any ini file.</summary>
-    public const double HangJumpSpeed = 18.0;
+    public const double HangJumpSpeed = 22.0;
 
     // --- Force multipliers ---
 

@@ -25,6 +25,18 @@ capture the "why" behind a decision without needing a lengthy narrative.
   Coulomb friction** (`CollisionSystem.ResolveContact`/`ApplyCoulombFriction`),
   generalized so an immovable solid acts as an infinite-mass second body -
   replacing an earlier flat "multiply by `1 - friction`" approximation.
+- **`ResolveContact`'s along-normal velocity impulse (and its dependent
+  friction response) only applies while the contacting pair is still
+  actually approaching along the contact normal** (`normalRelativeSpeed < 0`)
+  - never to a pair already separating or exactly grazing. Position
+  correction (push-apart) is unconditional and always runs regardless.
+  Without this, a rectangle pair that's still reported overlapping the
+  instant after a body has already launched away from it (e.g. a leftover
+  sliver of overlap against a solid's corner right as the player jumps
+  beside a slightly higher, tightly adjacent platform) got treated as a
+  fresh landing and impulse-response, injecting an extra unwanted velocity
+  kick (an unearned second jump boost) on top of the body's own existing
+  motion.
 - **A body's `Density`/`Friction`/`Restitution` are resolved from a
   named material** (`MaterialLibrary`, merging Global+World-local ini,
   mirroring `ColorPalette`), with per-placement overrides; `Mass` is always
@@ -42,11 +54,55 @@ capture the "why" behind a decision without needing a lengthy narrative.
   the level's total object count. Narrow phase additionally requires actual
   rendered-character overlap (`HasCharacterOverlap`), not just merged
   collision-rectangle overlap.
+- **`CollisionShapeBuilder` derives collision rectangles from two
+  complementary run-length-merge passes (row-run and column-run, the exact
+  transpose of each other), unioned together with duplicates removed** - not
+  row-run alone. A row-only decomposition of a curved/notched silhouette
+  (e.g. the round `Ball` sprite) produces very short, wide rectangles along
+  its flanks, whose shallow vertical overlap always wins the
+  minimum-translation-vector contact-direction rule in `CollisionSystem`,
+  even where the true overlap is deep horizontally - letting a body slide
+  sideways through the shape's middle instead of being blocked. The
+  column-run pass's tall, narrow rectangles along the same flanks give the
+  resolver a shallow-horizontal option there too, so the correct contact
+  normal wins regardless of where along a curved outline contact happens.
+  Deduplication (rather than just unioning both lists) is required, not
+  optional: for a blocky rectangular sprite both passes produce
+  byte-identical rectangles, and `CollisionSystem` resolves each of a body's
+  own rectangles independently per solver iteration - an undetected
+  duplicate silently doubles that contact's position correction and
+  velocity impulse every iteration, invisible at rest but capable of adding
+  real extra velocity (e.g. an unwanted jump-height boost) to a fast-moving
+  contact.
+- **Of a body's own overlapping collision rectangles against one other body/solid,
+  `ResolveAgainstOtherBody` resolves exactly one physical contact per solver iteration, not one
+  contact per overlapping rectangle.** The rectangle overlapping most deeply (by its own natural
+  axis) defines that contact's normal; every other overlapping rectangle is then re-measured
+  along that *same* normal axis, and the worst (largest) of those depths is what is actually
+  corrected/responded to, via one call to `ResolveContact`. Two earlier variants were each wrong
+  in an opposite direction, and both were tried and reverted here: (1) resolving every
+  overlapping rectangle fully and independently applied the along-normal velocity impulse more
+  than once for what was really one physical contact - an unearned extra velocity kick (visible
+  as inflated jump height) whenever a body's own shape has two rectangles overlapping the same
+  solid along different axes at once (e.g. `CollisionShapeBuilder`'s column-run pass giving the
+  player's jump pose both a 3-wide top rectangle and a narrower, one-row-taller rectangle through
+  the same column); (2) resolving only the single deepest rectangle and leaving every other
+  overlapping rectangle completely untouched that iteration instead regressed plain wall
+  collision to feel mushy - a rectangle that never happened to be the single deepest one across
+  4 solver iterations could end up never corrected at all, letting a body visibly sink slightly
+  into an ordinary wall while walking into it. Re-measuring every overlapping rectangle along the
+  primary rectangle's own axis (rather than independently letting each rectangle pick its own
+  axis, and rather than ignoring non-primary rectangles outright) fixes both: every rectangle's
+  overlap along the established contact direction is still guaranteed to be corrected in the same
+  pass, while only one velocity/friction response and one contact recording happens per solid per
+  iteration. Any leftover overlap along a genuinely different axis (a separate physical contact)
+  is left for a later solver iteration, which re-detects fully fresh contacts against the body's
+  just-corrected position rather than permanently ignoring it.
 - **A kinematic body** (`KinematicObject2D`) is static-for-collision-response
-  but still has a real `IPhysicsBody.Velocity`, used as the collision's
+
   reference frame. This alone - no extra carry/re-seat mechanism - makes a
-  resting rider follow a moving platform on both axes via ordinary
-  friction/velocity-matching plus the everyday landing-snap correction. Two
+
+
   earlier stopgap workarounds for this (a horizontal-only "carry" hack keyed
   off `_groundedSolids`, and a separate vertical re-seat step) were both
   deleted once the player's own movement became force-based and made them
@@ -80,10 +136,37 @@ capture the "why" behind a decision without needing a lengthy narrative.
   buoyancy from its larger volume) - the physically accurate model for fluid drag
   at ordinary speeds, and one that sheds a fast impact's momentum far more
   aggressively than a slow drift's, which keeps a body from significantly
-  overshooting/bouncing back out after a hard water entry. Only bodies implementing
+  overshooting/bouncing back out after a hard water entry. Both forces are additionally
+  scaled by the body's own **submerged fraction** - the fraction (0 to 1) of the body's
+  own vertical extent actually overlapped by the winning medium volume, computed by
+  merging every qualifying overlap into a covered-interval union so several
+  stacked/adjacent placements of the same medium don't double-count. A body only
+  grazing a medium's surface therefore receives proportionally less buoyancy/drag than
+  one fully submerged (fraction 1.0, identical to the previous full-strength
+  behavior), which is what stops a surface-floating body from visibly bouncing as it
+  crosses the binary overlap boundary each frame. When no placed medium volume
+  overlaps at all, the body resolves to the default `Air` fallback at fraction 1.0
+  (not 0.0) - `Air` is the ambient substance filling all otherwise-unoccupied space,
+  not a bounded level-authored volume with edges to be partially submerged past, so
+  its own low but nonzero `Viscosity` drag keeps applying continuously everywhere
+  outside a denser placed volume, exactly as before submerged-fraction scaling was
+  introduced. Only bodies implementing
   `IMediumAffected` (mirroring `IGravityAffected`) receive these forces; `CurrentMedium`
   itself is still resolved/exposed for every body regardless, for future systems (e.g.
   a swim pose) to read.
+- **`ResolveCurrentMedium`'s scan explicitly excludes `EffectInstance2D` and any
+  `IsClimbable`/`IsHangable` terrain**, even though both satisfy the same
+  `IsStatic && IsPassable` check as a genuine level-authored medium volume
+  (`WaterSurface`/`BodyOfWater`). The distinction is intent: a medium volume is
+  deliberately placed by a level designer to represent an occupiable ambient space,
+  whereas `EffectInstance2D.IsPassable` is unconditionally true purely so a cosmetic
+  effect never blocks movement (e.g. a killed `ToxicPlant`'s "crumble" husk), and a
+  ladder/pipe/bar is structural terrain to grip/hang from, not a substance to be
+  immersed in, regardless of whatever material it happens to be given (e.g. for its
+  render color). Without these exclusions, either could leak its own (often fairly
+  dense) material into the medium resolution the moment the player merely overlapped
+  its footprint, causing unintended buoyancy (e.g. a suspiciously high jump) that has
+  nothing to do with its actual role.
 - **A body's own actively-generated force/impulse (motor force, jump-off) is separately
   dampened by ambient medium viscosity, distinct from the passive buoyancy/drag above**
   (`PhysicsSystem.ResolveMediumForceScale`): maps `Material.Viscosity` alone (never
@@ -148,6 +231,14 @@ capture the "why" behind a decision without needing a lengthy narrative.
   opt-out for multi-frame-but-non-animating assets), including subtle idle
   animation (e.g. blinking) using the same mechanism as static shape
   variants.
+- **A moving (non-idle) clip's `FrameDurationSeconds` is deliberately
+  correlated with that pose's own move speed**, not a single fixed value
+  shared by every pose: `FrameDurationSeconds = 2.4 / speed`, anchored on
+  `walk_left`/`walk_right` (`WalkSpeed` = 12, `FrameDurationSeconds` = 0.2,
+  so 12 * 0.2 = 2.4). See the `Player_settings.ini` `[Animation]` section
+  comment for the full worked table, and each `GameDefaults` speed
+  constant's own doc comment for the reminder to recompute its paired
+  clip(s) if that speed is tweaked.
 - **`Kind` is mandatory in `_objects.ini`** and its values match concrete
   class names 1:1 (`Static`, `Dynamic`, `Kinematic`, `MovingEnemy`,
   `StaticEnemy`, `Collectable`, `PlayerSpawn`) - no implicit fallback.
@@ -159,7 +250,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   all iterate it once and filter by capability interface
   (`IPhysicsBody`, `IGravityAffected`, `IHazardBody`, `ICollectableBody`,
   `ICollectorBody`, `IKillerBody`, `IKillableBody`, `IPosedBody`,
-  `IPatrolBody`, `IWalkForceBody`, `IClimberBody`, `IHangerBody`) rather than
+  `IPatrolBody`, `IWalkForceBody`, `IClimberBody`, `IHangerBody`,
+  `ISwimmerBody`) rather than
   concrete type or maintaining separate lists - adding a new object category
   never requires touching every system's iteration logic.
 - **Object removal is always deferred to end-of-frame**
@@ -194,6 +286,30 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **A short debounce** (`IHangerBody.SuppressHangUntilClear`, and the
   climbing equivalent) prevents an immediate re-grab of the same
   ladder/pipe the same frame a jump/swing-off begins.
+- **Swim detection is medium-based, not reach-based** (`ISwimmerBody`,
+  `PhysicsSystem.IsSwimmableMedium`) - unlike `IClimberBody`/`IHangerBody`,
+  which key off a specific `Body2D.IsClimbable`/`IsHangable` surface via a
+  `CollisionSystem`-set touching flag, swim instead reads the player's own
+  already-resolved `Body2D.CurrentMedium` directly every frame and compares
+  it against `PhysicsConstants.SwimMediumMinDensity`/`SwimMediumMinViscosity`
+  (a medium qualifies if it clears *either* threshold, not both - density and
+  viscosity are independent physical properties, and requiring both would
+  wrongly exclude a hypothetical dense-but-thin or thin-but-viscous fluid).
+  Engaging still mirrors climbing's deliberate-press model (a directional key
+  must actually be held while submerged), not hanging's automatic grab, since
+  merely drifting through a passable fluid volume shouldn't force the pose
+  any more than brushing past a ladder auto-climbs. Grounded/climbing/hanging
+  all take priority and preempt swim entirely (`PhysicsSystem.Step`'s swim
+  engage condition requires none of them apply) - a solid floor stays solid
+  underwater (walking/crawling keeps working exactly as on land), and a
+  ladder/pipe's own capability check is entirely independent of medium, so
+  submerging one doesn't need special-casing. Up/down while swimming are
+  vertical thrust (depth control, via `GameDefaults.SwimVerticalSpeed`) using
+  the same continuous motor-force model as climbing's vertical axis, not a
+  distinct pose/mechanic - left/right use their own dedicated
+  `SwimHorizontalSpeed`. There is deliberately no swim jump-off impulse: Jump
+  does nothing while `IsSwimming` (no capability/interface reserves one),
+  since there is no solid surface to push off against underwater.
 
 ## Rendering & Camera
 

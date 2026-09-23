@@ -213,6 +213,18 @@ public abstract class Body2D
     public double MoveIntentX { get; set; }
 
     /// <summary>
+    /// This frame's raw vertical move intent (-1 = up, 0 = none/holding position, +1 = down),
+    /// the vertical counterpart to <see cref="MoveIntentX"/> - same rationale: <see cref="IClimberBody.IsClimbing"/>'s
+    /// vertical <see cref="IPhysicsBody.Velocity"/>.Y is downstream of the same mass-scaled
+    /// motor force convergence as horizontal movement, so it asymptotically approaches (but
+    /// essentially never exactly reaches) its zero target while idle on a ladder - reading it
+    /// directly for facing (see <see cref="ResolveVerticalFacing(double)"/>) left the climb pose
+    /// stuck on Up/Down and never resolving to Idle. Set directly from up/down key state by
+    /// <see cref="Physics.PhysicsSystem.Step"/>, exactly like <see cref="MoveIntentX"/>.
+    /// </summary>
+    public double MoveIntentY { get; set; }
+
+    /// <summary>
     /// Whether a static body blocks movement. Defaults to false, so an ordinary <c>IsStatic</c>
     /// body (a platform, wall) still blocks by default via <see cref="Physics.CollisionSystem"/>'s
     /// <c>solids</c> filter, which only checks this flag directly - never a body's concrete type
@@ -539,6 +551,15 @@ public abstract class Body2D
     /// </summary>
     public static Facing ResolveVerticalFacing(double velocityY) =>
         velocityY < 0 ? Facing.Up : velocityY > 0 ? Facing.Down : Facing.Idle;
+
+    /// <summary>
+    /// Resolves an up/down <see cref="Facing"/> from this body's own <see cref="MoveIntentY"/> -
+    /// the vertical counterpart to <see cref="ResolveHorizontalFacing()"/>, used by
+    /// <see cref="Player2D"/> while climbing so its idle-vs-arm-over-arm pose reflects actual
+    /// up/down key intent rather than the climb motor's asymptotically-never-quite-zero
+    /// <see cref="IPhysicsBody.Velocity"/>.Y (see <see cref="MoveIntentY"/>'s own doc comment).
+    /// </summary>
+    public Facing ResolveVerticalFacing() => ResolveVerticalFacing(MoveIntentY);
 
     /// <summary>
     /// Applies a specific frame (with optional tiling) to this body, updating Frame, Size, and

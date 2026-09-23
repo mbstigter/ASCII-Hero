@@ -4,7 +4,7 @@ using ASCII_Hero.Client.Game.Constants;
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>The player-controlled character, backed by the loaded "Player" sprite asset.</summary>
-public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected, ICollectorBody, IKillerBody, IEffectTrigger, IClimberBody, IHangerBody, IPosedBody, IWalkForceBody
+public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected, ICollectorBody, IKillerBody, IEffectTrigger, IClimberBody, IHangerBody, ISwimmerBody, IPosedBody, IWalkForceBody
 {
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }
@@ -27,10 +27,20 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// <inheritdoc/>
     public bool SuppressHangUntilClear { get; set; }
 
+    /// <inheritdoc/>
+    public bool IsSwimming { get; set; }
+
     /// <summary>
     /// The player is subject to normal world gravity except while <see cref="IsClimbing"/> or
     /// <see cref="IsHanging"/>, during which it is suspended so <see cref="Physics.PhysicsSystem"/>
     /// can drive vertical/lateral movement directly instead of fighting gravity's pull.
+    /// <see cref="IsSwimming"/> deliberately does NOT suspend gravity - unlike climbing/hanging
+    /// (gripping a solid surface), swimming is buoyant motion in a fluid, so gravity must keep
+    /// acting and is offset by the existing ambient buoyancy force (<see cref="IMediumAffected"/>,
+    /// always-on, separate from this flag) exactly like any other body immersed in a medium.
+    /// The swim motor force (see <see cref="Physics.PhysicsSystem.Step"/>) only adds
+    /// player-directed thrust on top of that, the same way <see cref="IWalkForceBody"/> adds
+    /// motor force on top of gravity for an ordinary walking body - it does not replace gravity.
     /// </summary>
     public bool GravityAffected => !(IsClimbing || IsHanging);
 
@@ -118,14 +128,14 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
 
     /// <summary>
     /// Resolves and applies the player's pose (see <see cref="IPosedBody"/>) from its current
-    /// pose/climbing/hanging state, its own now-integrated <see cref="Velocity"/>, and this
-    /// frame's raw move input intent (see <see cref="Body2D.MoveIntentX"/>) - vertical facing (via
-    /// <see cref="Body2D.ResolveVerticalFacing"/>) while climbing, since climbing sets
-    /// <see cref="Velocity"/>.Y directly from up/down input and has no horizontal facing at all;
-    /// horizontal facing (via the shared <see cref="Body2D.ResolveHorizontalFacing()"/>) from
-    /// <see cref="Body2D.MoveIntentX"/> for every other pose - the same intent-based rule
-    /// <see cref="MovingEnemy2D"/> uses (set from its own patrol-direction decision instead of raw
-    /// key input), now that both bodies share one "facing follows intent, not velocity" mechanism.
+    /// pose/climbing/hanging/swimming state - vertical facing (via
+    /// <see cref="Body2D.ResolveVerticalFacing()"/>, reading <see cref="Body2D.MoveIntentY"/>)
+    /// while climbing, since climbing has no horizontal facing at all; horizontal facing (via the
+    /// shared <see cref="Body2D.ResolveHorizontalFacing()"/>) from <see cref="Body2D.MoveIntentX"/>
+    /// for every other intent-driven pose - the same intent-based rule <see cref="MovingEnemy2D"/>
+    /// uses (set from its own patrol-direction decision instead of raw key input), now that both
+    /// bodies share one "facing follows intent, not velocity" mechanism. Swimming is the one
+    /// deliberate exception - see the facing resolution below.
     /// </summary>
     public void UpdatePose()
     {
@@ -134,17 +144,31 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
         // pose (Walk or Crawl) the player was in when they left the ground (e.g. crawling off a
         // ledge still assumes the jump pose mid-air). Pose itself stays "Walk"/"Crawl" throughout;
         // only the resolved pose swaps to the Jump pose's clips while not grounded. Climbing/
-        // hanging take priority over both: they're their own dedicated poses ("Climb" and
-        // "Hang"/"Clamber" depending on IsClambering), shown regardless of IsGrounded.
+        // hanging/swimming take priority over both: they're their own dedicated poses ("Climb",
+        // "Hang"/"Clamber" depending on IsClambering, and "Swim"), shown regardless of IsGrounded.
         var resolvedPose = IsClimbing ? "Climb"
             : IsHanging ? (IsClambering ? "Clamber" : "Hang")
+            : IsSwimming ? "Swim"
             : !IsGrounded ? "Jump"
             : Pose;
-        // Facing (while not climbing) is resolved from the player's own raw move input intent
-        // (see MoveIntentX), never from Velocity.X - velocity is influenced by whatever the
-        // player is standing/riding on (a moving platform's carry, or leftover momentum for a
+        // Facing is resolved from the player's own raw move input intent (see MoveIntentX),
+        // never from Velocity.X, for every pose except Swim - velocity is influenced by whatever
+        // the player is standing/riding on (a moving platform's carry, or leftover momentum for a
         // frame or two after leaving one), none of which reflects the player's own facing intent.
-        var facing = IsClimbing ? ResolveVerticalFacing(Velocity.Y) : ResolveHorizontalFacing();
+        // Swimming has no such platform-carry ambiguity and, unlike every other pose, is
+        // deliberately requested by the user to read as "swimming left/right" for as long as
+        // there's meaningful horizontal drift/momentum, even while only Up/Down is currently held
+        // (e.g. still coasting sideways from an earlier stroke while now thrusting to surface) -
+        // so it intentionally uses the actual horizontal Velocity.X (via the existing
+        // velocity-based ResolveHorizontalFacing(double) overload, otherwise only used for
+        // climbing's vertical axis) rather than raw intent, falling back to vertical facing only
+        // once horizontal speed decays below GameDefaults.SwimHorizontalFacingDeadzone - i.e.
+        // genuinely moving (near-)straight up/down with no material horizontal component at all.
+        var facing = IsClimbing ? ResolveVerticalFacing()
+            : IsSwimming ? (Math.Abs(Velocity.X) > GameDefaults.SwimHorizontalFacingDeadzone
+                ? ResolveHorizontalFacing(Velocity.X)
+                : ResolveVerticalFacing())
+            : ResolveHorizontalFacing();
         SetPose(Sprite, resolvedPose, facing);
     }
 

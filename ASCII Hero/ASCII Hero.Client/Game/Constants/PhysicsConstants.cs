@@ -89,4 +89,26 @@ public static class PhysicsConstants
     /// all the way to zero. Not overridable via any ini file.
     /// </summary>
     public const double MinMediumForceScale = 0.15;
+
+    /// <summary>
+    /// Minimum <see cref="Assets.Material.Density"/> for a body's <see cref="World.Body2D.CurrentMedium"/>
+    /// to count as "swimmable" (see <see cref="Physics.PhysicsSystem.IsSwimmableMedium"/>) - set
+    /// well above <c>Air</c>'s authored 0.0012 but at/below <c>Water</c>'s 1.0 (see
+    /// <c>Global/MaterialLibrary.ini</c>), so ordinary air never engages swim while any
+    /// water-like medium does. A medium clearing either this or
+    /// <see cref="SwimMediumMinViscosity"/> qualifies - see that constant's own doc comment for
+    /// why an "either" rule was chosen over requiring both. Not overridable via any ini file.
+    /// </summary>
+    public const double SwimMediumMinDensity = 0.5;
+
+    /// <summary>
+    /// Minimum <see cref="Assets.Material.Viscosity"/> for a body's <see cref="World.Body2D.CurrentMedium"/>
+    /// to count as "swimmable" (see <see cref="Physics.PhysicsSystem.IsSwimmableMedium"/>) - set
+    /// well above <c>Air</c>'s authored 0.02 but at/below <c>Water</c>'s 0.15 (see
+    /// <c>Global/MaterialLibrary.ini</c>). Checked independently of <see cref="SwimMediumMinDensity"/>
+    /// (a medium qualifies if it clears either threshold) so a hypothetical dense-but-thin fluid,
+    /// or a thin-but-viscous one, still reads as swimmable rather than requiring an unrealistic
+    /// combination of both properties at once. Not overridable via any ini file.
+    /// </summary>
+    public const double SwimMediumMinViscosity = 0.1;
 }

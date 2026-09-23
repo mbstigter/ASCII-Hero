@@ -44,26 +44,6 @@ not like a pixel-art game with ASCII characters placed on top.
 
 ## Planned / Future Work
 
-- **Swim stance.** The stance/facing system (see
-  [AssetFormat.md §2.6](AssetFormat.md) and
-  [Decisions.md](Decisions.md#-stances-facing-is-resolved-from-each-clip-names-own-suffix-not-a-fixed-slot-positionflag))
-  already supports a stance declaring all four directions plus idle via clip
-  suffixes (`swim_idle`, `swim_left`, `swim_right`, `swim_up`, `swim_down`) -
-  no further rendering/asset-format plumbing is needed for that part. The
-  underlying ambient-medium physics (buoyancy/drag while immersed in a
-  passable `Water`-like volume, `Body2D.CurrentMedium`, `IMediumAffected` -
-  see [Decisions.md](Decisions.md)) is already implemented and applies
-  generically to any body, the player included, so this item no longer needs
-  its own buoyancy math. Still to design/implement when this is picked up:
-  - A swim capability on the player (an `ISwimmerBody`-style interface,
-    following the existing `IClimberBody`/`IHangerBody` pattern) for
-    four-directional swim input/movement while `CurrentMedium` indicates the
-    player is submerged, analogous to how climbing resolves `Facing` from
-    input directly - built on top of the existing buoyancy/drag forces, not
-    replacing them.
-  - The `Swim` stance's `[Stances]` line and its five `swim_*` clip assets
-    (art + `Player_settings.ini` entries), once the above capability exists.
-
 - **Hang jump/swing debounce clears too late.** `IHangerBody.SuppressHangUntilClear`
   (see [Decisions.md](Decisions.md)) now correctly keeps a jump/swing off a
   pipe/rope from being instantly cancelled, but it isn't released again until

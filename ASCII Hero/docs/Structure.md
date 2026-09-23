@@ -248,6 +248,13 @@ The live game state and the entity types that make it up.
 	player jumps/swings off or lets go, consulted by `CollisionSystem` so it
 	doesn't immediately re-snap the body while still overlapping the same
 	surface).
+  - `ISwimmerBody` - can swim (directional thrust, left/right/up/down) while
+	`Body2D.CurrentMedium` is dense/viscous enough to swim in (see
+	`PhysicsSystem.IsSwimmableMedium`); carries only `IsSwimming` (actually
+	engaged, driven by a deliberate directional press while submerged) - no
+	separate "touching" flag like `IClimberBody`/`IHangerBody`, since
+	`CurrentMedium` is already resolved fresh every frame for every body
+	regardless, so it alone is the medium-based detection signal swim needs.
 
   positions and velocities. World coordinates are continuous cells, not
   pixels or integer grid indices - see Coordinate System below.
@@ -383,13 +390,23 @@ The live game state and the entity types that make it up.
   `ResolveAgainstOtherBody`/`ResolveContact`) splits position correction by
   relative mass and resolves the along-normal velocity response via a
   standard 1D mass-weighted impulse, rather than each body independently
-  reflecting its own velocity. Both climbing and hanging touch checks
+  reflecting its own velocity. When a body's own collision shape has several
+  overlapping rectangles against the same other body/solid in one iteration
+  (e.g. a head rect and a torso rect both touching a platform at once),
+  `ResolveAgainstOtherBody` resolves exactly one physical contact that
+  iteration, not one per overlapping rectangle: the most-deeply-overlapping
+  rectangle's own axis becomes the contact normal, every other overlapping
+  rectangle is re-measured along that same normal, and the worst of those
+  depths is what actually gets corrected/responded to via one call to
+  `ResolveContact` - see docs/Decisions.md for the two less-correct variants
+  this replaced (resolving every rectangle independently; resolving only the
+  deepest one and ignoring the rest). Both climbing and hanging touch checks
   share one generic snap-speed gate (a body moving too fast does not snap on,
   matching a jump arc's peak still needing to finish naturally rather than
   instantly catching on a passing platform/pipe/ladder); hanging additionally
   requires approaching the surface from underneath, checked geometrically
 
-  Every body records its own current-frame contacts as explicit `ContactType`
+
   flags (`SurfaceTop`/`SurfaceBottom`/`SurfaceLeft`/`SurfaceRight`, plus
   `Climbable`/`Hangable`, currently unused/reserved - climbing/hanging touch
   detection is still done via `IClimberBody.IsTouchingClimbable`/
@@ -446,10 +463,30 @@ The live game state and the entity types that make it up.
   can fight each other frame to frame (visible as pose jitter while standing
   still on solid ground).
 - **`CollisionShapeBuilder`** - derives a small set of collision rectangles
-  from a sprite frame's actual non-empty glyph shape (merging horizontal runs
-  of non-empty cells, then merging vertically-identical runs across rows),
-  so collision follows a sprite's real silhouette instead of its full
-  bounding box.
+  from a sprite frame's actual non-empty glyph shape, so collision follows a
+  sprite's real silhouette instead of its full bounding box. Runs two
+  complementary run-length-merge passes and unions their results: a row-run
+  pass (merging horizontal runs of non-empty cells, then merging
+  vertically-identical runs across rows) and a column-run pass (its exact
+  transpose - merging vertical runs, then merging horizontally-identical runs
+  across columns), deduplicating any rectangle the two passes produce
+  identically (the common case for a blocky rectangular sprite - a platform,
+  a wall). Deduplication matters, not just for rectangle-count hygiene:
+  `CollisionSystem` resolves each of a body's own rectangles independently,
+  one at a time, per solver iteration, so a leftover duplicate would
+  silently double that contact's position correction and velocity impulse
+  every iteration - invisible for a body at rest, but capable of injecting
+  real extra velocity into a fast-moving contact. For
+  a curved/notched silhouette (e.g. a round `Ball` sprite), the row-run pass
+  alone produces very short, wide rectangles along the shape's flanks (each
+  row's run width differs slightly from its neighbors, so the vertical merge
+  rarely fires) - and `CollisionSystem`'s minimum-translation-vector contact
+  rule always treats a short rectangle's shallow vertical overlap as the
+  contact direction, even where the true overlap is deep horizontally,
+  letting a body slide sideways through the shape's middle. The column-run
+  pass's tall, narrow rectangles along those same flanks give contact
+  resolution a rectangle whose horizontal overlap is shallow there instead,
+  so the correct horizontal contact normal wins.
 - **`Rect`** - a simple axis-aligned rectangle in world cells, used to
   describe a piece of a body's collision shape and test overlap.
 - **`SpatialGrid<T>`** - a small reusable broad-phase spatial hash grid:
@@ -458,7 +495,7 @@ The live game state and the entity types that make it up.
   `CollisionSystem` for both solids and moving bodies; contains no
   collision-specific logic of its own.
 
-### Rendering
+
 
 - **`Camera`** - follows a target's bounding box using a "dead zone": it
   only scrolls once the target nears the edge of the current view, and never

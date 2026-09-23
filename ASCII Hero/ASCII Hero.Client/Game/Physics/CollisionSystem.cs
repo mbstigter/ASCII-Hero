@@ -459,15 +459,40 @@ public class CollisionSystem
     /// </summary>
     /// <remarks>
     /// A body's collision shape can be made up of several rectangles that don't all have the same
-    /// width/offset (e.g. a narrower "head" rect above a wider "torso" rect). Picking a single
-    /// globally-deepest-penetrating pair across every combination of the body's rects and the
-    /// other side's rects is wrong: a shallow overlap on one rect can "win" over a more
-    /// significant overlap on another, leaving part of the body still stuck. Resolving each of the
-    /// body's own rects against the other side independently - one at a time - ensures every part
-    /// of the body's shape ends up outside it. <paramref name="body"/>'s
-    /// <see cref="IPhysicsBody.CollisionRects"/> is re-fetched every iteration because it is
-    /// computed fresh from the body's current Position - resolving one rect can move the body,
-    /// and the next rect must then be checked against that already-corrected position.
+    /// width/offset/extent (e.g. a 3-wide "arms" rectangle for one row, plus a narrower rectangle
+    /// spanning that row and the next, from <see cref="CollisionShapeBuilder"/>'s column-run
+    /// pass). Resolving each of these rectangles as if it were its own fully independent contact
+    /// against <paramref name="otherContactTarget"/> - either applying a full velocity/friction
+    /// response to every one of them, or resolving only one and leaving every other rectangle
+    /// completely untouched that iteration - are both wrong, in opposite directions: the former
+    /// can apply the along-normal velocity impulse more than once for what is really one physical
+    /// contact (an unearned extra velocity kick, e.g. jump-height inflation); the latter can leave
+    /// a genuinely still-overlapping rectangle fully uncorrected whenever it never happens to be
+    /// the single deepest one in a given iteration, which visibly reappeared as a body able to
+    /// sink slightly into a plain wall while walking into it.
+    /// </remarks>
+    /// <remarks>
+    /// Instead, exactly one physical contact is resolved per call, and its axis/direction is
+    /// derived directly from every one of the body's own rectangles that overlaps this iteration,
+    /// without ever synthesizing a single bounding rectangle for the compound shape first: a
+    /// unioned "envelope" rectangle silently fills in any notch the body's real, non-rectangular
+    /// silhouette has (e.g. the walk pose's arm rectangle reaching further to one side than the
+    /// row above/below it), which distorts the axis choice asymmetrically depending on which of
+    /// the body's rows happen to be touching first - exactly the kind of approach-direction-
+    /// dependent behavior this is meant to eliminate. Instead, for each of the four possible push
+    /// directions (left/right/up/down) the <em>worst</em> (largest) push distance required to
+    /// clear every real overlapping rectangle pair in that direction is computed directly from
+    /// each pair's own true overlap - never from a fabricated bounding shape - and whichever of
+    /// those four candidate pushes is <em>smallest</em> is this iteration's one true
+    /// minimum-translation-vector: the axis/direction that separates the compound shape as a
+    /// whole with the least total motion, while still guaranteeing every individual overlapping
+    /// rectangle ends up cleared (each candidate push is already the worst-case for its
+    /// direction). This is symmetric by construction - approaching a wall from the left or right
+    /// produces the same shape of answer - and only ever applies one velocity/friction response
+    /// and one contact recording per solid per iteration. Any residual overlap along a genuinely
+    /// different axis (a different physical contact entirely) is left for a later solver
+    /// iteration - see <see cref="Resolve"/> - which re-detects fully fresh contacts against the
+    /// body's just-corrected position, so it is not permanently ignored.
     /// </remarks>
     private static void ResolveAgainstOtherBody(
         IPhysicsBody body,
@@ -478,10 +503,14 @@ public class CollisionSystem
     {
         var restitution = Combine(body.Restitution, otherContactTarget.Restitution);
         var friction = Combine(body.Friction, otherContactTarget.Friction);
-        var rectCount = body.CollisionRects.Count;
-        for (var rectIndex = 0; rectIndex < rectCount; rectIndex++)
+        var bodyRects = body.CollisionRects;
+
+        // First pass: every one of the body's own rects that overlaps this iteration, all
+        // measured against the same not-yet-corrected position, so they're directly comparable.
+        var contacts = new List<Contact>();
+        for (var rectIndex = 0; rectIndex < bodyRects.Count; rectIndex++)
         {
-            if (!TryFindContact([body.CollisionRects[rectIndex]], otherContactTarget.CollisionRects, out var contact, (Body2D)body, otherContactTarget))
+            if (!TryFindContact([bodyRects[rectIndex]], otherContactTarget.CollisionRects, out var contact, (Body2D)body, otherContactTarget))
             {
                 continue;
             }
@@ -501,8 +530,83 @@ public class CollisionSystem
                 }
             }
 
-            ResolveContact(contact, body, otherContactTarget, other, otherVelocity, otherInverseMass, restitution, friction);
+            contacts.Add(contact);
         }
+
+        if (contacts.Count == 0)
+        {
+            return;
+        }
+
+        // Second pass: for each of the four push directions, the worst-case (largest) push
+        // distance needed to separate every real overlapping rectangle pair in that direction -
+        // computed straight from each pair's own overlap, never from a fabricated bounding shape.
+        var worstPushLeft = double.MinValue;
+        var worstPushRight = double.MinValue;
+        var worstPushUp = double.MinValue;
+        var worstPushDown = double.MinValue;
+        var leftContactIndex = 0;
+        var rightContactIndex = 0;
+        var upContactIndex = 0;
+        var downContactIndex = 0;
+        for (var i = 0; i < contacts.Count; i++)
+        {
+            var contact = contacts[i];
+            var pushLeft = contact.BodyRect.Right - contact.OtherRect.Left;
+            var pushRight = contact.OtherRect.Right - contact.BodyRect.Left;
+            var pushUp = contact.BodyRect.Bottom - contact.OtherRect.Top;
+            var pushDown = contact.OtherRect.Bottom - contact.BodyRect.Top;
+
+            if (pushLeft > worstPushLeft)
+            {
+                worstPushLeft = pushLeft;
+                leftContactIndex = i;
+            }
+
+            if (pushRight > worstPushRight)
+            {
+                worstPushRight = pushRight;
+                rightContactIndex = i;
+            }
+
+            if (pushUp > worstPushUp)
+            {
+                worstPushUp = pushUp;
+                upContactIndex = i;
+            }
+
+            if (pushDown > worstPushDown)
+            {
+                worstPushDown = pushDown;
+                downContactIndex = i;
+            }
+        }
+
+        // Whichever of the four candidate pushes is smallest is this iteration's true MTV - see
+        // remarks.
+        var (bestPush, bestNormal, bestContactIndex) = (worstPushLeft, new Vector2D(-1, 0), leftContactIndex);
+        if (worstPushRight < bestPush)
+        {
+            (bestPush, bestNormal, bestContactIndex) = (worstPushRight, new Vector2D(1, 0), rightContactIndex);
+        }
+
+        if (worstPushUp < bestPush)
+        {
+            (bestPush, bestNormal, bestContactIndex) = (worstPushUp, new Vector2D(0, -1), upContactIndex);
+        }
+
+        if (worstPushDown < bestPush)
+        {
+            (bestPush, bestNormal, bestContactIndex) = (worstPushDown, new Vector2D(0, 1), downContactIndex);
+        }
+
+        if (bestPush <= 0)
+        {
+            return;
+        }
+
+        var resolvedContact = contacts[bestContactIndex] with { Normal = bestNormal, Depth = bestPush };
+        ResolveContact(resolvedContact, body, otherContactTarget, other, otherVelocity, otherInverseMass, restitution, friction);
     }
 
     // ---------------------------------------------------------------------------------------
@@ -520,14 +624,28 @@ public class CollisionSystem
     /// <summary>
     /// Resolves one already-detected <see cref="Contact"/> - pushes <paramref name="body"/> (and,
     /// if present, <paramref name="other"/>) apart along <see cref="Contact.Normal"/> by their
-    /// relative inverse mass, applies a mass-weighted impulse for the along-normal velocity
-    /// response (using <paramref name="restitution"/>), then damps the tangential (along-surface)
-    /// velocity component via Coulomb friction (using <paramref name="friction"/>), before
-    /// recording the resulting <see cref="ContactType"/> on both sides from
+    /// relative inverse mass (always), then - only while the pair is still actually approaching
+    /// along <see cref="Contact.Normal"/> - applies a mass-weighted impulse for the along-normal
+    /// velocity response (using <paramref name="restitution"/>) and damps the tangential
+    /// (along-surface) velocity component via Coulomb friction (using <paramref name="friction"/>),
+    /// before recording the resulting <see cref="ContactType"/> on both sides from
     /// <see cref="Contact.Normal"/>'s sign. When <paramref name="otherInverseMass"/> is 0 (an
     /// immovable solid), <paramref name="body"/> alone absorbs the full position correction and
     /// velocity response; otherwise both sides share it by their relative inverse mass.
     /// </summary>
+    /// <remarks>
+    /// A rectangle pair can be reported overlapping by <see cref="TryFindContact"/> even on a
+    /// frame where the two bodies are already moving apart along that same normal - e.g. a
+    /// leftover sliver of overlap against a solid's corner, still detected the instant after
+    /// <paramref name="body"/> has already launched away from it (a jump taken immediately beside
+    /// a slightly higher, tightly adjacent platform is the case that surfaced this). The velocity
+    /// response is only ever meant to arrest an approach, never to react to a contact that is
+    /// already resolving itself via the bodies' own existing motion - applying it anyway would
+    /// inject an extra, unwanted velocity kick (e.g. an unearned second jump boost) on top of
+    /// whatever motion already separated them. Position correction alone is unconditional and
+    /// always applied, since any actual overlap depth still needs resolving regardless of which
+    /// way the bodies are currently moving.
+    /// </remarks>
     /// <param name="otherContactTarget">
     /// The <see cref="Body2D"/> to record the reciprocal <see cref="ContactType"/> on - the solid
     /// itself, or <paramref name="other"/> cast to <see cref="Body2D"/>.
@@ -569,9 +687,28 @@ public class CollisionSystem
         }
 
         // Along-normal velocity response: a mass-weighted impulse along Normal, using the pair's
-        // combined restitution.
+        // combined restitution - but only while the two bodies are actually still approaching
+        // each other along Normal (normalRelativeSpeed < 0: body's own velocity relative to
+        // other's still points from other toward body's pre-correction side, the opposite of the
+        // separation direction). Skipping the impulse once normalRelativeSpeed >= 0 (already
+        // separating, or exactly grazing) matters because a rectangle pair can still be reported
+        // as overlapping (e.g. a leftover sliver of overlap against a solid corner) on the very
+        // frame body has already launched away from it - most visibly a jump taken immediately
+        // beside a slightly higher, tightly adjacent platform, where the player's rect still
+        // clips that platform's corner. Applying the ordinary impulse formula there anyway would
+        // treat that stale, separating contact as a fresh landing and inject an extra unwanted
+        // velocity kick on top of the jump - it is only ever correct to apply this impulse to
+        // actually arrest an approach, never to a contact that's already resolving itself via the
+        // bodies' own existing motion. Position correction above still always runs unconditionally
+        // so any actual overlap depth is still resolved.
         var relativeVelocity = body.Velocity - otherVelocity;
         var normalRelativeSpeed = relativeVelocity.X * contact.Normal.X + relativeVelocity.Y * contact.Normal.Y;
+        if (normalRelativeSpeed >= 0)
+        {
+            RecordContact(body, otherContactTarget, contact.Normal);
+            return;
+        }
+
         var normalImpulse = -(1.0 + restitution) * normalRelativeSpeed / totalInverseMass;
         body.Velocity += contact.Normal * (normalImpulse * bodyInverseMass);
         if (other is not null)

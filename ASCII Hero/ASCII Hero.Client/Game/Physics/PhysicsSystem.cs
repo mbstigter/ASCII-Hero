@@ -106,6 +106,24 @@ public class PhysicsSystem
             player.SuppressHangUntilClear = false;
         }
 
+        // Swim: medium-based, not reach-based (see ISwimmerBody's own doc comment) - there is no
+        // "touching" flag to consult, since Body2D.CurrentMedium is already resolved fresh every
+        // frame for every body regardless. Mirrors climbing's deliberate-press engagement (not
+        // hanging's automatic grab): a directional key must actually be held while submerged.
+        // Grounded/climbing/hanging all take priority and preempt swim entirely - a solid floor
+        // stays solid underwater, and a ladder/pipe's own capability check is independent of
+        // medium, so this only ever engages once none of those apply.
+        if (player.IsSwimming && (!IsSwimmableMedium(player.CurrentMedium) || player.IsGrounded || player.IsClimbing || player.IsHanging))
+        {
+            player.IsSwimming = false;
+        }
+        else if (!player.IsSwimming && !player.IsGrounded && !player.IsClimbing && !player.IsHanging
+            && IsSwimmableMedium(player.CurrentMedium)
+            && (input.IsLeftPressed || input.IsRightPressed || input.IsUpPressed || input.IsDownPressed))
+        {
+            player.IsSwimming = true;
+        }
+
         // A single, structured up/down pose ladder, deliberately mirroring floor and hanging
         // as inverses of each other rather than two unrelated sets of key handling:
         //   Floor:    Up -> Walk (stand up from Crawl); Down -> Crawl (crouch down from Walk)
@@ -209,9 +227,11 @@ public class PhysicsSystem
         // only ever being able to leave via a jump; while hanging from a pipe/bar, lateral
         // movement uses its own dedicated (and slower still while Clambering) speed rather than
         // reusing the ground Walk/Crawl speeds, since swinging/shimmying along a hangable surface
-        // is its own distinct kind of locomotion.
+        // is its own distinct kind of locomotion. While swimming, lateral movement uses its own
+        // dedicated horizontal swim speed for the same reason.
         var horizontalSpeed = player.IsClimbing ? GameDefaults.ClimbHorizontalSpeed
             : player.IsHanging ? (player.IsClambering ? GameDefaults.ClamberSpeed : GameDefaults.HangSpeed)
+            : player.IsSwimming ? GameDefaults.SwimHorizontalSpeed
             : moveSpeed;
         // Target velocity is expressed relative to whatever solid the player is currently
         // grounded on (see GetGroundVelocityX) rather than an absolute world-frame speed: without
@@ -219,9 +239,9 @@ public class PhysicsSystem
         // WalkForce (scaled by WalkForceMultiplier, deliberately strong so input feels responsive)
         // would then fight CollisionSystem's friction-based drag pulling the player toward the
         // platform's own velocity every single frame - the two forces fighting is what made the
-        // player appear unable to ride a horizontally moving platform at all. Climbing/hanging
-        // have no such platform-carry concept, so their target speed stays absolute.
-        var groundVelocityX = player.IsClimbing || player.IsHanging ? 0.0 : player.GetSurfaceVelocityX();
+        // player appear unable to ride a horizontally moving platform at all. Climbing/hanging/
+        // swimming have no such platform-carry concept, so their target speed stays absolute.
+        var groundVelocityX = player.IsClimbing || player.IsHanging || player.IsSwimming ? 0.0 : player.GetSurfaceVelocityX();
         var targetVelocityX = groundVelocityX;
         if (input.IsLeftPressed)
         {
@@ -231,7 +251,7 @@ public class PhysicsSystem
         {
             targetVelocityX += horizontalSpeed;
         }
-        if (!player.IsGrounded && !player.IsClimbing && !player.IsHanging && !input.IsLeftPressed && !input.IsRightPressed)
+        if (!player.IsGrounded && !player.IsClimbing && !player.IsHanging && !player.IsSwimming && !input.IsLeftPressed && !input.IsRightPressed)
         {
             // Airborne with no horizontal key held: target the player's own current velocity
             // rather than groundVelocityX (which is always 0 here - GetSurfaceVelocityX has
@@ -252,6 +272,10 @@ public class PhysicsSystem
         // just Left/Right key state, with no platform-carry reference frame or velocity involved
         // at all, so facing reflects only what the player is actually trying to do this frame.
         player.MoveIntentX = input.IsLeftPressed ? -1.0 : input.IsRightPressed ? 1.0 : 0.0;
+        // Raw up/down input intent for UpdatePose's climbing facing (see Body2D.MoveIntentY) -
+        // the vertical counterpart to MoveIntentX above, for exactly the same reason: the climb
+        // motor's velocity only ever asymptotically approaches zero, never reaching it exactly.
+        player.MoveIntentY = input.IsUpPressed ? -1.0 : input.IsDownPressed ? 1.0 : 0.0;
 
         // Vertical target speed for the same mass-scaled motor force: straight up/down at a
         // fixed climb speed while IsClimbing (gravity already suspended via
@@ -285,6 +309,30 @@ public class PhysicsSystem
         else if (player.IsHanging)
         {
             targetVelocityY = 0;
+            player.RemoveContact(ContactType.SurfaceBottom);
+        }
+        else if (player.IsSwimming)
+        {
+            // Up/down while swimming is vertical thrust (depth control), not a distinct pose.
+            // Unlike climbing/hanging, gravity is NOT suspended while swimming (see
+            // Player2D.GravityAffected) - buoyancy/drag (IMediumAffected, always-on) already
+            // offsets it, the same way it does for any other immersed body. With no Up/Down
+            // held, the target is the player's own current velocity (motor contributes ~0 net
+            // force), so gravity/buoyancy alone govern idle vertical drift - mirroring the
+            // airborne "no horizontal key held" case above. With Up/Down held, the target is a
+            // fixed absolute speed (0 +/- SwimVerticalSpeed), exactly like climbing's vertical
+            // target above - NOT relative to the current (already-moving) velocity, which would
+            // recompute a moving goalpost every frame and never actually converge, snowballing
+            // into runaway speed instead of the intended bounded SwimVerticalSpeed.
+            targetVelocityY = velocity.Y;
+            if (input.IsUpPressed)
+            {
+                targetVelocityY = -GameDefaults.SwimVerticalSpeed;
+            }
+            if (input.IsDownPressed)
+            {
+                targetVelocityY = GameDefaults.SwimVerticalSpeed;
+            }
             player.RemoveContact(ContactType.SurfaceBottom);
         }
         else
@@ -377,12 +425,80 @@ public class PhysicsSystem
         return Math.Max(scale, PhysicsConstants.MinMediumForceScale);
     }
 
-    private static Assets.Material ResolveCurrentMedium(World2D world, IPhysicsBody body)
+    /// <summary>
+    /// Whether <paramref name="medium"/> is dense/viscous enough to swim in - the medium-based
+    /// detection <see cref="World.ISwimmerBody"/> keys off (see <see cref="Step"/>'s swim
+    /// engage/disengage logic), analogous to how <see cref="Body2D.IsClimbable"/>/
+    /// <see cref="Body2D.IsHangable"/> key climbing/hanging off a specific surface instead. A
+    /// medium qualifies if it clears either <see cref="PhysicsConstants.SwimMediumMinDensity"/>
+    /// or <see cref="PhysicsConstants.SwimMediumMinViscosity"/> (not both) - see those constants'
+    /// own doc comments for why an "either" rule was chosen.
+    /// </summary>
+    internal static bool IsSwimmableMedium(Assets.Material medium) =>
+        medium.Density >= PhysicsConstants.SwimMediumMinDensity || medium.Viscosity >= PhysicsConstants.SwimMediumMinViscosity;
+
+    /// <summary>
+    /// Resolves the medium a body at <paramref name="body"/>'s current collision rectangles is
+    /// immersed in this frame, together with how much of the body's own vertical extent is
+    /// actually submerged in that winning material - a value in <c>[0, 1]</c>, used to scale
+    /// buoyancy/drag proportionally to submersion depth (see <see cref="StepMovingBodyWithForces"/>)
+    /// rather than applying full-body buoyancy the instant any single cell overlaps a medium
+    /// volume at all. Without this, a body merely grazing a water surface received exactly the
+    /// same upward force as one fully submerged, wildly overshooting the true equilibrium point
+    /// every frame near the surface and producing a visible bounce (observed both on a floating
+    /// ball and, once swimming existed, as player pose flicker at the waterline). At fraction 1.0
+    /// (fully submerged) this reduces to exactly the previous full-strength behavior, so
+    /// already-submerged locomotion (walking/swimming underwater) is unaffected.
+    ///
+    /// The winning material is still chosen exactly as before (highest-<see cref="Assets.Material.Density"/>
+    /// overlapping volume wins on a tie, deterministic regardless of placement order). The
+    /// submerged fraction is then computed only from candidates resolving to that same winning
+    /// material: each such candidate's actual overlapped vertical extent against the body (via
+    /// <see cref="Physics.Rect.VerticalOverlap"/>, over every rect pair - so a body's whole
+    /// silhouette, not just its topmost/bottommost point, contributes) is merged into a single
+    /// covered-interval union (so several stacked/adjacent placements of the same medium don't
+    /// double-count their overlap), then divided by the body's own overall bounding-box height.
+    /// When no placed medium volume overlaps at all, the body is resolved as fully immersed
+    /// (fraction 1.0) in the default "Air" fallback rather than fraction 0.0 - Air is the ambient
+    /// substance filling all otherwise-unoccupied space, not a bounded level-authored volume with
+    /// edges a body can be only partially submerged past, so its own (low but nonzero) Viscosity
+    /// drag keeps applying continuously everywhere outside a denser placed volume, exactly as it
+    /// always did before submerged-fraction scaling was introduced.
+    /// </summary>
+    private static (Assets.Material Medium, double SubmergedFraction) ResolveCurrentMedium(World2D world, IPhysicsBody body)
     {
         var resolved = world.Materials.Get("Air");
+        Body2D? resolvedCandidate = null;
         foreach (var candidate in world.Objects)
         {
             if (!candidate.IsStatic || !candidate.IsPassable)
+            {
+                continue;
+            }
+
+            // EffectInstance2D sets IsPassable purely so a cosmetic effect (e.g. a killed
+            // enemy's persisting "crumble" husk) never blocks movement - it is not a
+            // level-design ambient-medium volume the way a placed Water/BodyOfWater section
+            // is, and never should be treated as one just because it happens to satisfy the
+            // same IsStatic/IsPassable check. Without this exclusion, a killable hazard's own
+            // (often fairly dense, e.g. Plant) material would make its leftover husk act as a
+            // dense medium the moment the player merely overlaps its footprint, producing
+            // unintended buoyancy (e.g. an oddly high jump) that has nothing to do with the
+            // husk's purely decorative role.
+            if (candidate is World.EffectInstance2D)
+            {
+                continue;
+            }
+
+            // Likewise, IsClimbable/IsHangable terrain (a ladder's rungs, a pipe/bar) is
+            // structural - something gripped/hung from - not a substance the player is ever
+            // meant to be immersed in, regardless of whatever material it's been given (e.g.
+            // for its render color, or simply because a future asset's DefaultMaterial isn't
+            // deliberately set to a zero-density placeholder the way Ladder_settings.ini's
+            // currently is). Excluded explicitly rather than relying on that being density-0
+            // by accident, which would silently break again the moment any climbable/hangable
+            // asset is given a real (denser-than-Air) material for an unrelated reason.
+            if (candidate.IsClimbable || candidate.IsHangable)
             {
                 continue;
             }
@@ -396,10 +512,110 @@ public class PhysicsSystem
             if (Overlaps(body, candidate))
             {
                 resolved = candidateMaterial;
+                resolvedCandidate = candidate;
             }
         }
 
-        return resolved;
+        if (resolvedCandidate is null)
+        {
+            // No placed medium volume overlaps at all, so resolved is still the "Air" fallback
+            // assigned above - not a level-authored volume with edges a body can be partially
+            // submerged past, but the ambient substance filling all otherwise-unoccupied space.
+            // A body is therefore always fully immersed in it (fraction 1.0, not 0.0), so Air's
+            // own Viscosity drag (see MaterialLibrary.ini) keeps applying continuously in open
+            // air exactly as it always did, rather than silently vanishing outside any placed
+            // medium volume's footprint.
+            return (resolved, 1.0);
+        }
+
+        // Second pass: now that the winning material is known, gather every qualifying
+        // candidate resolving to that same material (not just the single one that happened to
+        // win the tie-break above) and merge their vertical overlap against the body into one
+        // covered-interval union, so the submerged fraction reflects the body's true total
+        // overlapped extent rather than just one arbitrarily-chosen candidate's.
+        var bodyTop = double.MaxValue;
+        var bodyBottom = double.MinValue;
+        foreach (var rect in body.CollisionRects)
+        {
+            bodyTop = Math.Min(bodyTop, rect.Top);
+            bodyBottom = Math.Max(bodyBottom, rect.Bottom);
+        }
+
+        var bodyHeight = bodyBottom - bodyTop;
+        if (bodyHeight <= 0)
+        {
+            return (resolved, 1.0);
+        }
+
+        var coveredIntervals = new List<(double Top, double Bottom)>();
+        foreach (var candidate in world.Objects)
+        {
+            if (!candidate.IsStatic || !candidate.IsPassable || candidate is World.EffectInstance2D
+                || candidate.IsClimbable || candidate.IsHangable)
+            {
+                continue;
+            }
+
+            var candidateMaterial = world.Materials.Get(candidate.MaterialName);
+            if (!candidateMaterial.Equals(resolved) || !Overlaps(body, candidate))
+            {
+                continue;
+            }
+
+            foreach (var bodyRect in body.CollisionRects)
+            {
+                foreach (var candidateRect in candidate.CollisionRects)
+                {
+                    var overlapTop = Math.Max(Math.Max(bodyRect.Top, candidateRect.Top), bodyTop);
+                    var overlapBottom = Math.Min(Math.Min(bodyRect.Bottom, candidateRect.Bottom), bodyBottom);
+                    if (overlapBottom > overlapTop)
+                    {
+                        coveredIntervals.Add((overlapTop, overlapBottom));
+                    }
+                }
+            }
+        }
+
+        var submergedHeight = MergeIntervalLength(coveredIntervals);
+        var submergedFraction = Math.Clamp(submergedHeight / bodyHeight, 0.0, 1.0);
+        return (resolved, submergedFraction);
+    }
+
+    /// <summary>
+    /// Merges a set of possibly-overlapping <c>[Top, Bottom)</c> vertical intervals and returns
+    /// the total length they cover, without double-counting overlapping regions - used by
+    /// <see cref="ResolveCurrentMedium"/> so several stacked/adjacent placements of the same
+    /// medium material don't inflate the submerged fraction beyond the body's own true covered
+    /// extent.
+    /// </summary>
+    private static double MergeIntervalLength(List<(double Top, double Bottom)> intervals)
+    {
+        if (intervals.Count == 0)
+        {
+            return 0.0;
+        }
+
+        intervals.Sort((a, b) => a.Top.CompareTo(b.Top));
+        var totalLength = 0.0;
+        var currentTop = intervals[0].Top;
+        var currentBottom = intervals[0].Bottom;
+        for (var i = 1; i < intervals.Count; i++)
+        {
+            var (top, bottom) = intervals[i];
+            if (top <= currentBottom)
+            {
+                currentBottom = Math.Max(currentBottom, bottom);
+            }
+            else
+            {
+                totalLength += currentBottom - currentTop;
+                currentTop = top;
+                currentBottom = bottom;
+            }
+        }
+
+        totalLength += currentBottom - currentTop;
+        return totalLength;
     }
 
     /// <summary>Same overlap test used by <see cref="CollisionSystem"/> - true if any of <paramref name="a"/>'s collision rects overlap any of <paramref name="b"/>'s.</summary>
@@ -512,7 +728,9 @@ public class PhysicsSystem
         // (none currently exist, but the cast stays defensive); such a body simply never receives
         // any medium-based scaling/force below.
         var mediumBody = body as Body2D;
-        var medium = mediumBody is not null ? ResolveCurrentMedium(world, body) : Assets.MaterialLibrary.Undefined;
+        var (medium, submergedFraction) = mediumBody is not null
+            ? ResolveCurrentMedium(world, body)
+            : (Assets.MaterialLibrary.Undefined, 0.0);
         if (mediumBody is not null)
         {
             mediumBody.CurrentMedium = medium;
@@ -558,9 +776,14 @@ public class PhysicsSystem
             // resolved density (falling back to 1.0 for an unconfigured body, same rationale
             // as the mass fallback above) to avoid a divide-by-zero for a massless/density-
             // less body.
+            // Both buoyancy and drag below are scaled by submergedFraction (see
+            // ResolveCurrentMedium's own doc comment) so a body only grazing a medium's
+            // surface - rather than fully immersed in it - receives proportionally less of
+            // each force, instead of the previous full-strength-on-any-overlap behavior that
+            // caused surface-floating bodies to visibly bounce.
             var bodyDensity = mediumBody.Density > 0 ? mediumBody.Density : 1.0;
             var volume = mass / bodyDensity;
-            netForce.Y -= medium.Density * volume * world.Gravity;
+            netForce.Y -= medium.Density * volume * world.Gravity * submergedFraction;
 
             // Drag: a quadratic (velocity-squared) velocity-opposing force scaled by the
             // medium's Viscosity and this body's own frontal area facing the direction of
@@ -578,8 +801,8 @@ public class PhysicsSystem
             // area) to keep the two axes independent, consistent with every other force here.
             // Continuous while immersed, independent of any solid contact, distinct from
             // Coulomb friction (which only acts at contact time).
-            netForce.X -= medium.Viscosity * body.Size.Y * body.Velocity.X * Math.Abs(body.Velocity.X);
-            netForce.Y -= medium.Viscosity * body.Size.X * body.Velocity.Y * Math.Abs(body.Velocity.Y);
+            netForce.X -= medium.Viscosity * body.Size.Y * body.Velocity.X * Math.Abs(body.Velocity.X) * submergedFraction;
+            netForce.Y -= medium.Viscosity * body.Size.X * body.Velocity.Y * Math.Abs(body.Velocity.Y) * submergedFraction;
         }
 
         var acceleration = new Vector2D(netForce.X / mass, netForce.Y / mass);

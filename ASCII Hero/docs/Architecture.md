@@ -120,7 +120,12 @@ core's own force/collision/medium math.
   opposing gravity) and drag (a quadratic, velocity-squared force scaled by
   the medium's `Viscosity`, physically correct for fluid drag at ordinary
   speeds, and by the body's own frontal area, so a bigger body of the same
-  material feels proportionally more resistance than a smaller one). This is
+  material feels proportionally more resistance than a smaller one). Both
+  terms are further scaled by the body's own submerged fraction (how much
+  of its vertical extent actually overlaps the resolved medium volume, 0
+  to 1), so a body only grazing a medium's surface receives proportionally
+  less force than one fully submerged — this is what keeps a
+  surface-floating body from visibly bouncing at the waterline. This is
   deliberately distinct from `Friction`/`Restitution`, which only act at
   solid-contact time — buoyancy/drag act continuously while immersed,
   independent of any contact.
