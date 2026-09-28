@@ -27,7 +27,7 @@ public interface IPatrolBody : IPhysicsBody
     /// (called once per frame by <see cref="Physics.PhysicsSystem"/> before <see cref="PatrolForce"/>
     /// is read), flipping at either end of that axis's own bounds. <paramref name="gravity"/> is the
     /// world's own gravity acceleration, needed so a vertically-patrolling body can cancel it while
-    /// climbing (see <see cref="MovingEnemy2D.UpdatePatrolDirection"/>).
+    /// climbing (see <see cref="DynamicHazard2D.UpdatePatrolDirection"/>).
     /// </summary>
     void UpdatePatrolDirection(double gravity);
 

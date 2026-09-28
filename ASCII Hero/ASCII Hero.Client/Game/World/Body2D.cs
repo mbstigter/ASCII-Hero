@@ -8,7 +8,7 @@ namespace ASCII_Hero.Client.Game.World;
 /// backed by a loaded sprite frame (characters/foregroundcolors/backgroundcolors/materials
 /// grid). Size and collision shape are both derived once from the frame's actual grid data via
 /// <see cref="CollisionShapeBuilder"/>, so every sprite-backed object - the player, static
-/// platforms, enemies, collectables - shares one loading/shape-derivation path instead of each
+/// platforms, hazards, collectables - shares one loading/shape-derivation path instead of each
 /// subclass repeating it.
 /// </summary>
 public abstract class Body2D
@@ -202,7 +202,7 @@ public abstract class Body2D
     /// This frame's raw horizontal move/patrol intent (-1 = left, 0 = none/holding position,
     /// +1 = right), owned and set by whatever drives this body's own movement decisions - the
     /// player's input (<see cref="Player2D"/>, from <c>InputState.IsLeftPressed</c>/
-    /// <c>IsRightPressed</c>) or an AI's patrol direction (<see cref="MovingEnemy2D"/>, from its
+    /// <c>IsRightPressed</c>) or an AI's patrol direction (<see cref="DynamicHazard2D"/>, from its
     /// own patrol-direction flag) - and read generically by <see cref="ResolveHorizontalFacing()"/>.
     /// Deliberately independent of <see cref="IPhysicsBody.Velocity"/>: velocity is downstream of
     /// physics (platform carry, residual momentum, impulses) and is not a reliable proxy for
@@ -434,7 +434,7 @@ public abstract class Body2D
             else if (Clip.AnimationMode == AnimationMode.Once)
             {
                 // Advance toward the last frame and then clamp there - unlike Loop, never wraps
-                // back to the first frame, so a one-shot transformation (e.g. a killed enemy's
+                // back to the first frame, so a one-shot transformation (e.g. a killed hazard's
                 // crumble-to-husk clip) visibly plays through once and then holds indefinitely.
                 if (_animationFrameIndex < Clip.Frames.Count - 1)
                 {
@@ -510,7 +510,7 @@ public abstract class Body2D
     /// Resolves a left/right <see cref="Facing"/> from this body's own <see cref="MoveIntentX"/> -
     /// the shared rule used by every horizontally-facing body (<see cref="Player2D"/> while
     /// walking/crawling/hanging, and any <see cref="IPosedBody"/> moving body such as
-    /// <see cref="MovingEnemy2D"/>) so this mapping is defined exactly once rather than
+    /// <see cref="DynamicHazard2D"/>) so this mapping is defined exactly once rather than
     /// re-implemented per body type. Deliberately intent-based rather than velocity-based - see
     /// <see cref="MoveIntentX"/>'s own doc comment for why.
     /// </summary>
@@ -525,7 +525,7 @@ public abstract class Body2D
     /// platform has an absolute <see cref="Velocity"/>.X matching the platform's own speed, which
     /// would otherwise misreport as "walking"/"patrolling" in that direction (see
     /// <see cref="ResolveHorizontalFacing"/>) or fight the platform's carry as if it were an
-    /// unwanted push (see <see cref="MovingEnemy2D.UpdatePatrolDirection"/>). Picks the first
+    /// unwanted push (see <see cref="DynamicHazard2D.UpdatePatrolDirection"/>). Picks the first
     /// grounded contact that is itself an <see cref="IPhysicsBody"/> with a real velocity (e.g.
     /// <see cref="KinematicObject2D"/>); ordinary stationary terrain has none, so this falls back
     /// to 0 exactly as it would without a moving platform involved at all.

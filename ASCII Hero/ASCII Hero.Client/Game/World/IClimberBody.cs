@@ -8,7 +8,7 @@ namespace ASCII_Hero.Client.Game.World;
 /// this without also being able to hang (see <see cref="IHangerBody"/>) - the two mechanics are
 /// conceptually independent even though <see cref="Player2D"/> currently implements both.
 /// Only <see cref="Player2D"/> implements this today, but nothing here is player-specific: any
-/// future climbing-capable body (an enemy that patrols up/down a ladder) can opt in the same way.
+/// future climbing-capable body (a hazard that patrols up/down a ladder) can opt in the same way.
 /// </summary>
 public interface IClimberBody : IPhysicsBody
 {

@@ -221,7 +221,7 @@ public class PhysicsSystem
         // velocity toward the target walk/crawl/climb/hang speed (see UpdateWalkForce and
         // IWalkForceBody), summed into the net force alongside gravity by
         // StepMovingBodyWithForces - consistent with every other body's force-based movement
-        // (see MovingEnemy2D.PatrolForce) rather than a bespoke direct velocity-assignment path.
+        // (see DynamicHazard2D.PatrolForce) rather than a bespoke direct velocity-assignment path.
         // While climbing a ladder, horizontal input still applies (at a slower, deliberate side
         // speed) so the player can step off sideways onto an adjacent floor or ladder rather than
         // only ever being able to leave via a jump; while hanging from a pipe/bar, lateral
@@ -400,7 +400,7 @@ public class PhysicsSystem
     /// Maps a medium's <see cref="Assets.Material.Viscosity"/> to a multiplier in
     /// <c>[MinMediumForceScale, 1.0]</c>, applied to a body's own actively-generated
     /// force/impulse (walk/patrol motor force, jump-off impulses - see
-    /// <see cref="UpdateWalkForce"/>, <see cref="MovingEnemy2D.UpdatePatrolDirection"/>, and the
+    /// <see cref="UpdateWalkForce"/>, <see cref="DynamicHazard2D.UpdatePatrolDirection"/>, and the
     /// jump-off sites in <see cref="Step"/>) - never the passive buoyancy/drag forces already
     /// computed in <see cref="StepMovingBodyWithForces"/>, which remain solely density/viscosity
     /// driven as before. Deliberately keyed on <see cref="Assets.Material.Viscosity"/> alone, not
@@ -477,7 +477,7 @@ public class PhysicsSystem
             }
 
             // EffectInstance2D sets IsPassable purely so a cosmetic effect (e.g. a killed
-            // enemy's persisting "crumble" husk) never blocks movement - it is not a
+            // hazard's persisting "crumble" husk) never blocks movement - it is not a
             // level-design ambient-medium volume the way a placed Water/BodyOfWater section
             // is, and never should be treated as one just because it happens to satisfy the
             // same IsStatic/IsPassable check. Without this exclusion, a killable hazard's own
@@ -639,8 +639,8 @@ public class PhysicsSystem
     /// Recomputes <see cref="Player2D.WalkForce"/> as a proportional "motor" force converging
     /// <paramref name="player"/>'s current velocity toward (<paramref name="targetVelocityX"/>,
     /// <paramref name="targetVelocityY"/>) - the walk/crawl/climb/hang speed the current input
-    /// calls for - mirrors <see cref="MovingEnemy2D.UpdatePatrolDirection"/>'s role for a
-    /// patrolling enemy, but proportional to the remaining speed gap (scaled by
+    /// calls for - mirrors <see cref="DynamicHazard2D.UpdatePatrolDirection"/>'s role for a
+    /// patrolling hazard, but proportional to the remaining speed gap (scaled by
     /// <see cref="Player2D.WalkForceMultiplier"/>, reduced by <see cref="GameDefaults.AirControlMultiplier"/>
     /// while airborne) rather than a fixed-direction force, so the
     /// player still promptly reaches and then holds the target speed while grounded - the "no
@@ -817,7 +817,7 @@ public class PhysicsSystem
             body.Position.Y + velocity.Y * deltaSeconds);
 
         // Pose (see IPosedBody) is resolved last, after velocity/position are both finalized for
-        // this frame, so a velocity-derived facing (e.g. MovingEnemy2D's) reflects this frame's
+        // this frame, so a velocity-derived facing (e.g. DynamicHazard2D's) reflects this frame's
         // actual resolved motion rather than a pre-integration estimate.
         if (body is IPosedBody posedBody)
         {

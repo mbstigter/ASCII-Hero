@@ -83,7 +83,7 @@ palettes, materials) from disk/HTTP into in-memory game objects.
 - **`SpriteLoader`** - loads one sprite asset's settings and requested clips
   into a `SpriteAsset`, combining `AssetPathResolver` (folder resolution) and
   `AssetTextReader` (grid parsing) into the one loading path reused by every
-  sprite-backed object (player, platforms, enemies, collectables alike). An
+  sprite-backed object (player, platforms, hazards, collectables alike). An
   asset's optional `[ClipFolders]` section (see docs/AssetFormat.md §2.7)
   lets a busy multi-stance asset (e.g. `Player`) group its clips' files into
   per-stance subfolders instead of one flat folder - purely a file-layout
@@ -156,10 +156,13 @@ The live game state and the entity types that make it up.
 	horizontal "motor" force, computed each frame by `PhysicsSystem.
 	UpdateWalkForce` - see Physics below). Nothing here is player-specific -
 	all of these are ordinary capability interfaces any future body (e.g. a
-	climbing/hanging enemy) could implement the same way.
+	climbing/hanging hazard) could implement the same way.
   - `StaticObject2D` - solid, static terrain (platforms, walls, decoration).
-  - `StaticEnemy2D` - a non-moving hazard (e.g. spikes) that can optionally
+  - `StaticHazard2D` - a non-moving hazard (e.g. spikes) that can optionally
 	be "killable" and can trigger a cosmetic effect on contact.
+  - `KinematicHazard2D` - a `KinematicObject2D` that is also a hazard (e.g.
+    a saw blade or laser); reuses all kinematic motion/patrol behavior and adds
+    the same optional killable/effect capabilities as `StaticHazard2D`.
   - `DynamicObject2D` - a non-player object driven by velocity and,
 	optionally, gravity, bouncing off world bounds/platforms according to its
 	restitution (e.g. the bouncing ball).
@@ -175,9 +178,9 @@ The live game state and the entity types that make it up.
 	`PatrolMinY`/`PatrolMaxY`/`PatrolSpeedY` - either, both, or neither axis
 	may be configured) at a constant, prescribed velocity - a distinct scheme
 	from `IPatrolBody`'s force-based, gravity-integrated patrol used by
-	`MovingEnemy2D`, chosen to leave room for a future non-linear (e.g.
+	`DynamicHazard2D`, chosen to leave room for a future non-linear (e.g.
 	rectangular-circuit) motion path without redesigning the body.
-  - `MovingEnemy2D` - an AI-controlled hazard that moves and collides exactly
+  - `DynamicHazard2D` - an AI-controlled hazard that moves and collides exactly
 	like a `DynamicObject2D`; optionally patrols back and forth independently
 	on the X and/or Y axis via `IPatrolBody` (see below - a body configured
 	with both axes patrols diagonally), and implements `IPosedBody` to face
@@ -213,7 +216,7 @@ The live game state and the entity types that make it up.
 	axis between `PatrolMinX`/`PatrolMaxX` and/or `PatrolMinY`/`PatrolMaxY`
 	under its own mass-scaled force, recomputed each frame via
 	`UpdatePatrolDirection(gravity)` and summed into `PhysicsSystem`'s force
-	accumulator alongside gravity (see `MovingEnemy2D`'s `Patrol` placement key,
+	accumulator alongside gravity (see `DynamicHazard2D`'s `Patrol` placement key,
 	docs/AssetFormat.md §3.4). A body configured with both axes patrols
 	diagonally - each axis bounces between its own bounds on its own schedule.
 	Vertical patrol applies one further rule when `IGravityAffected` is true:
@@ -228,7 +231,7 @@ The live game state and the entity types that make it up.
 	`IPatrolBody.UpdatePatrolDirection()` while `PhysicsSystem` only calls it
 	at the right moment). `Body2D.ResolveHorizontalFacing(velocityX)` is the
 	one shared rule every horizontally-facing implementer (`Player2D`,
-	`MovingEnemy2D`) derives `Facing.Left`/`Right`/`Idle` from.
+	`DynamicHazard2D`) derives `Facing.Left`/`Right`/`Idle` from.
   - `IHazardBody` - damages a body on contact (marker only; the actual damage
 	is applied by `CollisionSystem.ResolveHazardsAndCollectables`, which
 	deducts 1 from `Player2D.Health` on the first frame of a fresh, non-fatal
@@ -250,9 +253,10 @@ The live game state and the entity types that make it up.
 	that same body's own sprite asset. `CollisionSystem`'s private
 	`SpawnEffect` helper can also spawn an explicit, call-site-chosen clip
 	independent of `EffectClipName` - used so the player can have more than
-	one distinct effect for different situations (e.g. `Player2D`'s ordinary
-	`EffectClipName` "spark" on a hazard hit vs. its own separate
-	`CheckpointEffectClipName` "happy" clip on reaching a `Checkpoint`) as
+	one distinct effect for different situations (e.g. `Player2D`'s
+	`HazardHitEffectClipName` "spark" on a hazard hit vs. its own separate
+	`CheckpointReachedEffectClipName` "happy" clip on reaching a `Checkpoint`;
+	`Player2D` is deliberately not an `IEffectTrigger`) as
 	independent, possibly-overlapping `EffectInstance2D`s, rather than being
 	limited to one fixed clip per body.
   - `IClimberBody` - can climb an `IsClimbable` surface (e.g. a ladder);
@@ -310,7 +314,7 @@ The live game state and the entity types that make it up.
   as a proportional "motor" force (both axes) converging `Velocity` toward
   whichever walk/crawl/climb/hang target velocity the current pose/input
   calls for - mirroring `IPatrolBody.PatrolForce`'s role for a patrolling
-  enemy, just proportional to the remaining speed gap rather than a fixed
+  hazard, just proportional to the remaining speed gap rather than a fixed
   direction, so the player still reaches (and then holds) the target speed
   promptly without overshooting or oscillating. Both `WalkForce` and
   `PatrolForce` are further scaled by `PhysicsSystem.ResolveMediumForceScale`,
@@ -395,15 +399,15 @@ The live game state and the entity types that make it up.
   terms since impulses here are resolved per-frame rather than as a
   continuous force). Combined with `PhysicsSystem` integrating that velocity
   into `Position` before `Resolve` runs each frame, this carries a resting
-  rider - the player included, now that its own horizontal velocity is
+  the player included, since its own horizontal velocity is
   force/mass-driven (see `IWalkForceBody` above) rather than overwritten
   from input every frame - along a moving platform on both axes with no
-  special-casing: the platform-carry gap this used to leave (a platform
+  the platform-carry gap (a platform
   displacing farther in one frame than a body's own velocity-matched motion
   keeps up with) is closed simply by the ordinary landing-snap correction
   re-running against the platform's current (already-moved) position every
-  frame - no separate re-seat/carry mechanism is needed on either axis (see
-  docs/Decisions.md for the two now-removed workarounds this replaced).
+  needed on either axis (see
+  docs/Decisions.md).
   Moving-body-vs-moving-body resolution
   (`ResolveAgainstMover`, sharing its math with the solid case via the same
   `ResolveAgainstOtherBody`/`ResolveContact`) splits position correction by
@@ -417,9 +421,9 @@ The live game state and the entity types that make it up.
   rectangle's own axis becomes the contact normal, every other overlapping
   rectangle is re-measured along that same normal, and the worst of those
   depths is what actually gets corrected/responded to via one call to
-  `ResolveContact` - see docs/Decisions.md for the two less-correct variants
-  this replaced (resolving every rectangle independently; resolving only the
-  deepest one and ignoring the rest). Both climbing and hanging touch checks
+  - see docs/Decisions.md for the two rejected variants
+  (resolving every rectangle independently; resolving only the
+  deepest one and ignoring the rest).
   share one generic snap-speed gate (a body moving too fast does not snap on,
   matching a jump arc's peak still needing to finish naturally rather than
   instantly catching on a passing platform/pipe/ladder); hanging additionally
@@ -440,9 +444,8 @@ The live game state and the entity types that make it up.
   pair on both sides as it resolves a landing (e.g. the rider gets
   `SurfaceBottom` against the solid, the solid gets `SurfaceTop` against the
   rider). `IPhysicsBody.IsGrounded` is a derived, read-only property
-  (`HasContact(ContactType.SurfaceBottom)`), not a stored mutable flag - see
-  docs/Decisions.md for why this replaced the earlier ordering-bug-prone
-  stored flag. The one exception is `PhysicsSystem` explicitly calling
+  see
+  docs/Decisions.md for why it is not a stored flag.
   `RemoveContact(ContactType.SurfaceBottom)` the instant a jump/climb/hang
   begins, so the derived state reflects "airborne" for that same frame
   rather than waiting for `Resolve`'s next contact pass. `Body2D.
@@ -546,7 +549,7 @@ The live game state and the entity types that make it up.
   static body first, then every non-static body - rather than in
   `world.Objects`' own order (just the placement grid's row-by-row scan
   order), so a static body (e.g. a passable body of water) can never paint
-  over a mover (a ball, the player, an enemy) that happens to be placed
+  over a mover (a ball, the player, a hazard) that happens to be placed
   earlier in the grid than it; `Passable` only ever affects collision, never
   draw order. An optional per-world foreground layer (`World2D.ForegroundChars`/
   `ForegroundFore`/`ForegroundBack`, mirroring the background layer but empty
@@ -649,8 +652,8 @@ The live game state and the entity types that make it up.
     previous call's `Task` to finish (see game-interop.js) - so a frame that
     spans a genuine async gap (in particular, `World2D.LoadAsync`'s real
     HTTP fetches while confirming a world) could otherwise be re-entered by
-    an overlapping `OnFrame` call before it finishes, which previously
-    manifested as a world's assets being loaded more than once / the
+    an overlapping `OnFrame` call before it finishes, which would
+    manifest as
     selection screen and gameplay both appearing to render at once. Two
     guards prevent this: a blanket `_isProcessingFrame` flag drops any
     `OnFrame` call that overlaps one still in progress, and `GameMode` is
@@ -743,7 +746,7 @@ large jumps after e.g. a tab switch):
    collectable with `EffectPersists = true`) spawn their pickup effect as a
    permanent husk in their place, the same way a killed hazard's effect can
    persist. `World2D.ApplyPendingRemovals`
-   (removes anything queued for removal - a picked-up collectable, a killed enemy, an expired
+   (removes anything queued for removal - a picked-up collectable, a killed hazard, an expired
    effect - deferred from the systems above so nothing mutates the object
    list mid-iteration) likewise runs after every fixed step, not just once
    at the end, so a later step's collision pass never sees a body that

@@ -60,7 +60,7 @@ DOM keyboard events.
 
 The physics system has one core (force integration, collision detection and
 resolution, ambient medium) shared by every body regardless of category, and
-a thin layer of per-category behavior (player input, enemy patrol AI, 
+a thin layer of per-category behavior (player input, hazard patrol AI, 
 kinematic platform scripting) that only ever plugs into that core by
 implementing a capability interface — it never reimplements or bypasses the
 core's own force/collision/medium math.
@@ -74,7 +74,7 @@ core's own force/collision/medium math.
   (`IPhysicsBody`, `IGravityAffected`, `IHazardBody`, `ICollectableBody`,
   `ICollectorBody`) rather than by concrete type or by maintaining separate
   per-category collections — adding a new object category (e.g. a moving
-  enemy) does not require touching every system's iteration logic.
+  hazard) does not require touching every system's iteration logic.
 - The world's own edges (bounds) act as a generic physical surface, handled
   uniformly for any moving body (player or dynamic object) rather than
   special-cased per type: dynamic objects bounce off them according to their
@@ -163,17 +163,14 @@ core's own force/collision/medium math.
   velocity (a grippy material carries the rider more than a slick one).
 - That velocity-matching, combined with `PhysicsSystem` integrating
   velocity into `Position` each frame *before* `CollisionSystem.Resolve`
-  runs, carries a resting body — the player included, since its own
-  horizontal velocity is now force/mass-driven rather than overwritten from
+  since its own
+  horizontal velocity is force/mass-driven
   input — along a moving platform on both axes with no special-casing: the
   ordinary landing-snap correction re-running against the platform's
   current (already-moved) position every frame closes the platform-carry
   gap on its own (a platform displacing farther in one frame than a body's
-  own velocity-matched motion keeps up with). Two earlier workarounds for
-  this gap — `CollisionSystem._groundedSolids` and a player-only horizontal
-  platform-carry hack, plus a since-removed `MaintainVerticalGroundedContact`
-  re-seat step — were provably made redundant by this and deleted outright
-  (see docs/Decisions.md).
+  No separate
+  carry or re-seat mechanism is needed (see docs/Decisions.md).
 - Hazard contact is resolved generically: any `IPhysicsBody` overlapping any
   `IHazardBody` in `World2D.Objects` is detected, with no concrete-type checks
   on either side. Hazard contact detection exists but does not yet apply any
@@ -181,7 +178,7 @@ core's own force/collision/medium math.
 - Collectable pickup is resolved similarly, but narrower: only a body
   implementing `ICollectorBody` (e.g. the player) overlapping an
   `ICollectableBody` triggers a pickup — a non-collector moving body (the
-  bouncing ball, an enemy) can physically collide with a collectable without
+  bouncing ball, a hazard) can physically collide with a collectable without
   consuming it. A picked-up collectable is queued for removal via
   `World2D.QueueRemoval` and actually removed from `Objects` once per frame via
   `World2D.ApplyPendingRemovals` — removal is always deferred to end-of-frame

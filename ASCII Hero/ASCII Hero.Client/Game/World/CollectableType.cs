@@ -20,7 +20,7 @@ public enum CollectableType
     /// <summary>
     /// Removed on pickup like <see cref="Health"/>/<see cref="Points"/>, but its own
     /// <see cref="Collectable2D.EffectPersists"/> effect remains in its place permanently as a
-    /// used marker (mirrors a killed <see cref="StaticEnemy2D"/>'s persistent husk). Also records
+    /// used marker (mirrors a killed <see cref="StaticHazard2D"/>'s persistent husk). Also records
     /// its position as <see cref="World2D.RespawnPoint"/>, consumed by <see cref="World2D.Respawn"/>.
     /// </summary>
     Checkpoint,

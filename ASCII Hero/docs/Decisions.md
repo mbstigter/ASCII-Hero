@@ -15,7 +15,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **Every moving body, including the player, moves via a mass-scaled force
   accumulator** (`PhysicsSystem.StepMovingBodyWithForces`), not per-body-type
   direct velocity assignment. The player's horizontal "motor" force
-  (`IWalkForceBody`/`UpdateWalkForce`) and an enemy's patrol force
+  (`IWalkForceBody`/`UpdateWalkForce`) and a hazard's patrol force
   (`IPatrolBody`) both plug into the same accumulator as gravity. Climbing/
   hanging are likewise continuous convergence forces; only jump-off (stand,
   ladder, hang-swing) remains a true one-time impulse (instantaneous
@@ -24,7 +24,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **Collision response is a genuine impulse-based normal force plus real
   Coulomb friction** (`CollisionSystem.ResolveContact`/`ApplyCoulombFriction`),
   generalized so an immovable solid acts as an infinite-mass second body -
-  replacing an earlier flat "multiply by `1 - friction`" approximation.
+  rather than a flat "multiply by `1 - friction`" approximation.
 - **`ResolveContact`'s along-normal velocity impulse (and its dependent
   friction response) only applies while the contacting pair is still
   actually approaching along the contact normal** (`normalRelativeSpeed < 0`)
@@ -79,8 +79,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   contact per overlapping rectangle.** The rectangle overlapping most deeply (by its own natural
   axis) defines that contact's normal; every other overlapping rectangle is then re-measured
   along that *same* normal axis, and the worst (largest) of those depths is what is actually
-  corrected/responded to, via one call to `ResolveContact`. Two earlier variants were each wrong
-  in an opposite direction, and both were tried and reverted here: (1) resolving every
+  Two rejected variants are each wrong
+  in an opposite direction: (1)
   overlapping rectangle fully and independently applied the along-normal velocity impulse more
   than once for what was really one physical contact - an unearned extra velocity kick (visible
   as inflated jump height) whenever a body's own shape has two rectangles overlapping the same
@@ -99,14 +99,11 @@ capture the "why" behind a decision without needing a lengthy narrative.
   is left for a later solver iteration, which re-detects fully fresh contacts against the body's
   just-corrected position rather than permanently ignoring it.
 - **A kinematic body** (`KinematicObject2D`) is static-for-collision-response
-
-  reference frame. This alone - no extra carry/re-seat mechanism - makes a
-
-
-  earlier stopgap workarounds for this (a horizontal-only "carry" hack keyed
-  off `_groundedSolids`, and a separate vertical re-seat step) were both
-  deleted once the player's own movement became force-based and made them
-  redundant.
+  (never pushed) but moves at a prescribed velocity, and a resting body
+  matches that velocity in the platform's reference frame. This alone - no
+  extra carry/re-seat mechanism - makes a resting rider follow a moving
+  platform on both axes, because the player's own movement is force-based
+  rather than overwritten from input.
 - **Contacts are tracked as explicit `ContactType` flags** per body
   (`Body2D.AddContact`/`HasContact`), snapshotted-and-cleared once per frame;
   `IPhysicsBody.IsGrounded` is derived from this (`HasContact(SurfaceBottom)`),
@@ -117,7 +114,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **Facing/patrol targets are resolved relative to the surface the body
   rests on** (`Body2D.GetSurfaceVelocityX`), not raw absolute velocity - this
   prevents a platform's own speed from visually flipping a rider's facing,
-  or making a patrolling enemy slide/drift on a fast-moving platform.
+  or making a patrolling hazard slide/drift on a fast-moving platform.
 - **Jumping keeps a reduced (not zero, not full) horizontal "air control"
   force**, so momentum at the moment of jump-off (including any platform
   carry) decays/steers gradually across the arc instead of snapping
@@ -174,7 +171,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   would double-count the same property for two unrelated effects) to a multiplier in
   `[MinMediumForceScale, 1.0]`, applied to `Player2D`'s `UpdateWalkForce` motor force and
   all three jump-off impulses (`WalkJumpSpeed`/`ClimbJumpSpeed`/`HangJumpSpeed`), and to
-  `MovingEnemy2D`'s `PatrolForce` (any `IMediumAffected` body that is also
+  `DynamicHazard2D`'s `PatrolForce` (any `IMediumAffected` body that is also
   `IWalkForceBody`/`IPatrolBody`). Uses each medium's raw `Viscosity` directly (not
   relative to any other medium's value) for pure, literal physical accuracy - even
   `Air`'s own small authored baseline (0.02, `Global/MaterialLibrary.ini`) applies a
@@ -193,8 +190,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   one-frame lag, inconsequential since medium rarely changes frame-to-frame.
 - **Physics/Collision run on a fixed timestep accumulator, not a variable/capped
   per-frame step** (`GameLoop.OnPlayingFrameAsync`'s `_physicsAccumulatorSeconds`,
-  `PhysicsConstants.FixedPhysicsStepSeconds`): an earlier "cap the step size and
-  sub-step to cover the frame" approach still let each step's size vary with
+  a "cap the step size and
+  sub-step to cover the frame" approach would let
   ordinary frame-rate jitter, which alone (independent of any oversized-single-step
   tunneling concern) was enough to visibly perturb collision/pose resolution right
   at a grounded/airborne boundary, since the exact instant contact is gained/lost
@@ -223,7 +220,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   the exact same body/collision/render pipeline as any sprite-backed object.
   `Repeat`/`TileAxis` don't apply to these (no smaller authored unit to tile).
 - **The color palette is 36 codes** (`0`-`9`, `A`-`Z`).
-- **A sprite's poses** (`[Poses]` section, formerly named `[Stances]`) resolve
+(`[Poses]` section) resolve
   their active clip - and facing, including a vertical axis for `Climb` - from
   each clip name's own suffix, not a fixed slot position/flag.
 - **Multi-frame animation is supported per clip** (`[Animation.{clip}]`
@@ -240,8 +237,13 @@ capture the "why" behind a decision without needing a lengthy narrative.
   constant's own doc comment for the reminder to recompute its paired
   clip(s) if that speed is tweaked.
 - **`Kind` is mandatory in `_objects.ini`** and its values match concrete
-  class names 1:1 (`Static`, `Dynamic`, `Kinematic`, `MovingEnemy`,
-  `StaticEnemy`, `Collectable`, `PlayerSpawn`) - no implicit fallback.
+  class names 1:1 (`StaticObject`, `DynamicObject`, `KinematicObject`,
+  `StaticHazard`, `DynamicHazard`, `KinematicHazard`, `Collectable`,
+  `Player`) - no implicit fallback.
+- **"Hazard" is the single harmful-body concept** (no separate "hazard"
+  category): each motion model (static/kinematic/dynamic) has a harmless
+  `*Object` and a harmful `*Hazard` variant, and being killable by a stomp is
+  a per-instance flag (`IKillableBody.IsKillable`), not a separate type.
 
 ## World Objects & Capability Model
 
@@ -257,7 +259,12 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **Object removal is always deferred to end-of-frame**
   (`World2D.QueueRemoval`/`ApplyPendingRemovals`), generic over any `Body2D`,
   so no system mutates `Objects` mid-iteration.
-- **`MovingEnemy2D` patrols via its own mass-scaled force** (`IPatrolBody`),
+- **Each `*Hazard2D` is its `*Object2D` plus hazard capabilities**
+  (`IHazardBody`, `IEffectTrigger`, `IKillableBody`), implemented as a
+  subclass (`StaticHazard2D : StaticObject2D`, `KinematicHazard2D :
+  KinematicObject2D`, `DynamicHazard2D : DynamicObject2D`). Patrol and pose
+  behavior live on the object, so a harmless body can patrol too.
+- **`DynamicObject2D` (and so `DynamicHazard2D`) patrols via its own mass-scaled force** (`IPatrolBody`),
   independently on the X and/or Y axis, with vertical patrol
   gravity-asymmetric (cancelled while climbing so the proportional force can
   reach its target, left alone while descending for a controlled glide).
@@ -291,7 +298,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   mechanic's placeholder). `Checkpoint`/`LevelEnd` are also removed on
   pickup like every other collectable; a collectable's own
   `Collectable2D.EffectPersists` (mirroring `IKillableBody.EffectPersists`
-  on hazards/enemies) controls whether its pickup effect remains in its
+  on hazards/hazards) controls whether its pickup effect remains in its
   place afterward as a permanent "already used" marker instead of fading
   away - used by `Checkpoint`/`LevelEnd` in practice, but available to any
   collectable variant.
@@ -308,9 +315,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
 ## Player Movement & Input
 
 - **`Up` (directional) and `Jump` (action) are always distinct inputs, never
-  equivalent, even for the ordinary ground jump** - an earlier experiment to
-  let `Up` also trigger a jump was tried and explicitly reverted as
-  unintuitive.
+  even for the ordinary ground jump** - letting `Up` also trigger a
+  jump is unintuitive and rejected.
 - **Two full, independent key sets** are supported for local co-op/preference
   - "Player 1" (arrows + `Space`) and "Player 2" (`WASD` + `Left Ctrl`).
 - **Ground and hang each have their own structured "stance ladder"**
@@ -359,9 +365,9 @@ capture the "why" behind a decision without needing a lengthy narrative.
   gameplay viewport as `ViewportColumns`/`ViewportRows` (character counts)
   times that cell size (see docs/AssetFormat.md §4.3). Switching fonts or
   zoom level never requires touching game code - just updating the ini
-  values - superseding both an earlier approach that hardcoded a 16x28
-  target cell size and a fixed 1280x700 canvas, and a later attempt at
-  auto-detecting the native size via the browser's `measureText` plus a
+  values. Rejected alternatives: a hardcoded 16x28
+  target cell size with a fixed 1280x700 canvas, and
+  auto-detecting
   separate integer `FontScale` multiplier (dropped because `measureText`
   doesn't reliably report a true bitmap font's real native size - the
   bundled 8x14 font measured back as 9.143x16 at a 16px probe size - and the
@@ -422,16 +428,15 @@ A few approaches were deliberately tried and abandoned; if you find old
 comments or muscle memory referencing these, they're gone:
 
 - The `MultiRect`/`CharacterGrid` narrow-phase toggle and its `N`/`B` debug
-  keys (removed once `CharacterGrid` narrow phase proved out as the only
-  correct behavior).
+  (`CharacterGrid` is the only narrow phase).
 - `CollisionSystem._groundedSolids` and `MaintainVerticalGroundedContact`
-  (temporary platform-carry hacks, superseded by the force-based player
-  movement rewrite above).
-- A fudge-tolerance `EdgeTolerance` check for hang-snap (replaced by an exact
+  (platform-carry hacks; force-based player movement makes them
+  unnecessary).
+(hang-snap uses an exact
   overlap-based correction).
-- `Up` doubling as a jump trigger (tried twice, reverted both times).
-- `Min`/`Max` wording for patrol initial direction (renamed to
-  `Left`/`Right`/`Up`/`Down` for readability).
+(rejected).
+(patrol initial direction
+  uses `Left`/`Right`/`Up`/`Down`).
 - Batching consecutive same-row/same-color/adjacent glyphs in
   `game-interop.js`'s `drawFrame` into one `fillRect`/`fillText` call pair
   per run (measured no FPS improvement, slightly negative, likely because

@@ -61,17 +61,17 @@ not like a pixel-art game with ASCII characters placed on top.
   combine generically via `CollisionSystem.Combine`. Still open: any
   material-driven behavior beyond the physical constants themselves (e.g. a
   distinct sound/visual cue per material on contact).
-- **`MovingEnemy` behavior.** Linear patrol (back-and-forth along the X axis,
+- **`DynamicHazard` behavior.** Linear patrol (back-and-forth along the X axis,
   under its own mass-scaled force - see
   [Decisions.md](Decisions.md)) is now implemented via `IPatrolBody`/`Patrol`
   (see [AssetFormat.md §3.4](AssetFormat.md)), including per-placement
   `PatrolMinX`/`PatrolMaxX` bounds (e.g. the `Enemies` world's `SnakeTwo`
   confined to the platform it starts on, while `SnakeOne` still sweeps the
   full world). Facing/animation while patrolling is also implemented -
-  `MovingEnemy2D.UpdatePatrolDirection()` calls `SetPose` each frame so a
+  `DynamicHazard2D.UpdatePatrolDirection()` calls `SetPose` each frame so a
   `Snake` visually turns to face (and animate through) its `move_left`/
   `move_right` clips as it changes direction. Grounded and flying varieties
-  both already exist (a flying enemy simply opts out of gravity via the
+  both already exist (a flying hazard simply opts out of gravity via the
   existing `GravityAffected = false` placement key, used together with
   `Patrol` - e.g. `Butterfly`). Chase behavior is not implemented - still to
   design/implement:

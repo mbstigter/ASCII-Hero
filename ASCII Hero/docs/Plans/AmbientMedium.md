@@ -83,7 +83,7 @@ should be revisited then:
 Treat this ambient-medium work as the **prerequisite physics layer**
 underneath the already-planned Swim stance item in `docs/Design.md`:
 
-- Ambient buoyancy/drag apply to *any* body (player, `MovingEnemy`, dynamic
+- Ambient buoyancy/drag apply to *any* body (player, `DynamicHazard`, dynamic
   props) passing through `Water`, giving the general "falls through water
   differently than air" feel - independent of the player.
 - The Swim capability (`ISwimmerBody`, four-directional swim input, swim

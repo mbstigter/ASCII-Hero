@@ -277,7 +277,7 @@ public class CollisionSystem
     /// <summary>
     /// Any <see cref="IPhysicsBody"/> overlapping any <see cref="IHazardBody"/> is a hazard hit.
     /// Collectable pickup requires the moving side to implement <see cref="ICollectorBody"/>, so
-    /// non-player bodies (e.g. the bouncing ball, enemies) never consume collectables. Killing a
+    /// non-player bodies (e.g. the bouncing ball, hazards) never consume collectables. Killing a
     /// hazard requires the moving side to implement <see cref="IKillerBody"/>; a non-killer moving
     /// body can still register an ordinary hazard contact/effect, but never the kill/removal path.
     /// </summary>
@@ -334,7 +334,15 @@ public class CollisionSystem
                 currentHazardContacts.Add(contact);
                 if (!_activeHazardContacts.Contains(contact))
                 {
-                    SpawnEffectIfConfigured(body, world);
+                    if (body is Player2D { HazardHitEffectClipName: { } hazardHitClipName })
+                    {
+                        SpawnEffect(body, hazardHitClipName, world);
+                    }
+                    else
+                    {
+                        SpawnEffectIfConfigured(body, world);
+                    }
+
                     if (body is Player2D player && player.Health > 0)
                     {
                         player.Health = Math.Max(0, player.Health - 1);
@@ -365,8 +373,8 @@ public class CollisionSystem
                 }
 
                 // Every variant below is removed on pickup and spawns its own effect (if
-                // configured), honoring EffectPersists the same way a killed hazard/enemy's
-                // effect can persist as a husk in KillableEnemy's place - so any collectable
+                // configured), honoring EffectPersists the same way a killed hazard/hazard's
+                // effect can persist as a husk in KillableHazard's place - so any collectable
                 // variant can be turned into a permanent "used" marker via its placement's own
                 // EffectPersists key, not just Checkpoint/LevelEnd.
                 switch (typedCollectable.Type)
@@ -392,16 +400,16 @@ public class CollisionSystem
                     case CollectableType.Checkpoint:
                         // Same as Points/Health, but records the respawn point instead of
                         // adjusting a player stat, and - if the collector is the player - also
-                        // plays the player's own CheckpointEffectClipName (e.g. a "happy" clip)
-                        // as a second, independent effect alongside the checkpoint's own.
+                        // plays the player's own CheckpointReachedEffectClipName (e.g. a "happy" clip)
+                        // as a second
                         SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
                         world.QueueRemoval(collectable);
                         if (movingBody is Player2D checkpointPlayer)
                         {
                             world.RespawnPoint = collectable.Position;
-                            if (checkpointPlayer.CheckpointEffectClipName is { } checkpointEffectClipName)
+                            if (checkpointPlayer.CheckpointReachedEffectClipName is { } checkpointReachedEffectClipName)
                             {
-                                SpawnEffect(checkpointPlayer, checkpointEffectClipName, world);
+                                SpawnEffect(checkpointPlayer, checkpointReachedEffectClipName, world);
                             }
                         }
                         break;
@@ -442,7 +450,7 @@ public class CollisionSystem
     /// position if it implements <see cref="IEffectTrigger"/> with a non-null clip name
     /// configured; no-ops otherwise. <paramref name="persists"/> controls whether the spawned
     /// effect remains as a permanent decorative body after its clip finishes playing (used for a
-    /// killed enemy's husk) instead of self-removing like an ordinary effect.
+    /// killed hazard's husk) instead of self-removing like an ordinary effect.
     /// </summary>
     private static void SpawnEffectIfConfigured(Body2D body, World2D world, bool persists = false)
     {

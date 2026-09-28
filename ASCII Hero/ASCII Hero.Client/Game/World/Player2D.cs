@@ -4,7 +4,7 @@ using ASCII_Hero.Client.Game.Constants;
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>The player-controlled character, backed by the loaded "Player" sprite asset.</summary>
-public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected, ICollectorBody, IKillerBody, IEffectTrigger, IClimberBody, IHangerBody, ISwimmerBody, IPosedBody, IWalkForceBody
+public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected, ICollectorBody, IKillerBody, IClimberBody, IHangerBody, ISwimmerBody, IPosedBody, IWalkForceBody
 {
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }
@@ -60,24 +60,24 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// Optional clip name (on this instance's own <see cref="Body2D.Sprite"/>) to play as a
     /// cosmetic effect on an ordinary (non-fatal) hazard hit. Null (the default) means no effect.
     /// </summary>
-    public string? EffectClipName { get; set; }
+    public string? HazardHitEffectClipName { get; set; }
 
     /// <summary>
     /// Optional clip name (on this instance's own <see cref="Body2D.Sprite"/>) to play as a
     /// cosmetic effect when a <see cref="CollectableType.Checkpoint"/> is reached. Null (the
     /// default) means no effect. Kept as its own separate slot rather than reusing
-    /// <see cref="EffectClipName"/> so the player can have a distinct reaction per situation (e.g.
+    /// <see cref="HazardHitEffectClipName"/> so the player
     /// a hazard-hit spark vs. a checkpoint-reached happy clip) - see
     /// <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/>.
     /// </summary>
-    public string? CheckpointEffectClipName { get; set; }
+    public string? CheckpointReachedEffectClipName { get; set; }
 
     /// <summary>
     /// The mass-scaled force this frame's sustained locomotion input contributes - computed each
     /// frame by <see cref="Physics.PhysicsSystem.Step"/> as a simple proportional "motor" force
     /// converging <see cref="Velocity"/> toward a target walk/crawl/climb/hang velocity, summed
     /// into the net force alongside gravity by <see cref="Physics.PhysicsSystem.StepMovingBodyWithForces"/> -
-    /// mirrors how <see cref="IPatrolBody.PatrolForce"/> contributes for a patrolling enemy.
+    /// mirrors how <see cref="IPatrolBody.PatrolForce"/> contributes for a patrolling hazard.
     /// Horizontal-only while on the ground (Walk/Crawl); also carries a vertical component while
     /// <see cref="IsClimbing"/> (driving up/down movement) or <see cref="IsHanging"/> (holding
     /// position against nothing, since gravity is suspended) - both are sustained, ongoing
@@ -94,7 +94,7 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// <see cref="Physics.PhysicsSystem.UpdateWalkForce"/>). Defaults to
     /// <see cref="GameDefaults.WalkForceMultiplier"/>, but a placement may
     /// override it via the <c>WalkForceMultiplier</c> ini key (see <see cref="World2D.LoadAsync"/>) -
-    /// same name/role as <see cref="MovingEnemy2D.PatrolForceMultiplier"/> for a patrolling enemy,
+    /// same name/role as <see cref="DynamicHazard2D.PatrolForceMultiplier"/> for a patrolling hazard,
     /// since both represent the exact same "muscle power toward a target speed" concept. One
     /// single gain covers every sustained pose (Walk, Crawl, Climb, Hang) - they are all the same
     /// kind of ongoing, motor-driven locomotion, just converging toward a different target
@@ -157,7 +157,7 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// <see cref="Body2D.ResolveVerticalFacing()"/>, reading <see cref="Body2D.MoveIntentY"/>)
     /// while climbing, since climbing has no horizontal facing at all; horizontal facing (via the
     /// shared <see cref="Body2D.ResolveHorizontalFacing()"/>) from <see cref="Body2D.MoveIntentX"/>
-    /// for every other intent-driven pose - the same intent-based rule <see cref="MovingEnemy2D"/>
+    /// for every other intent-driven pose - the same intent-based rule <see cref="DynamicHazard2D"/>
     /// uses (set from its own patrol-direction decision instead of raw key input), now that both
     /// bodies share one "facing follows intent, not velocity" mechanism. Swimming is the one
     /// deliberate exception - see the facing resolution below.

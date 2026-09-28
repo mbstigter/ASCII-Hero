@@ -6,7 +6,7 @@ namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>
 /// A purely cosmetic, non-collidable, non-physics body spawned to play a short visual effect clip
-/// (e.g. a collectable's pickup fade, a killed enemy's "crumble" clip) and then either self-remove
+/// (e.g. a collectable's pickup fade, a killed hazard's "crumble" clip) and then either self-remove
 /// or persist as a permanent decorative body. Implements none of <see cref="Physics.IPhysicsBody"/>,
 /// <see cref="IHazardBody"/>, <see cref="ICollectableBody"/>, or <see cref="ICollectorBody"/>, which
 /// is what makes it automatically invisible to every positive-capability-filtered loop in
@@ -23,7 +23,7 @@ public class EffectInstance2D : Body2D
     /// <summary>
     /// Whether this instance keeps existing/rendering (holding its clip's last frame) once its
     /// lifetime timer reaches zero, instead of being removed from the world - used for a killed
-    /// enemy's permanent husk. Defaults to false (an ordinary effect that plays once and vanishes).
+    /// hazard's permanent husk. Defaults to false (an ordinary effect that plays once and vanishes).
     /// </summary>
     public bool PersistsAfterPlayback { get; set; }
 

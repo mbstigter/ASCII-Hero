@@ -56,7 +56,7 @@ Assets/
 
 - **`Global/`** holds everything shared across every world: the color palette, the
   material library, game-wide default settings, and every sprite that's reusable
-  across multiple worlds (the player, common enemies, common platform/wall types,
+  across multiple worlds (the player, common hazards, common platform/wall types,
   ...). This is the default place to put a new sprite unless it's genuinely
   one-world-only.
 - **`Worlds/{WorldName}/`** holds one folder per world, containing that world's own
@@ -142,7 +142,7 @@ Frames within a clip serve two purposes, both using the exact same
 - **True animation** — frames play back over time when the asset declares animation
   timing via an `[Animation]` section in its settings.ini (see §2.4). Examples:
   `Player_walk_idle` (3 subtle frames cycling to avoid a perfectly static character) and
-  an enemy's `idle` clip animating left/middle/right frames. The clip's starting frame
+  a hazard's `idle` clip animating left/middle/right frames. The clip's starting frame
   is controlled asset-wide by `[Animation] DefaultFrame` (see §2.4) — e.g. a
   Left/Center/Right clip can start at the Center frame so `PingPong` mode bounces
   symmetrically (Center, Right, Center, Left, ...).
@@ -271,13 +271,13 @@ multiple frames. If omitted, multi-frame clips remain static at frame `DefaultFr
   - `Once`: advances sequentially like `Loop` (0, 1, 2, ...) but stops and holds
     on the last frame instead of wrapping back to the first. Useful for a
     one-shot transformation that should visibly play through once and then
-    stay there (e.g. an enemy's "crumble" clip on being killed, if the object
+    stay there (e.g. a hazard's "crumble" clip on being killed, if the object
     persists afterward as a decorative husk) - as opposed to `Off`, which never
     animates at all.
   - `Off`: disables playback entirely — the clip holds forever on `DefaultFrame`
     even though it has multiple frames and `FrameDurationSeconds` is set. Useful
     for an inanimate variant of an otherwise-animated asset that still wants to
-    share the same multi-frame art/settings file (e.g. a dead enemy variant that
+    share the same multi-frame art/settings file (e.g. a dead hazard variant that
     should render a fixed pose while a living one animates).
 - `DefaultFrame` (default `0`) — the frame index a clip starts at, whether or not
   it animates. Useful for starting an animated Left/Center/Right clip at the
@@ -580,7 +580,7 @@ this world's thumbnail on the world-selection screen (see §3.2). Falls back
 to the world's own folder/asset name (e.g. `Level1`) if omitted. `Health`
 (default the built-in starting health), the player's health when this world
 is loaded — spent one point at a time on ordinary (non-fatal) contact with a
-hazard/enemy.
+hazard.
 
 ### 3.1 World thumbnail (`{Name}_thumb_*`)
 
@@ -656,7 +656,7 @@ filesystem" approach `[Poses]` already uses for a sprite's clips.
   visually spans two characters in the `.txt` file. This is an accepted minor
   readability tradeoff in exchange for keeping the placement grid aligned 1:1
   with the background grid's dimensions.
-- Leading-letter groupings (e.g. `P` = player/spawn, `E` = enemy, `M` = moving
+- Leading-letter groupings (e.g. `P` = player/spawn, `E` = hazard, `M` = moving
   object, `S` = static/scenery) are a **level-author convention only**. The
   engine treats every code as an opaque lookup key into `[ObjectCodes]` — it does
   not parse or assign meaning to the letter prefix itself.
@@ -683,7 +683,7 @@ Kind = Player
 [Goblin]
 Asset = Goblin
 Clip = idle
-Kind = MovingEnemy
+Kind = DynamicHazard
 Facing = Left
 ```
 
@@ -765,7 +765,7 @@ The table below summarizes what each style supports:
 
 Each `[ObjectCodes]` entry maps a placement code to a section name, which in turn
 specifies which sprite asset/clip to spawn and any additional per-type properties.
-Per-instance overrides (e.g. one specific enemy with a custom patrol range) can use
+Per-instance overrides (e.g. one specific hazard with a custom patrol range) can use
 a dedicated numbered code (`E1`) with its own `[E1]` section, falling back to a
 shared template section for common properties.
 
@@ -828,7 +828,7 @@ InitialVelocityY = 10
 `Kind` is a **mandatory** key for every placement - there is no default
 category and no separate `Static` key to fall back on. Each value corresponds
 exactly to a concrete body class name with the `2D` suffix dropped (e.g.
-`Kind = MovingEnemy` spawns a `MovingEnemy2D`, `Kind = StaticObject` spawns a
+`Kind = DynamicHazard` spawns a `DynamicHazard2D`, `Kind = StaticObject` spawns a
 `StaticObject2D`), so the mapping is discoverable directly from the codebase
 rather than needing to be memorized separately. Valid values: `Player` (the
 player's spawn point and sprite - exactly one placement per level should use
@@ -836,14 +836,16 @@ this), `StaticObject` (immovable terrain, e.g. a platform), `DynamicObject`
 (moves under its own velocity/gravity, e.g. a bouncing ball),
 `KinematicObject` (moves at a constant, predefined velocity - never affected
 by gravity, restitution, or `GravityAffected`/`Restitution` keys),
-`MovingEnemy` (an AI-controlled hazard that moves like a `DynamicObject` and
-damages the player on contact), `StaticEnemy` (a non-moving hazard, e.g.
+`DynamicHazard` (a hazard that moves like a `DynamicObject`, e.g. a toxic
+leaf or a patrolling creature, and damages the player on contact),
+`KinematicHazard` (a hazard that moves like a `KinematicObject`, e.g. a saw
+blade or laser), `StaticHazard` (a non-moving hazard, e.g.
 spikes), and `Collectable` (a non-solid, non-moving item removed from the
-world when the player contacts it). `KinematicObject`/`MovingEnemy`/
-`StaticEnemy`/`Collectable` placements read the same
+world when the player contacts it). `KinematicObject`/`KinematicHazard`/`DynamicHazard`/
+`StaticHazard`/`Collectable` placements read the same
 `GravityAffected`/`Restitution`/`InitialVelocityX`/`InitialVelocityY` keys as
-`DynamicObject` where applicable (`KinematicObject` ignores
-`GravityAffected`/`Restitution` entirely, `StaticEnemy`/`Collectable` ignore
+`DynamicObject` where applicable (`KinematicObject`/`KinematicHazard` ignore
+`GravityAffected`/`Restitution` entirely, `StaticHazard`/`Collectable` ignore
 all of them since they never move):
 
 ```ini
@@ -855,16 +857,16 @@ Kind = Collectable
 [SpikeTrap]
 Asset = Spikes
 Clip = default
-Kind = StaticEnemy
+Kind = StaticHazard
 
 [PatrolGoblin]
 Asset = Goblin
 Clip = idle
-Kind = MovingEnemy
+Kind = DynamicHazard
 Patrol = true
 ```
 
-A `Kind = MovingEnemy` placement may additionally set `Patrol = true` (default
+A `Kind = DynamicHazard` placement may additionally set `Patrol = true` (default
 `false`) to have it move back and forth under its own force (mass-scaled,
 integrated the same way as gravity - see docs/Decisions.md), rather than only
 ever sitting still or moving at a fixed `InitialVelocityX`/`Y`. Patrol can be
@@ -879,9 +881,9 @@ its own schedule, with no separate "diagonal mode" needed:
   its right edge) - enough to "just patrol the level" with no further
   authoring.
 - `PatrolMinY`/`PatrolMaxY` (world-space Y, in cells) bound vertical patrol.
-  Unlike the X axis, there is no "entire world height" default - an enemy
+  Unlike the X axis, there is no "entire world height" default - a hazard
   patrols vertically only once both are explicitly set. Setting only
-  `PatrolMinY`/`PatrolMaxY` (no `PatrolMinX`/`PatrolMaxX`) makes this enemy
+  `PatrolMinY`/`PatrolMaxY` (no `PatrolMinX`/`PatrolMaxX`) makes this hazard
   patrol vertically only, rather than also silently sweeping the full world
   width on X.
 
@@ -889,7 +891,7 @@ its own schedule, with no separate "diagonal mode" needed:
 [CautiousGoblin]
 Asset = Goblin
 Clip = idle
-Kind = MovingEnemy
+Kind = DynamicHazard
 Patrol = true
 PatrolMinX = 20
 PatrolMaxX = 35
@@ -897,14 +899,14 @@ PatrolMaxX = 35
 
 Further optional keys tune the patrol force itself rather than its range:
 `PatrolForceMultiplier` (a number, default `60`) scales how strongly - i.e. how
-"strong" this enemy is, its "muscle power" - it accelerates toward its
+"strong" this hazard is, its "muscle power" - it accelerates toward its
 cruising speed on either axis (mass-scaled like gravity, converging on that
 target speed rather than accelerating forever - see docs/Decisions.md);
 `PatrolCruiseSpeedX` (cells/second, default `6`) is the target horizontal
-speed, i.e. how fast this enemy patrols along X once it gets there;
+speed, i.e. how fast this hazard patrols along X once it gets there;
 `PatrolCruiseSpeedY` (cells/second, defaults to `PatrolCruiseSpeedX` if unset)
 is the equivalent target speed for vertical patrol, letting a diagonally- or
-vertically-patrolling enemy cruise at a different pace on each axis;
+vertically-patrolling hazard cruise at a different pace on each axis;
 `PatrolInitialDirectionX` (`Left` or `Right`) overrides which way it starts
 heading horizontally the instant the level loads, in place of the default
 inference (toward whichever patrol bound is farther from its spawn
@@ -915,7 +917,7 @@ override for vertical patrol:
 [FastGoblin]
 Asset = Goblin
 Clip = idle
-Kind = MovingEnemy
+Kind = DynamicHazard
 Patrol = true
 PatrolForceMultiplier = 90
 PatrolCruiseSpeedX = 10
@@ -926,7 +928,7 @@ PatrolInitialDirectionX = Right
 [FlappingBird]
 Asset = Bird
 Clip = fly_idle
-Kind = MovingEnemy
+Kind = DynamicHazard
 GravityAffected = true
 Patrol = true
 PatrolMinY = 4
@@ -938,39 +940,39 @@ PatrolInitialDirectionY = Up
 **Vertical patrol and gravity:** when `GravityAffected = true`, climbing
 (heading toward `PatrolMinY`, i.e. up) and descending (heading toward
 `PatrolMaxY`, i.e. down) are deliberately asymmetric, so a vertically- or
-diagonally-patrolling enemy reads as genuinely fighting gravity to climb
+diagonally-patrolling hazard reads as genuinely fighting gravity to climb
 rather than just being another platform-style mover rotated 90 degrees:
-while heading up, this enemy's own patrol force additionally cancels out
+while heading up, this hazard's own patrol force additionally cancels out
 gravity's pull so it can actually reach its target climb speed instead of
 asymptoting below it; while heading down, no such adjustment is made, so
 gravity's own pull carries most of the descent and the patrol force merely
 corrects once actual velocity overshoots the target speed (a controlled
-glide rather than the enemy fighting its own fall). Set
-`GravityAffected = false` instead for a hovering-insect-style enemy that
+glide rather than the hazard fighting its own fall). Set
+`GravityAffected = false` instead for a hovering-insect-style hazard that
 patrols vertically with a fully symmetric climb/descend force and is never
 affected by gravity at all - the same choice already offered for horizontal-
 only patrol.
 
-A `Kind = KinematicObject` placement (e.g. a moving platform) may likewise set
-`Patrol = true`, with the same independent-per-axis bounds as `MovingEnemy`
+A `Kind = KinematicObject` or `Kind = KinematicHazard` placement (e.g. a moving
+platform or saw blade) may likewise set
+`Patrol = true`, with the same independent-per-axis bounds as `DynamicHazard`
 above: `PatrolMinX`/`PatrolMaxX`/`PatrolSpeedX` (world-space X, in cells, and
 cells/second) patrol it horizontally,
 `PatrolMinY`/`PatrolMaxY`/`PatrolSpeedY` patrol it vertically, and either or
 both axes may be configured (an axis left unconfigured simply never moves on
-its own) - unlike `MovingEnemy`, `KinematicObject`'s horizontal axis has no
+its own) - unlike `DynamicHazard`, `KinematicObject`'s horizontal axis has no
 "entire world width" default; both axes are opt-in via explicit bounds only.
 `PatrolSpeedX`/`PatrolSpeedY` are always a positive magnitude, never a
 direction - the initial heading is inferred automatically (toward whichever
 bound is farther from the spawn position) unless overridden by
 `PatrolInitialDirectionX` (`Left` or `Right`) / `PatrolInitialDirectionY`
-(`Up` or `Down`), the `KinematicObject` equivalent of `MovingEnemy`'s
-`PatrolInitialDirectionX` - spelled out the same intuitive way rather than
-the axis-agnostic `Min`/`Max` wording used here previously, since each key
-name already identifies its own axis. Remember world Y increases downward
+(`Up` or `Down`), the `KinematicObject` equivalent of `DynamicHazard`'s
+spelled out as a direction word, since each key
+name already identifies its own axis.
 (see docs/Architecture.md's Coordinate System), so `Down` means toward the
 axis's max bound, same as `Up` means toward its min bound. Note
 `KinematicObject` moves at a constant, prescribed velocity rather than
-force/gravity integration, so it has no equivalent of `MovingEnemy`'s
+force/gravity integration, so it has no equivalent of `DynamicHazard`'s
 gravity-asymmetric vertical patrol described above:
 
 ```ini
@@ -1045,8 +1047,8 @@ EffectPersists = true
 ```
 
 The `Player` section may additionally override its own "muscle power" and
-target ground speeds, the same concepts `MovingEnemy`'s `PatrolForceMultiplier`/
-`PatrolCruiseSpeedX` expose for a patrolling enemy - deliberately the same
+target ground speeds, the same concepts `DynamicHazard`'s `PatrolForceMultiplier`/
+`PatrolCruiseSpeedX` expose for a patrolling hazard - deliberately the same
 key/property name (`ForceMultiplier`) for both, since they are the exact same
 "force gain converging toward a target speed" concept either way:
 `WalkForceMultiplier` (a number, default from
@@ -1069,6 +1071,11 @@ WalkForceMultiplier = 55 ; Default = GameDefaults.WalkForceMultiplier (40)
 WalkSpeed = 16 ; Default = GameDefaults.WalkSpeed (12)
 CrawlSpeed = 8 ; Default = GameDefaults.CrawlSpeed (6)
 ```
+
+The `Player` section may also name effect clips (on the player's own sprite
+asset) for specific situations: `HazardHitEffectClip` plays when the player
+takes a non-fatal hazard hit, and `CheckpointReachedEffectClip` plays when the
+player reaches a `Checkpoint`. Both are optional (no effect if omitted).
 
 Any object type may also override its spawned body's material and/or color away
 from what its sprite asset would otherwise resolve to on its own (its
@@ -1130,12 +1137,12 @@ ForegroundColor = Y
 
 Any non-`Player` object type may also set `Passable`, `Climbable`, and/or
 `Hangable` (each default `false`, except `Passable` which defaults to `true`
-for `Kind = StaticEnemy`/`Collectable`) to control how it interacts with
+for `Kind = StaticHazard`/`Collectable`) to control how it interacts with
 moving bodies, independent of its `Kind`:
 
 - **`Passable`** — if `true`, the object never blocks movement even though it
   is otherwise solid terrain (e.g. a wall type used as a level design
-  "secret passage"). `StaticEnemy`/`Collectable` default to `true` since
+  "secret passage"). `StaticHazard`/`Collectable` default to `true` since
   neither has ever blocked movement (a hazard is meant to be walked into, a
   collectable is picked up on contact) — this default simply keeps that
   existing behavior data-driven instead of hardcoded by `Kind`.

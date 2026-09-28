@@ -18,7 +18,7 @@ public enum TileAxis
 /// How multi-frame clips advance through their frames over time. <see cref="Loop"/> cycles
 /// sequentially (0,1,2,0,1,2,...); <see cref="PingPong"/> bounces back and forth (0,1,2,1,0,1,...);
 /// <see cref="Once"/> advances sequentially like <see cref="Loop"/> but stops and holds on the
-/// last frame instead of wrapping back to the first (e.g. a killed enemy crumbling down to its
+/// last frame instead of wrapping back to the first (e.g. a killed hazard crumbling down to its
 /// final husk appearance); <see cref="Off"/> disables playback entirely, holding on
 /// <see cref="SpriteAsset.DefaultFrame"/> forever even though the clip has multiple frames (e.g.
 /// a dead/inanimate variant of an otherwise-animated asset).

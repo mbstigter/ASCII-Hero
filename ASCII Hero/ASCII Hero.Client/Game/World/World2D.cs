@@ -301,7 +301,7 @@ public class World2D
         // assets this world actually needs and, per asset, the full union of clips any section
         // requests from it - a section only names the clip(s) it itself needs, but two sections
         // can share one asset while asking for different clips (e.g. a "Spikes" placement using
-        // an enemy asset's "idle" clip and a "FlameTrap" placement using the same asset's "trap"
+        // a hazard asset's "idle" clip and a "FlameTrap" placement using the same asset's "trap"
         // and "burst" clips), so loading must be driven by the union, not any single section.
         // A section may instead skip Asset entirely and use Material/Width/Height (see
         // docs/AssetFormat.md §3.x) - such sections need no on-disk sprite at all, so they are
@@ -324,7 +324,8 @@ public class World2D
 
             var clipName = objectSection.TryGetValue("Clip", out var clip) ? clip : "default";
             var effectClipName = objectSection.TryGetValue("EffectClip", out var effectClipText) ? effectClipText : null;
-            var checkpointEffectClipName = objectSection.TryGetValue("CheckpointEffectClip", out var checkpointEffectClipText) ? checkpointEffectClipText : null;
+            var hazardHitEffectClipName = objectSection.TryGetValue("HazardHitEffectClip", out var hazardHitEffectClipText) ? hazardHitEffectClipText : null;
+            var checkpointReachedEffectClipName = objectSection.TryGetValue("CheckpointReachedEffectClip", out var checkpointReachedEffectClipText) ? checkpointReachedEffectClipText : null;
 
             if (!clipNamesByAsset.TryGetValue(assetName, out var clipNames))
             {
@@ -337,9 +338,13 @@ public class World2D
             {
                 clipNames.Add(effectClipName);
             }
-            if (checkpointEffectClipName is not null)
+            if (hazardHitEffectClipName is not null)
             {
-                clipNames.Add(checkpointEffectClipName);
+                clipNames.Add(hazardHitEffectClipName);
+            }
+            if (checkpointReachedEffectClipName is not null)
+            {
+                clipNames.Add(checkpointReachedEffectClipName);
             }
         }
 
@@ -406,13 +411,15 @@ public class World2D
                 string clipName;
                 int frameIndex;
                 string? effectClipName;
-                string? checkpointEffectClipName;
+                string? hazardHitEffectClipName;
+                string? checkpointReachedEffectClipName;
 
                 if (hasAsset)
                 {
                     clipName = objectSection.TryGetValue("Clip", out var clip) ? clip : "default";
                     effectClipName = objectSection.TryGetValue("EffectClip", out var effectClipText) ? effectClipText : null;
-                    checkpointEffectClipName = objectSection.TryGetValue("CheckpointEffectClip", out var checkpointEffectClipText) ? checkpointEffectClipText : null;
+                    hazardHitEffectClipName = objectSection.TryGetValue("HazardHitEffectClip", out var hazardHitEffectClipText) ? hazardHitEffectClipText : null;
+                    checkpointReachedEffectClipName = objectSection.TryGetValue("CheckpointReachedEffectClip", out var checkpointReachedEffectClipText) ? checkpointReachedEffectClipText : null;
 
                     // The sprite (with every clip this section could ever need, including its
                     // effect clip if any) was already loaded and cached during the pre-scan above.
@@ -458,7 +465,8 @@ public class World2D
                     clipName = "default";
                     frameIndex = 0;
                     effectClipName = null;
-                    checkpointEffectClipName = null;
+                    hazardHitEffectClipName = null;
+                    checkpointReachedEffectClipName = null;
                 }
 
 
@@ -506,11 +514,11 @@ public class World2D
                 var killable = objectSection.TryGetValue("Killable", out var killableText) && bool.TryParse(killableText, out var parsedKillable) && parsedKillable;
                 var effectPersists = objectSection.TryGetValue("EffectPersists", out var effectPersistsText) && bool.TryParse(effectPersistsText, out var parsedEffectPersists) && parsedEffectPersists;
 
-                // Patrol (Kind = MovingEnemy only, see below) - PatrolMinX/PatrolMaxX let a
+                // Patrol (Kind = DynamicHazard only, see below) - PatrolMinX/PatrolMaxX let a
                 // placement author a custom back-and-forth range; when Patrol is enabled without
                 // an explicit range, it defaults to the entire width of the world (this body's
                 // left edge sweeping from the world's left edge to its right edge), so "patrol
-                // this enemy" works with zero extra authoring for the common full-level case.
+                // this hazard" works with zero extra authoring for the common full-level case.
                 var patrol = objectSection.TryGetValue("Patrol", out var patrolText) && bool.TryParse(patrolText, out var parsedPatrol) && parsedPatrol;
                 var patrolMinXOverride = objectSection.TryGetValue("PatrolMinX", out var patrolMinXText) && IniValueParser.TryParseDouble(patrolMinXText, out var parsedPatrolMinX)
                     ? (double?)parsedPatrolMinX
@@ -519,12 +527,12 @@ public class World2D
                     ? (double?)parsedPatrolMaxX
                     : null;
                 // PatrolForceMultiplier lets a placement tune how strongly (and so how quickly it reaches
-                // its cruising speed, mass-scaled like gravity) this enemy patrols, defaulting to
-                // MovingEnemy2D's own default when unset. PatrolCruiseSpeedX sets the actual
+                // its cruising speed, mass-scaled like gravity) this hazard patrols, defaulting to
+                // DynamicHazard2D's own default when unset. PatrolCruiseSpeedX sets the actual
                 // steady-state patrol speed the force converges to and holds, also defaulting to
-                // MovingEnemy2D's own default when unset. PatrolInitialDirectionX ("Left"/"Right") -
+                // DynamicHazard2D's own default when unset. PatrolInitialDirectionX ("Left"/"Right") -
                 // named to match KinematicObject's own per-axis PatrolInitialDirectionX/Y below,
-                // since a future vertically-patrolling enemy would need the same X/Y distinction -
+                // since a future vertically-patrolling hazard would need the same X/Y distinction -
                 // overrides which way it starts heading, instead of the default inference toward
                 // whichever bound is farther.
                 var patrolForceOverride = objectSection.TryGetValue("PatrolForceMultiplier", out var patrolForceText) && IniValueParser.TryParseDouble(patrolForceText, out var parsedPatrolForce)
@@ -533,9 +541,9 @@ public class World2D
                 var patrolCruiseSpeedOverride = objectSection.TryGetValue("PatrolCruiseSpeedX", out var patrolCruiseSpeedText) && IniValueParser.TryParseDouble(patrolCruiseSpeedText, out var parsedPatrolCruiseSpeed)
                     ? (double?)parsedPatrolCruiseSpeed
                     : null;
-                // PatrolCruiseSpeedY lets a MovingEnemy's vertical patrol cruise at a different
+                // PatrolCruiseSpeedY lets a DynamicHazard's vertical patrol cruise at a different
                 // speed than its horizontal one (PatrolCruiseSpeedX); falls back to PatrolCruiseSpeedX
-                // itself (then MovingEnemy2D's own default) so a level author patrolling only one
+                // itself (then DynamicHazard2D's own default) so a level author patrolling only one
                 // axis, or wanting the same pace on both, doesn't need to repeat the value.
                 var patrolCruiseSpeedYOverride = objectSection.TryGetValue("PatrolCruiseSpeedY", out var patrolCruiseSpeedYText) && IniValueParser.TryParseDouble(patrolCruiseSpeedYText, out var parsedPatrolCruiseSpeedY)
                     ? (double?)parsedPatrolCruiseSpeedY
@@ -543,16 +551,16 @@ public class World2D
                 var patrolInitialDirectionRight = objectSection.TryGetValue("PatrolInitialDirectionX", out var patrolDirectionText)
                     ? (bool?)string.Equals(patrolDirectionText, "Right", StringComparison.OrdinalIgnoreCase)
                     : null;
-                // PatrolInitialDirectionY ("Up"/"Down") overrides which way a MovingEnemy starts
+                // PatrolInitialDirectionY ("Up"/"Down") overrides which way a DynamicHazard starts
                 // heading on its vertical patrol, mirroring PatrolInitialDirectionX for the
-                // horizontal axis - see MovingEnemy2D.SetPatrol.
-                var patrolInitialDirectionDownEnemy = objectSection.TryGetValue("PatrolInitialDirectionY", out var patrolDirectionYTextEnemy)
-                    ? (bool?)string.Equals(patrolDirectionYTextEnemy, "Down", StringComparison.OrdinalIgnoreCase)
+                // horizontal axis - see DynamicHazard2D.SetPatrol.
+                var patrolInitialDirectionDownHazard = objectSection.TryGetValue("PatrolInitialDirectionY", out var patrolDirectionYTextHazard)
+                    ? (bool?)string.Equals(patrolDirectionYTextHazard, "Down", StringComparison.OrdinalIgnoreCase)
                     : null;
 
-                // Patrol range/speed keys shared by both Kind = MovingEnemy and Kind = KinematicObject:
+                // Patrol range/speed keys shared by both Kind = DynamicHazard and Kind = KinematicObject:
                 // PatrolMinY/PatrolMaxY let a body patrol vertically instead of (or as well as)
-                // horizontally - both MovingEnemy2D and KinematicObject2D support independent
+                // horizontally - both DynamicHazard2D and KinematicObject2D support independent
                 // per-axis patrol (a body configured with both X and Y bounds patrols diagonally,
                 // each axis bouncing between its own bounds on its own schedule). An axis with no
                 // min/max pair configured simply isn't patrolled on that axis.
@@ -573,7 +581,7 @@ public class World2D
                 // that axis, instead of the default inference toward whichever bound is farther
                 // from the spawn position - e.g. so two platforms sharing the same range can be
                 // made to start in opposite phase. Expressed the same intuitive way as
-                // MovingEnemy's own PatrolInitialDirectionX, rather than the more abstract (if
+                // DynamicHazard's own PatrolInitialDirectionX, rather than the more abstract (if
                 // admittedly axis-agnostic) "Min"/"Max" wording used here previously - since each
                 // key already names its own axis, spelling out the value abstractly bought nothing
                 // and only cost readability. Remember Y increases downward (see docs/Architecture.md's
@@ -590,7 +598,7 @@ public class World2D
                 // any combination of them. Passable defaults to true for hazards/collectables
                 // (never blocking today, matching prior hardcoded behavior) and false otherwise
                 // (an ordinary wall/platform still blocks unless explicitly overridden).
-                var defaultPassable = kind is "StaticEnemy" or "Collectable";
+                var defaultPassable = kind is "StaticHazard" or "KinematicHazard" or "Collectable";
                 var passable = objectSection.TryGetValue("Passable", out var passableText) && bool.TryParse(passableText, out var parsedPassable)
                     ? parsedPassable
                     : defaultPassable;
@@ -606,8 +614,8 @@ public class World2D
                         world.Player.Spawn(sprite);
                         world.Player.Position = position;
                         world.PlayerSpawnPosition = position;
-                        world.Player.EffectClipName = effectClipName;
-                        world.Player.CheckpointEffectClipName = checkpointEffectClipName;
+                        world.Player.HazardHitEffectClipName = hazardHitEffectClipName;
+                        world.Player.CheckpointReachedEffectClipName = checkpointReachedEffectClipName;
                         world.Player.Health = world.StartingHealth;
                         var playerMaterial = world.Materials.Get(materialOverride ?? world.Player.MaterialName);
                         world.Player.Density = densityOverride ?? playerMaterial.Density;
@@ -665,12 +673,30 @@ public class World2D
                         spawnedBody = kinematicObject;
                         break;
 
-                    case "MovingEnemy":
-                        var movingEnemy = new MovingEnemy2D();
-                        movingEnemy.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, repeatCount);
-                        movingEnemy.EffectClipName = effectClipName;
-                        movingEnemy.IsKillable = killable;
-                        movingEnemy.EffectPersists = effectPersists;
+                    case "KinematicHazard":
+                        var kinematicHazard = new KinematicHazard2D();
+                        kinematicHazard.Spawn(sprite, clipName, frameIndex, position, initialVelocity, repeatCount);
+                        kinematicHazard.EffectClipName = effectClipName;
+                        kinematicHazard.IsKillable = killable;
+                        kinematicHazard.EffectPersists = effectPersists;
+                        if (patrol)
+                        {
+                            kinematicHazard.SetPatrol(
+                                patrolMinXOverride, patrolMaxXOverride, patrolSpeedX,
+                                patrolMinYOverride, patrolMaxYOverride, patrolSpeedY,
+                                patrolInitialDirectionTowardMaxX, patrolInitialDirectionTowardMaxY);
+                        }
+                        world.Objects.Add(kinematicHazard);
+                        movingBody = kinematicHazard;
+                        spawnedBody = kinematicHazard;
+                        break;
+
+                    case "DynamicHazard":
+                        var dynamicHazard = new DynamicHazard2D();
+                        dynamicHazard.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, repeatCount);
+                        dynamicHazard.EffectClipName = effectClipName;
+                        dynamicHazard.IsKillable = killable;
+                        dynamicHazard.EffectPersists = effectPersists;
                         if (patrol)
                         {
                             // X defaults to the entire world width (this body's left edge sweeping
@@ -681,36 +707,36 @@ public class World2D
                             // also silently sweeping the full world width.
                             var hasExplicitX = patrolMinXOverride.HasValue || patrolMaxXOverride.HasValue;
                             var hasExplicitY = patrolMinYOverride.HasValue || patrolMaxYOverride.HasValue;
-                            double? enemyPatrolMinX = null;
-                            double? enemyPatrolMaxX = null;
+                            double? hazardPatrolMinX = null;
+                            double? hazardPatrolMaxX = null;
                             if (hasExplicitX || !hasExplicitY)
                             {
-                                enemyPatrolMinX = patrolMinXOverride ?? 0.0;
-                                enemyPatrolMaxX = patrolMaxXOverride ?? world.WidthCells - movingEnemy.Size.X;
+                                hazardPatrolMinX = patrolMinXOverride ?? 0.0;
+                                hazardPatrolMaxX = patrolMaxXOverride ?? world.WidthCells - dynamicHazard.Size.X;
                             }
 
-                            movingEnemy.SetPatrol(
-                                enemyPatrolMinX, enemyPatrolMaxX,
+                            dynamicHazard.SetPatrol(
+                                hazardPatrolMinX, hazardPatrolMaxX,
                                 patrolCruiseSpeedOverride ?? Constants.GameDefaults.PatrolCruiseSpeed,
                                 patrolMinYOverride, patrolMaxYOverride,
                                 patrolCruiseSpeedYOverride ?? patrolCruiseSpeedOverride ?? Constants.GameDefaults.PatrolCruiseSpeed,
                                 patrolForceOverride ?? Constants.GameDefaults.PatrolForceMultiplier,
                                 patrolInitialDirectionRight,
-                                patrolInitialDirectionDownEnemy);
+                                patrolInitialDirectionDownHazard);
                         }
-                        world.Objects.Add(movingEnemy);
-                        movingBody = movingEnemy;
-                        spawnedBody = movingEnemy;
+                        world.Objects.Add(dynamicHazard);
+                        movingBody = dynamicHazard;
+                        spawnedBody = dynamicHazard;
                         break;
 
-                    case "StaticEnemy":
-                        var staticEnemy = new StaticEnemy2D();
-                        staticEnemy.Spawn(sprite, clipName, frameIndex, position, repeatCount);
-                        staticEnemy.EffectClipName = effectClipName;
-                        staticEnemy.IsKillable = killable;
-                        staticEnemy.EffectPersists = effectPersists;
-                        world.Objects.Add(staticEnemy);
-                        spawnedBody = staticEnemy;
+                    case "StaticHazard":
+                        var staticHazard = new StaticHazard2D();
+                        staticHazard.Spawn(sprite, clipName, frameIndex, position, repeatCount);
+                        staticHazard.EffectClipName = effectClipName;
+                        staticHazard.IsKillable = killable;
+                        staticHazard.EffectPersists = effectPersists;
+                        world.Objects.Add(staticHazard);
+                        spawnedBody = staticHazard;
                         break;
 
                     case "Collectable":

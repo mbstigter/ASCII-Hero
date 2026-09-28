@@ -1,7 +1,7 @@
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>
-/// Capability for an enemy body that can be "killed" (removed from the world) by a qualifying
+/// Capability for a hazard body that can be "killed" (removed from the world) by a qualifying
 /// contact, e.g. the player landing on top of it. Unlike the bare marker interfaces
 /// (<see cref="IHazardBody"/>, <see cref="ICollectableBody"/>), this carries real per-instance
 /// state: implementing it unconditionally with <see cref="IsKillable"/> always true would make

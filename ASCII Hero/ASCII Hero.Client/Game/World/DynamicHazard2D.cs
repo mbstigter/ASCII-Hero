@@ -1,13 +1,13 @@
-using ASCII_Hero.Client.Game.Assets;
-
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>
-/// A non-moving hazard (e.g. spikes) backed by a loaded sprite asset. Like
-/// <see cref="StaticObject2D"/> it is immovable terrain, but it also damages the player (or any
-/// moving body) on contact.
+/// A hazard (e.g. a toxic leaf or a patrolling snake) that moves and collides exactly like a
+/// <see cref="DynamicObject2D"/> - including its optional patrol and directional pose - and
+/// damages the player (or any moving body) on contact. Only the hazard/killable/effect
+/// capabilities are added here, mirroring <see cref="StaticHazard2D"/> and
+/// <see cref="KinematicHazard2D"/>.
 /// </summary>
-public class StaticEnemy2D : Body2D, IHazardBody, IEffectTrigger, IKillableBody
+public class DynamicHazard2D : DynamicObject2D, IHazardBody, IEffectTrigger, IKillableBody
 {
     /// <summary>
     /// Optional clip name (on this instance's own <see cref="Body2D.Sprite"/>) to play as a
@@ -24,16 +24,4 @@ public class StaticEnemy2D : Body2D, IHazardBody, IEffectTrigger, IKillableBody
 
     /// <summary>Whether this instance's effect (if configured) persists as a permanent husk after a kill contact.</summary>
     public bool EffectPersists { get; set; }
-
-    public StaticEnemy2D()
-    {
-        IsStatic = true;
-    }
-
-    /// <summary>Assigns the loaded sprite asset/clip/frame and world position for this instance.</summary>
-    public void Spawn(SpriteAsset sprite, string clipName, int frameIndex, Vector2D position, int repeatCount = 1)
-    {
-        SetFrame(sprite, clipName, frameIndex, repeatCount);
-        Position = position;
-    }
 }

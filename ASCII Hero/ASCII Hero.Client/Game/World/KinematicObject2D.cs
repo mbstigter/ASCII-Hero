@@ -6,7 +6,7 @@ namespace ASCII_Hero.Client.Game.World;
 /// <summary>
 /// A kinematic body (e.g. a patrolling moving platform) in the usual physics-engine sense: it
 /// drives its own prescribed motion from <see cref="Velocity"/> every frame - never gravity or
-/// force integration like <see cref="DynamicObject2D"/>/<see cref="MovingEnemy2D"/>, and never
+/// force integration like <see cref="DynamicObject2D"/>/<see cref="DynamicHazard2D"/>, and never
 /// input like <see cref="Player2D"/> - yet <see cref="Body2D.IsStatic"/> is true, so
 /// <see cref="Physics.CollisionSystem"/> never itself corrects this body's own position/velocity
 /// in response to a collision; it only ever affects the *other* side (see
@@ -80,7 +80,7 @@ public class KinematicObject2D : Body2D, IPhysicsBody
     /// <see cref="PatrolMaxX"/>, false = toward <see cref="PatrolMinX"/>) overrides that inference -
     /// e.g. so a level author can make two platforms that share the same range start in opposite
     /// phase, or start moving away from the player instead of toward them - mirrors
-    /// <see cref="MovingEnemy2D.SetPatrol"/>'s own <c>initialDirectionRight</c> parameter.
+    /// <see cref="DynamicHazard2D.SetPatrol"/>'s own <c>initialDirectionRight</c> parameter.
     /// </param>
     /// <param name="initialDirectionTowardMaxY">
     /// Which way to start heading on the Y axis. Same semantics as
@@ -102,7 +102,7 @@ public class KinematicObject2D : Body2D, IPhysicsBody
         // Start heading toward whichever bound is farther, so a body spawned near one end still
         // immediately patrols across the full range instead of instantly hitting the near bound
         // and turning back within the first frame or two - unless the caller explicitly requested
-        // a starting direction instead - mirrors MovingEnemy2D.SetPatrol.
+        // a starting direction instead - mirrors DynamicHazard2D.SetPatrol.
         if (patrolMinX is { } minX && patrolMaxX is { } maxX)
         {
             _patrolMovingTowardMaxX = initialDirectionTowardMaxX ?? (Position.X - minX <= maxX - Position.X);

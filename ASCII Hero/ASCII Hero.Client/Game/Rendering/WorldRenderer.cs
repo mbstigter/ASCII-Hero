@@ -29,7 +29,7 @@ public class WorldRenderer
         var viewBottom = camera.Position.Y + viewportHeightCells;
 
         // Draw every static body (terrain, water, platforms, ...) before any non-static one
-        // (the player, balls, enemies, ...), regardless of each one's order in world.Objects
+        // (the player, balls, hazards, ...), regardless of each one's order in world.Objects
         // (itself just the placement grid's row-by-row scan order) - otherwise a static body
         // placed later in the grid than a mover it overlaps (e.g. a passable body of water
         // beneath balls dropped above it) would paint over that mover's glyphs every frame,

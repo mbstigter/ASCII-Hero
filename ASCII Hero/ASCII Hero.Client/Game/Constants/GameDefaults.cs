@@ -124,7 +124,7 @@ public static class GameDefaults
     /// Default magnitude of the mass-scaled horizontal "motor" force applied to converge the
     /// player's <see cref="World.Player2D.Velocity"/>.X toward the current target walk/crawl/
     /// climb/hang speed (see <see cref="Physics.PhysicsSystem.UpdateWalkForce"/>) - same name/role
-    /// as <see cref="PatrolForceMultiplier"/> for a patrolling enemy, proportional to the
+    /// as <see cref="PatrolForceMultiplier"/> for a patrolling hazard, proportional to the
     /// remaining speed gap so the player accelerates promptly yet still settles at exactly the
     /// target speed rather than overshooting it every frame. Overridable per-placement via the
     /// <c>WalkForceMultiplier</c> ini key in a world's <c>objects.ini</c> - see
@@ -146,15 +146,15 @@ public static class GameDefaults
     /// </summary>
     public const double AirControlMultiplier = 0.25;
 
-    // --- Patrol (enemies / kinematic platforms) ---
+    // --- Patrol (hazards / kinematic platforms) ---
 
     /// <summary>
     /// Default "muscle power" - the mass-scaled force gain applied to converge a patrolling
     /// body's horizontal velocity toward <see cref="PatrolCruiseSpeed"/> (see
-    /// <see cref="World.MovingEnemy2D.UpdatePatrolDirection"/>) - same name/role as
+    /// <see cref="World.DynamicHazard2D.UpdatePatrolDirection"/>) - same name/role as
     /// <see cref="WalkForceMultiplier"/> for the player. Overridable per-placement via the
     /// <c>PatrolForceMultiplier</c> ini key in a world's <c>objects.ini</c> (see
-    /// <see cref="World.MovingEnemy2D.PatrolForceMultiplier"/>).
+    /// <see cref="World.DynamicHazard2D.PatrolForceMultiplier"/>).
     /// </summary>
     public const double PatrolForceMultiplier = 60.0;
 
@@ -162,14 +162,14 @@ public static class GameDefaults
     /// Default patrol cruising speed (in world cells/second) - chosen to feel comparable to
     /// <see cref="CrawlSpeed"/>, a readable, deliberate pace rather than a full walking sprint.
     /// Overridable per-placement via the <c>PatrolCruiseSpeedX</c>/<c>PatrolCruiseSpeedY</c> ini
-    /// keys in a world's <c>objects.ini</c> (see <see cref="World.MovingEnemy2D.PatrolCruiseSpeedX"/>).
+    /// keys in a world's <c>objects.ini</c> (see <see cref="World.DynamicHazard2D.PatrolCruiseSpeedX"/>).
     /// </summary>
     public const double PatrolCruiseSpeed = 6.0;
 
     /// <summary>
     /// How close (in world cells) a patrolling body's leading edge must get to a patrol bound
     /// before turning around, so it reverses just shy of the bound rather than oscillating exactly
-    /// on it - shared by <see cref="World.MovingEnemy2D"/> and <see cref="World.KinematicObject2D"/>.
+    /// on it - shared by <see cref="World.DynamicHazard2D"/> and <see cref="World.KinematicObject2D"/>.
     /// Not overridable via any ini file.
     /// </summary>
     public const double PatrolTurnThreshold = 0.25;
