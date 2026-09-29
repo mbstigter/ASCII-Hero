@@ -29,6 +29,7 @@ public class PhysicsSystem
     private bool _wasUpKeyDown;
     private bool _wasDownKeyDown;
     private bool _wasJumpKeyDown;
+    private bool _wasAirborneSinceStance;
 
     /// <summary>
     /// Set the instant the player jumps off a ladder (see the pose ladder in <see cref="Step"/>),
@@ -52,7 +53,7 @@ public class PhysicsSystem
         // up/down press while touching one (mirroring the old ConsoleGame2D reference's explicit
         // Climb() trigger) - including mid-jump, there is no grounded requirement, so a ladder can
         // be grabbed out of the air. Crawling can't climb directly (too low a pose to reach a
-        // rung) - engaging climb requires Pose == "Walk" already, so a crawling player must
+        // rung) - engaging climb requires Stance == "Walk" already, so a crawling player must
         // first explicitly stand up (the ordinary Crawl->Walk pose toggle below, its own
         // separate key press) before a later press can grab the ladder; there is no combined
         // "stand up and grab on" shortcut. Hanging engages automatically as soon as the surface is
@@ -66,7 +67,7 @@ public class PhysicsSystem
         {
             player.IsClimbing = false;
         }
-        else if (!player.IsClimbing && player.IsTouchingClimbable && player.Pose == "Walk" && !_suppressClimbUntilClear && (input.IsUpPressed || input.IsDownPressed))
+        else if (!player.IsClimbing && player.IsTouchingClimbable && player.Stance == "Walk" && !_suppressClimbUntilClear && (input.IsUpPressed || input.IsDownPressed))
         {
             player.IsClimbing = true;
         }
@@ -92,10 +93,8 @@ public class PhysicsSystem
         {
             player.IsHanging = true;
             // Reaching a pipe/rope while already crawling grabs on in the compact clamber
-            // pose (hands and feet both on it) instead of the regular fully-stretched hang -
-            // matching whichever pose the player's silhouette already was in the instant before
-            // grabbing on, rather than always defaulting to one or the other.
-            player.IsClambering = player.Pose == "Crawl";
+            // pose (IsClambering is derived from the same Stance), matching whichever stance
+            // the player was in the instant before grabbing on.
         }
 
         // Once the player is no longer touching the hangable surface at all (having actually
@@ -143,6 +142,19 @@ public class PhysicsSystem
         // keeping the same rule on the ground and while climbing avoids a special case. All three
         // latches are edge-triggered (only the frame the key is first pressed) so holding a
         // direction doesn't repeatedly cycle through every step in one press.
+        // Landing always returns to the upright stance: crawling off a ledge, or dropping from a
+        // clamber, shouldn't leave the player crawling on touchdown. Deliberate crawling on flat
+        // ground never leaves the ground, so it is unaffected.
+        if (!player.IsGrounded && !player.IsClimbing && !player.IsHanging)
+        {
+            _wasAirborneSinceStance = true;
+        }
+        else if (player.IsGrounded && _wasAirborneSinceStance)
+        {
+            _wasAirborneSinceStance = false;
+            player.Stance = "Walk";
+        }
+
         var upKeyDown = input.IsUpPressed;
         var downKeyDown = input.IsDownPressed;
         var jumpKeyDown = input.IsJumpPressed;
@@ -152,13 +164,13 @@ public class PhysicsSystem
         var stoodUpThisFrame = false;
         if (!player.IsClimbing && !player.IsHanging)
         {
-            if (player.Pose == "Walk" && downPressedThisFrame)
+            if (player.Stance == "Walk" && downPressedThisFrame)
             {
-                player.Pose = "Crawl";
+                player.Stance = "Crawl";
             }
-            else if (player.Pose == "Crawl" && upPressedThisFrame)
+            else if (player.Stance == "Crawl" && upPressedThisFrame)
             {
-                player.Pose = "Walk";
+                player.Stance = "Walk";
                 stoodUpThisFrame = true;
             }
         }
@@ -182,11 +194,11 @@ public class PhysicsSystem
         {
             if (player.IsClambering && downPressedThisFrame)
             {
-                player.IsClambering = false;
+                player.Stance = "Walk";
             }
             else if (!player.IsClambering && upPressedThisFrame)
             {
-                player.IsClambering = true;
+                player.Stance = "Crawl";
             }
             else if (!player.IsClambering && jumpPressedThisFrame)
             {
@@ -215,7 +227,7 @@ public class PhysicsSystem
         _wasDownKeyDown = downKeyDown;
         _wasJumpKeyDown = jumpKeyDown;
 
-        var moveSpeed = player.Pose == "Walk" ? player.WalkSpeed : player.CrawlSpeed;
+        var moveSpeed = player.Stance == "Walk" ? player.WalkSpeed : player.CrawlSpeed;
 
         // Horizontal movement is driven by a mass-scaled "motor" force converging the player's
         // velocity toward the target walk/crawl/climb/hang speed (see UpdateWalkForce and
@@ -347,7 +359,7 @@ public class PhysicsSystem
         }
         UpdateWalkForce(player, targetVelocityX, targetVelocityY);
 
-        if (!player.IsClimbing && !player.IsHanging && input.IsJumpPressed && player.IsGrounded && player.Pose == "Walk" && !stoodUpThisFrame)
+        if (!player.IsClimbing && !player.IsHanging && input.IsJumpPressed && player.IsGrounded && player.Stance == "Walk" && !stoodUpThisFrame)
         {
             // A true impulse: an instantaneous Delta-v applied once, on the frame the jump is
             // pressed, not a target the player's velocity converges toward over subsequent

@@ -245,6 +245,18 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `*Object` and a harmful `*Hazard` variant, and being killable by a stomp is
   a per-instance flag (`IKillableBody.IsKillable`), not a separate type.
 
+## Sound
+
+- **Sounds are synthesized (Web Audio) and defined in `SoundLibrary.ini`**,
+  not audio files; game logic only queues sound names on `World2D`, and
+  `ISoundPlayer`/`audio.js` are the only audio code.
+- **No hard-coded fallback sounds**: an undefined sound is silent, so
+  designers can make silent levels.
+- **Player movement sounds are per pose** (`[Sounds]` in the sprite
+  settings), played on animation frame steps, kept subtle.
+- **Each sound is a single pitch slide; multi-note sounds are deliberately
+  not implemented yet** (kept simple for now).
+
 ## World Objects & Capability Model
 
 - **`World2D` holds one generic `List<Body2D> Objects`**, not separate
@@ -319,6 +331,11 @@ capture the "why" behind a decision without needing a lengthy narrative.
   jump is unintuitive and rejected.
 - **Two full, independent key sets** are supported for local co-op/preference
   - "Player 1" (arrows + `Space`) and "Player 2" (`WASD` + `Left Ctrl`).
+- **"Stance" is the stored choice, "pose" is the displayed result.** The
+  player's `Stance` (`Walk` = upright/stretched, `Crawl` = compact/clamber) is
+  the only stored state (`IsClambering` is derived from it while hanging), and
+  resets to `Walk` on landing after being airborne. Pose (Walk, Crawl, Jump,
+  Climb, Hang, Clamber, Swim) is derived each frame from stance plus situation.
 - **Ground and hang each have their own structured "stance ladder"**
   (Crawl<->Walk on the ground; Clamber<->Hang while hanging, inverted to
   match arm position rather than screen direction), and each locomotion mode

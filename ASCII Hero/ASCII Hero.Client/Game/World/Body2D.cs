@@ -235,6 +235,19 @@ public abstract class Body2D
     public bool IsPassable { get; set; }
 
     /// <summary>
+    /// Optional <c>SoundLibrary.ini</c> name played when this body is picked up (a collectable) or
+    /// when it hurts the player on contact (a hazard), from the placement's <c>Sound</c> key. Null
+    /// means silent - there is no default sound.
+    /// </summary>
+    public string? SoundName { get; set; }
+
+    /// <summary>
+    /// Optional <c>SoundLibrary.ini</c> name played when this (killable) hazard is killed, from the
+    /// placement's <c>KillSound</c> key. Null means silent.
+    /// </summary>
+    public string? KillSoundName { get; set; }
+
+    /// <summary>
     /// Whether the player can climb this static body (e.g. a ladder) - straight up/down movement,
     /// gravity suspended while overlapping. Checked generically by <see cref="Physics.PhysicsSystem"/>
     /// against the player's current overlap each frame, independent of concrete type - any static
@@ -412,20 +425,24 @@ public abstract class Body2D
     /// No-ops immediately if the clip has no animation settings, only one frame, or the clip's
     /// <see cref="AnimationMode"/> is <see cref="AnimationMode.Off"/> (holds forever on the
     /// frame set at spawn, e.g. a dead/inanimate variant of an otherwise-animated asset).
+    /// Returns true if at least one frame step was taken this call (used to time per-frame
+    /// sounds, e.g. footsteps).
     /// </summary>
-    public void AdvanceAnimation(double deltaSeconds)
+    public bool AdvanceAnimation(double deltaSeconds)
     {
         // No animation configured, only one frame, or animation explicitly disabled - nothing to animate.
         if (Clip.FrameDurationSeconds is null || Clip.Frames.Count <= 1 || Clip.AnimationMode == AnimationMode.Off)
         {
-            return;
+            return false;
         }
 
+        var advanced = false;
         _animationElapsedSeconds += deltaSeconds;
 
         while (_animationElapsedSeconds >= Clip.FrameDurationSeconds.Value)
         {
             _animationElapsedSeconds -= Clip.FrameDurationSeconds.Value;
+            advanced = true;
 
             if (Clip.AnimationMode == AnimationMode.Loop)
             {
@@ -460,6 +477,8 @@ public abstract class Body2D
 
             ApplyFrame(Clip.Frames[_animationFrameIndex]);
         }
+
+        return advanced;
     }
 
     /// <summary>

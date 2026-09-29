@@ -283,6 +283,12 @@ multiple frames. If omitted, multi-frame clips remain static at frame `DefaultFr
   it animates. Useful for starting an animated Left/Center/Right clip at the
   Center frame so `PingPong` bounces symmetrically, or for a static shape-variant
   clip that should always render a frame other than `0`.
+- `EffectDurationSeconds` (optional, per-clip only) — only used when the clip is
+  played as an effect (e.g. a `spark`/`happy` clip): the total time the effect
+  plays before it disappears, replacing the default of frame count ×
+  `FrameDurationSeconds` (one pass). A looping clip therefore keeps looping for
+  this long. It does not stop a persistent effect (one that holds its last frame,
+  like a crumbled husk) from persisting.
 
 Animation settings are resolved **per clip**, not asset-wide, since clips of the
 same asset can have very different frame counts and desired pacing (e.g. a
@@ -1314,6 +1320,38 @@ FontHeightPixels = 28
   `columns * cellWidthPixels` by `rows * cellHeightPixels` — never a fixed
   pixel constant — so it adapts automatically to whichever font size is
   configured.
+
+### 4.3.1 `Global/SoundLibrary.ini`
+
+Defines named synthesized sounds (no audio files). A world may override or
+add sounds with its own `SoundLibrary.ini`, merged over the global one.
+Each section is one sound, named by its section header, with these keys:
+
+- **`Wave`** — `Square`, `Triangle`, `Sawtooth`, `Sine` or `Noise` (a filtered
+  rustle/whoosh rather than a pitched tone).
+- **`StartFreq`** / **`EndFreq`** — pitch in Hz at the start and end; the pitch
+  slides between the two (a single slide - multi-note sounds are not supported).
+  `EndFreq` is optional and defaults to `StartFreq`. For `Noise` it is the
+  pitch of the filter sweeping through the rustle.
+- **`Duration`** — length in seconds.
+- **`Volume`** — 0 (silent) to 1 (full). Keep frequently repeated sounds very low.
+- **`Attack`** (optional) — fade-in time in seconds.
+- **`Vibrato`** (optional) — wobble in Hz, for a warbly arcade feel (or a watery
+  texture on `Noise`).
+
+A sound that isn't defined is simply silent - there is no fallback, so a level
+can be made completely silent.
+
+Sounds are referenced by name from: an object's `Sound` / `KillSound` keys in
+`_objects.ini` (hazard hit / kill, collectable pickup), and a sprite's
+`[Sounds]` section in its settings file, which maps a pose name to a sound
+played on each animation frame step of a moving clip. The pose is the one
+currently displayed (`Walk`, `Crawl`, `Climb`, `Hang`, `Clamber`, `Swim`). Two
+extra keys, `JumpStart` and `Land`, play once when the player leaves the
+ground upward and when it lands.
+
+`Global/Settings.ini`'s `[Sound]` section has `Enabled` and `MasterVolume`
+(0-1).
 
 ### 4.4 `Global/Worlds.ini`
 

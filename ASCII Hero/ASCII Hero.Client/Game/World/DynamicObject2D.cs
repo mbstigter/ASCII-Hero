@@ -84,7 +84,7 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     public double PatrolCruiseSpeedY { get; set; } = GameDefaults.PatrolCruiseSpeed;
 
     /// <summary>
-    /// Current pose (see <see cref="Player2D.Pose"/> for the equivalent player-side member).
+    /// Current pose (see <see cref="Player2D.Stance"/> for the closest player-side member).
     /// Only one pose exists today ("Move", with idle/left/right facing clips - see
     /// <see cref="UpdatePose"/>), but kept as a settable member rather than a hardcoded literal so
     /// a future dynamic asset with multiple poses (e.g. a distinct "Attack" pose) doesn't

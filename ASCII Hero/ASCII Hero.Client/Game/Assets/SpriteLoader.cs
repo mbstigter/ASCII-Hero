@@ -58,12 +58,15 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             var clipDefaultFrame = clipAnimationSection.TryGetValue("DefaultFrame", out var clipDefaultFrameText)
                 ? ParseDefaultFrame(clipDefaultFrameText)
                 : defaultDefaultFrame;
+            var effectDurationSeconds = clipAnimationSection.TryGetValue("EffectDurationSeconds", out var effectDurationText)
+                ? ParseFrameDurationSeconds(effectDurationText)
+                : null;
 
             var clipFolder = ResolveClipFolder(folder, clipName, clipFolders);
 
             clips[clipName] = await LoadClipAsync(
                 clipFolder, assetName, clipName, emptyChar, defaultMaterial, materialCodes,
-                frameDurationSeconds, animationMode, clipDefaultFrame ?? 0);
+                frameDurationSeconds, animationMode, clipDefaultFrame ?? 0, effectDurationSeconds);
         }
 
         return new SpriteAsset
@@ -74,6 +77,9 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             TileAxis = tileAxis,
             Poses = poses,
             DefaultPose = defaultPose,
+            PoseSounds = new Dictionary<string, string>(
+                settings.Section("Sounds").Where(entry => !string.IsNullOrWhiteSpace(entry.Value)),
+                StringComparer.OrdinalIgnoreCase),
             DefaultForeColor = defaultForeColor,
             DefaultBackColor = defaultBackColor,
         };
@@ -88,7 +94,8 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         IReadOnlyDictionary<string, string> materialCodes,
         double? frameDurationSeconds,
         AnimationMode animationMode,
-        int defaultFrame)
+        int defaultFrame,
+        double? effectDurationSeconds)
     {
         var baseName = $"{folder}/{assetName}_{clipName}";
 
@@ -124,6 +131,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             FrameDurationSeconds = frameDurationSeconds,
             AnimationMode = animationMode,
             DefaultFrame = defaultFrame,
+            EffectDurationSeconds = effectDurationSeconds,
         };
     }
 

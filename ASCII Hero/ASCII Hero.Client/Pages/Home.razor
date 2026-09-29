@@ -27,6 +27,7 @@
 
 @code {
     private CanvasBridge? _canvasBridge;
+    private WebAudioSoundPlayer? _soundPlayer;
     private GameLoop? _gameLoop;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -34,7 +35,8 @@
         if (firstRender)
         {
             _canvasBridge = new CanvasBridge(JsRuntime);
-            _gameLoop = new GameLoop(_canvasBridge, new HttpAssetFileProvider(Http));
+            _soundPlayer = new WebAudioSoundPlayer(JsRuntime);
+            _gameLoop = new GameLoop(_canvasBridge, new HttpAssetFileProvider(Http), _soundPlayer);
             await _gameLoop.StartAsync("game-canvas");
         }
     }
@@ -44,6 +46,11 @@
         if (_canvasBridge is not null)
         {
             await _canvasBridge.DisposeAsync();
+        }
+
+        if (_soundPlayer is not null)
+        {
+            await _soundPlayer.DisposeAsync();
         }
     }
 }

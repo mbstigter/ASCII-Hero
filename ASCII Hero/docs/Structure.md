@@ -265,7 +265,8 @@ The live game state and the entity types that make it up.
 	`IHangerBody` - a body can implement either, both, or neither.
   - `IHangerBody` - can hang and shimmy laterally from an `IsHangable`
 	surface (e.g. a pipe/rope); carries `IsTouchingHangable`, `IsHanging`,
-	`IsClambering` (regular fully-stretched hang vs. a compact clamber/
+	`IsClambering` (derived from the body's stance, not stored: hanging while in
+	the compact stance - regular fully-stretched hang vs. a compact clamber/
 	shimmy pose that fits through narrower spaces), and
 	`SuppressHangUntilClear` (debounce set by `PhysicsSystem` the instant the
 	player jumps/swings off or lets go, consulted by `CollisionSystem` so it
@@ -331,9 +332,12 @@ The live game state and the entity types that make it up.
   toward, so they remain direct velocity assignments on purpose - discrete
   state-machine transitions, not the continuous locomotion `WalkForce`
   drives. Also resolves
-  the player's stance (Walk/Crawl, toggled by input) and pose (which swaps to
-  a visual-only "Jump" pose while airborne, independent of the underlying
-  stance). Also engages/disengages `IsClimbing`/`IsHanging` (on any
+  the player's stance - the stored, deliberately chosen upright/stretched
+  (`Walk`) vs. compact (`Crawl`, shown as `Clamber` while hanging) choice,
+  `Player2D.Stance`, toggled by input and reset to `Walk` on landing after
+  being airborne - and its pose, the displayed result (`Player2D.ResolvedPose`,
+  derived each frame by `UpdatePose` from the stance plus the situation:
+  Climb, Hang/Clamber, Swim, or a visual-only "Jump" pose while airborne).
   `IClimberBody`/`IHangerBody`, generically) from the previous frame's
   `IsTouchingClimbable`/`IsTouchingHangable` (set by `CollisionSystem`):
   climbing requires a deliberate up/down key press while touching a climbable
@@ -341,8 +345,8 @@ The live game state and the entity types that make it up.
   standing (`Stance == "Walk"` - a crawling player must explicitly stand up
   first, as a separate step), and yields to landing on solid ground; hanging
   engages automatically as soon as a hangable surface is touched from
-  underneath, picking the compact "clamber" pose if the player was already
-  crawling at the moment of grabbing on. Stance transitions on the ground and
+  underneath, picking the compact "clamber" pose if the stance was already
+  `Crawl` at the moment of grabbing on.
   while hanging are driven by one shared, structured up/down "stance ladder":
   on the ground, Up always means "more upright" (Crawl -> Walk) and Down
   always means "more compact" (Walk -> Crawl); while hanging, the same keys
@@ -620,9 +624,20 @@ The live game state and the entity types that make it up.
   (`Hang`/`Climb` both need to tell "pull in"/"climb" apart from "let go and
   launch").
 
+### Audio
+
+- **`SoundLibrary`** (Assets) - loads `SoundLibrary.ini` (global, merged
+  with world overrides) into `SoundDefinition`s.
+- **`ISoundPlayer`** / **`WebAudioSoundPlayer`** - game-facing audio boundary
+  and its JS interop implementation (`wwwroot/js/audio.js`, Web Audio
+  synthesis). `GameLoop` calls `PlayQueuedSounds()` after physics/collision
+  and animation each frame, forwarding names queued on `World2D`
+  (`PlaySound`/`DrainPendingSounds`) by `CollisionSystem` and
+  `AnimationSystem`.
+
 ### Menu
 
-- **`WorldSelectScreen`** - state and input handling for the pre-game
+- **`WorldSelectScreen`**
   world-selection screen (see docs/AssetFormat.md §3.2): which world is
   currently selected, how many thumbnail slots are visible, and the scrolled
   window (`ScrollOffset`) that keeps the selection centered in the middle

@@ -37,9 +37,10 @@ public interface IHangerBody : IPhysicsBody
     /// the fully-stretched hang (mirroring Walk) - a further Down from there lets go entirely
     /// instead of crouching further, since fully stretched is already the least-attached pose.
     /// See the hang pose ladder in <see cref="Physics.PhysicsSystem.Step"/> for the full
-    /// transition logic.
+    /// transition logic. Derived from the body's stance rather than stored separately, so the
+    /// hanging and standing compact/stretched choices can never disagree.
     /// </summary>
-    bool IsClambering { get; set; }
+    bool IsClambering { get; }
 
     /// <summary>
     /// Debounce set by <see cref="Physics.PhysicsSystem"/> the instant the body deliberately

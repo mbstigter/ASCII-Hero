@@ -50,9 +50,11 @@ public class EffectInstance2D : Body2D
         PersistsAfterPlayback = persistsAfterPlayback;
 
         var clip = sprite.GetClip(clipName);
-        _remainingSeconds = clip.FrameDurationSeconds is { } frameDuration
-            ? clip.Frames.Count * frameDuration
-            : GameDefaults.EffectLifetimeSeconds;
+        _remainingSeconds = clip.EffectDurationSeconds is { } effectDuration
+            ? effectDuration
+            : clip.FrameDurationSeconds is { } frameDuration
+                ? clip.Frames.Count * frameDuration
+                : GameDefaults.EffectLifetimeSeconds;
     }
 
     /// <summary>

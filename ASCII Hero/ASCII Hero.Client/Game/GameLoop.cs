@@ -1,4 +1,5 @@
 using ASCII_Hero.Client.Game.Assets;
+using ASCII_Hero.Client.Game.Audio;
 using ASCII_Hero.Client.Game.Browser;
 using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.Menu;
@@ -14,7 +15,7 @@ namespace ASCII_Hero.Client.Game;
 /// per animation frame. This is the game loop; it is invoked from JS via requestAnimationFrame,
 /// never via Blazor's StateHasChanged.
 /// </summary>
-public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFileProvider)
+public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFileProvider, ISoundPlayer soundPlayer)
 {
 
 
@@ -222,6 +223,12 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         var cellMetrics = await canvasBridge.InitializeAsync(canvasElementId, this, fontFamily, viewportColumns, viewportRows, fontWidthPixels, fontHeightPixels);
         ApplyCellMetrics(cellMetrics, viewportColumns, viewportRows);
 
+        var soundEnabled = !bool.TryParse(globalSettings.TryGetValue("Sound", "Enabled"), out var parsedSoundEnabled) || parsedSoundEnabled;
+        var masterVolume = IniValueParser.TryParseDouble(globalSettings.TryGetValue("Sound", "MasterVolume"), out var parsedMasterVolume)
+            ? Math.Clamp(parsedMasterVolume, 0.0, 1.0)
+            : 1.0;
+        await soundPlayer.InitializeAsync(soundEnabled ? masterVolume : 0.0);
+
         var visibleSlotCount = WorldSelectRenderer.ComputeVisibleSlotCount(_viewportWidthCells, worlds.Count);
         _worldSelect = new WorldSelectScreen(worlds, visibleSlotCount);
         _mode = GameMode.WorldSelecting;
@@ -242,6 +249,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             }
         });
         _world = await World2D.LoadAsync(assetFileProvider, worldName, progress);
+        await soundPlayer.SetSoundsAsync(_world.Sounds);
 
         // Discard any leftover accumulated time from a previous world (or the time genuinely
         // spent loading this one, which was never real gameplay time) - starting the new world
@@ -371,6 +379,15 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
     }
 
+    /// <summary>Forwards every sound game logic queued on the world this frame to the sound player.</summary>
+    private void PlayQueuedSounds()
+    {
+        foreach (var soundName in _world.DrainPendingSounds())
+        {
+            soundPlayer.Play(soundName);
+        }
+    }
+
     private async Task OnPlayingFrameAsync(double deltaSeconds)
     {
         // Dev/testing shortcut: abandon the current world and return to the world-select screen -
@@ -420,6 +437,8 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             _physicsAccumulatorSeconds -= PhysicsConstants.FixedPhysicsStepSeconds;
         }
 
+        PlayQueuedSounds();
+
         if (_world.LevelCompleted)
         {
             _mode = GameMode.LevelComplete;
@@ -428,6 +447,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
 
         _animation.Update(_world, deltaSeconds);
+        PlayQueuedSounds();
 
         _camera.Follow(
             _world.CameraTarget.Position,

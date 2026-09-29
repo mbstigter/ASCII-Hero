@@ -62,6 +62,14 @@ public class SpriteClip
     public AnimationMode AnimationMode { get; init; } = AnimationMode.Loop;
 
     /// <summary>
+    /// Optional total playing time, in seconds, when this clip is spawned as an effect
+    /// (<see cref="World.EffectInstance2D"/>) - replaces the default of frame count times
+    /// <see cref="FrameDurationSeconds"/>, so e.g. a looping effect can run longer than one pass.
+    /// Null means the default applies. Ignored for any clip not played as an effect.
+    /// </summary>
+    public double? EffectDurationSeconds { get; init; }
+
+    /// <summary>
     /// The frame index this clip starts at when spawned, e.g. a "Center" frame in a
     /// Left/Center/Right clip so PingPong mode bounces symmetrically (Center, Right, Center,
     /// Left, ...). Defaults to 0.
@@ -146,6 +154,13 @@ public class SpriteAsset
 
     /// <summary>The pose active at spawn, from <c>[Poses] Default</c>. Null when <see cref="Poses"/> is null.</summary>
     public string? DefaultPose { get; init; }
+
+    /// <summary>
+    /// Optional sound (a <c>SoundLibrary.ini</c> name) played each time a moving clip of a pose
+    /// advances to its next frame, keyed by pose name, from the asset's <c>[Sounds]</c> section.
+    /// A pose without an entry is silent.
+    /// </summary>
+    public IReadOnlyDictionary<string, string> PoseSounds { get; init; } = new Dictionary<string, string>();
 
     public SpriteClip GetClip(string clipName) =>
         Clips.TryGetValue(clipName, out var clip)

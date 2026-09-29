@@ -321,6 +321,7 @@ public class CollisionSystem
                 if (movingBody is IKillerBody && hazard is IKillableBody { IsKillable: true } killable && IsApproachingFromTop(movingBody, hazard))
                 {
                     SpawnEffectIfConfigured(hazard, world, killable.EffectPersists);
+                    world.PlaySound(hazard.KillSoundName);
                     world.QueueRemoval(hazard);
                     continue;
                 }
@@ -334,6 +335,11 @@ public class CollisionSystem
                 currentHazardContacts.Add(contact);
                 if (!_activeHazardContacts.Contains(contact))
                 {
+                    if (body is Player2D { Health: > 0 })
+                    {
+                        world.PlaySound(hazard.SoundName);
+                    }
+
                     if (body is Player2D { HazardHitEffectClipName: { } hazardHitClipName })
                     {
                         SpawnEffect(body, hazardHitClipName, world);
@@ -367,9 +373,15 @@ public class CollisionSystem
                 // unrelated pickup.
                 if (collectable is not Collectable2D typedCollectable)
                 {
+                    world.PlaySound(collectable.SoundName);
                     SpawnEffectIfConfigured(collectable, world);
                     world.QueueRemoval(collectable);
                     continue;
+                }
+
+                if (typedCollectable.Type is not null)
+                {
+                    world.PlaySound(typedCollectable.SoundName);
                 }
 
                 // Every variant below is removed on pickup and spawns its own effect (if

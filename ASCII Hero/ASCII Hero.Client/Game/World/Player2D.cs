@@ -21,8 +21,8 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// <inheritdoc/>
     public bool IsHanging { get; set; }
 
-    /// <inheritdoc/>
-    public bool IsClambering { get; set; }
+    /// <summary>Derived, not stored: hanging while in the compact <see cref="Stance"/> ("Crawl").</summary>
+    public bool IsClambering => IsHanging && Stance == "Crawl";
 
     /// <inheritdoc/>
     public bool SuppressHangUntilClear { get; set; }
@@ -48,13 +48,13 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     public bool MediumAffected => true;
 
     /// <summary>
-    /// Current pose (e.g. "Walk", "Crawl").
-    /// mechanism (and <see cref="Body2D.SetPose(Assets.SpriteAsset, string, Assets.Facing)"/>) stays generic across any body's own pose
-    /// vocabulary, not just the player's. Settable directly (e.g. by <see cref="Physics.PhysicsSystem"/>
-    /// toggling Walk/Crawl) without immediately re-resolving a clip - <see cref="Body2D.SetPose(Assets.SpriteAsset, string, Assets.Facing)"/>
-    /// is the separate call that actually applies a pose+facing pair's clip. See docs/AssetFormat.md §2.6.
+    /// The player's deliberately chosen stance: "Walk" (upright / stretched) or "Crawl" (compact -
+    /// shown as Clamber while hanging). Stored state toggled by Up/Down in <see cref="Physics.PhysicsSystem"/>
+    /// and reset to "Walk" on landing. Distinct from the pose, which is the displayed result: see
+    /// <see cref="ResolvedPose"/> and <see cref="UpdatePose"/>, which combine the stance with the
+    /// current situation (climbing, hanging, swimming, airborne). See docs/AssetFormat.md §2.6.
     /// </summary>
-    public string Pose { get; set; } = "Walk";
+    public string Stance { get; set; } = "Walk";
 
     /// <summary>
     /// Optional clip name (on this instance's own <see cref="Body2D.Sprite"/>) to play as a
@@ -104,14 +104,14 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
 
 
     /// <summary>
-    /// Target ground speed (in world cells/second) while standing/walking (<see cref="Pose"/> ==
+    /// Target ground speed (in world cells/second) while standing/walking (<see cref="Stance"/> ==
     /// "Walk"). Defaults to <see cref="GameDefaults.WalkSpeed"/>, but a placement
     /// may override it via the <c>WalkSpeed</c> ini key (see <see cref="World2D.LoadAsync"/>).
     /// </summary>
     public double WalkSpeed { get; set; } = GameDefaults.WalkSpeed;
 
     /// <summary>
-    /// Target ground speed (in world cells/second) while crouched/crawling (<see cref="Pose"/> ==
+    /// Target ground speed (in world cells/second) while crouched/crawling (<see cref="Stance"/> ==
     /// "Crawl"). Defaults to <see cref="GameDefaults.CrawlSpeed"/>, but a placement
     /// may override it via the <c>CrawlSpeed</c> ini key (see <see cref="World2D.LoadAsync"/>).
     /// </summary>
@@ -142,8 +142,8 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     {
         if (sprite.Poses is not null)
         {
-            Pose = sprite.DefaultPose ?? "Walk";
-            SetPose(sprite, Pose, Facing.Idle);
+            Stance = sprite.DefaultPose ?? "Walk";
+            SetPose(sprite, Stance, Facing.Idle);
         }
         else
         {
@@ -175,7 +175,7 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
             : IsHanging ? (IsClambering ? "Clamber" : "Hang")
             : IsSwimming ? "Swim"
             : !IsGrounded ? "Jump"
-            : Pose;
+            : Stance;
         // Facing is resolved from the player's own raw move input intent (see MoveIntentX),
         // never from Velocity.X, for every pose except Swim - velocity is influenced by whatever
         // the player is standing/riding on (a moving platform's carry, or leftover momentum for a
@@ -195,6 +195,14 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
                 : ResolveVerticalFacing())
             : ResolveHorizontalFacing();
         SetPose(Sprite, resolvedPose, facing);
+        ResolvedPose = resolvedPose;
     }
+
+    /// <summary>
+    /// The pose actually being shown after <see cref="UpdatePose"/> resolved it ("Walk", "Crawl",
+    /// "Jump", "Climb", "Hang", "Clamber" or "Swim"), as opposed to <see cref="Pose"/>, which only ever
+    /// holds "Walk"/"Crawl". Used to pick the pose's own movement sound.
+    /// </summary>
+    public string ResolvedPose { get; private set; } = "Walk";
 
 }

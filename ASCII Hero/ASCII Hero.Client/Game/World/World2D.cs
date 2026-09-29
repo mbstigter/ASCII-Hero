@@ -135,6 +135,38 @@ public class World2D
     /// </summary>
     public MaterialLibrary Materials { get; private set; } = null!;
 
+    /// <summary>The resolved Global+World sound library; empty (silent) when no SoundLibrary.ini defines any sound.</summary>
+    public SoundLibrary Sounds { get; private set; } = SoundLibrary.Empty;
+
+    private readonly List<string> _pendingSounds = [];
+
+    /// <summary>
+    /// Queues a named sound (see <see cref="Sounds"/>) to be played by <see cref="GameLoop"/> at
+    /// the end of the current frame. A null/empty name means "no sound configured" and is ignored,
+    /// so callers can pass an object's optional sound name straight through. Game logic never
+    /// touches audio output itself.
+    /// </summary>
+    public void PlaySound(string? soundName)
+    {
+        if (!string.IsNullOrEmpty(soundName))
+        {
+            _pendingSounds.Add(soundName);
+        }
+    }
+
+    /// <summary>Returns and clears every sound queued via <see cref="PlaySound"/> since the last call.</summary>
+    public IReadOnlyList<string> DrainPendingSounds()
+    {
+        if (_pendingSounds.Count == 0)
+        {
+            return [];
+        }
+
+        var drained = _pendingSounds.ToArray();
+        _pendingSounds.Clear();
+        return drained;
+    }
+
     /// <summary>Gravity acceleration, in world cells per second squared.</summary>
     public double Gravity { get; private set; } = Constants.PhysicsConstants.DefaultGravity;
 
@@ -241,6 +273,7 @@ public class World2D
 
         world.Palette = await ColorPalette.LoadAsync(fileProvider, worldName);
         world.Materials = await MaterialLibrary.LoadAsync(fileProvider, worldName);
+        world.Sounds = await SoundLibrary.LoadAsync(fileProvider, worldName);
         progress?.Report(2);
 
         // _objects.txt/_objects.ini is the world's sole authoritative layout definition -
@@ -767,6 +800,8 @@ public class World2D
                 }
 
                 spawnedBody.IsPassable = passable;
+                spawnedBody.SoundName = objectSection.TryGetValue("Sound", out var soundNameText) ? soundNameText : null;
+                spawnedBody.KillSoundName = objectSection.TryGetValue("KillSound", out var killSoundNameText) ? killSoundNameText : null;
                 spawnedBody.IsClimbable = climbable;
                 spawnedBody.IsHangable = hangable;
                 spawnedBody.ForeColorOverride = foreColorOverride;
