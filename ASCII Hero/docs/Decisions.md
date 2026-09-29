@@ -151,19 +151,19 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `IMediumAffected` (mirroring `IGravityAffected`) receive these forces; `CurrentMedium`
   itself is still resolved/exposed for every body regardless, for future systems (e.g.
   a swim pose) to read.
-- **`ResolveCurrentMedium`'s scan explicitly excludes `EffectInstance2D` and any
-  `IsClimbable`/`IsHangable` terrain**, even though both satisfy the same
-  `IsStatic && IsPassable` check as a genuine level-authored medium volume
-  (`WaterSurface`/`BodyOfWater`). The distinction is intent: a medium volume is
-  deliberately placed by a level designer to represent an occupiable ambient space,
-  whereas `EffectInstance2D.IsPassable` is unconditionally true purely so a cosmetic
-  effect never blocks movement (e.g. a killed `ToxicPlant`'s "crumble" husk), and a
-  ladder/pipe/bar is structural terrain to grip/hang from, not a substance to be
-  immersed in, regardless of whatever material it happens to be given (e.g. for its
-  render color). Without these exclusions, either could leak its own (often fairly
-  dense) material into the medium resolution the moment the player merely overlapped
-  its footprint, causing unintended buoyancy (e.g. a suspiciously high jump) that has
-  nothing to do with its actual role.
+- **`ResolveCurrentMedium`'s scan only accepts plain medium volumes**
+  (`PhysicsSystem.IsMediumVolume`): passable, static-for-collision terrain placed by a
+  level designer to represent an occupiable ambient space (`WaterSurface`/`BodyOfWater`).
+  Hazards (`IHazardBody`), collectables (`ICollectableBody`), `EffectInstance2D` and
+  `IsClimbable`/`IsHangable` terrain are never a medium, even though they can also be
+  static and passable (hazards and collectables are passable by default). Hazards and
+  collectables act through contact, `EffectInstance2D.IsPassable` is unconditionally true
+  purely so a cosmetic effect never blocks movement (e.g. a killed `ToxicPlant`'s
+  "crumble" husk), and a ladder/pipe/bar is structural terrain to grip/hang from, not a
+  substance to be immersed in, regardless of the material it is given (e.g. for its
+  render color). Any of these leaking its own (often fairly dense) material into the
+  medium resolution would cause unintended buoyancy (e.g. a suspiciously high jump)
+  unrelated to its actual role.
 - **A body's own actively-generated force/impulse (motor force, jump-off) is separately
   dampened by ambient medium viscosity, distinct from the passive buoyancy/drag above**
   (`PhysicsSystem.ResolveMediumForceScale`): maps `Material.Viscosity` alone (never

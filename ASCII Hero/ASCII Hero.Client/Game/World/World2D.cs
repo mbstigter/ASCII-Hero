@@ -605,6 +605,38 @@ public class World2D
                 var climbable = objectSection.TryGetValue("Climbable", out var climbableText) && bool.TryParse(climbableText, out var parsedClimbable) && parsedClimbable;
                 var hangable = objectSection.TryGetValue("Hangable", out var hangableText) && bool.TryParse(hangableText, out var parsedHangable) && parsedHangable;
 
+                // X defaults to the entire world width (this body's left edge sweeping from the
+                // world's left edge to its right edge) when Patrol is enabled without any explicit
+                // range - unless the placement configured a vertical-only patrol via
+                // PatrolMinY/PatrolMaxY with no X override at all, in which case this body patrols
+                // vertically only rather than also silently sweeping the full world width.
+                void ConfigureDynamicPatrol(DynamicObject2D body)
+                {
+                    if (!patrol)
+                    {
+                        return;
+                    }
+
+                    var hasExplicitX = patrolMinXOverride.HasValue || patrolMaxXOverride.HasValue;
+                    var hasExplicitY = patrolMinYOverride.HasValue || patrolMaxYOverride.HasValue;
+                    double? bodyPatrolMinX = null;
+                    double? bodyPatrolMaxX = null;
+                    if (hasExplicitX || !hasExplicitY)
+                    {
+                        bodyPatrolMinX = patrolMinXOverride ?? 0.0;
+                        bodyPatrolMaxX = patrolMaxXOverride ?? world.WidthCells - body.Size.X;
+                    }
+
+                    body.SetPatrol(
+                        bodyPatrolMinX, bodyPatrolMaxX,
+                        patrolCruiseSpeedOverride ?? Constants.GameDefaults.PatrolCruiseSpeed,
+                        patrolMinYOverride, patrolMaxYOverride,
+                        patrolCruiseSpeedYOverride ?? patrolCruiseSpeedOverride ?? Constants.GameDefaults.PatrolCruiseSpeed,
+                        patrolForceOverride ?? Constants.GameDefaults.PatrolForceMultiplier,
+                        patrolInitialDirectionRight,
+                        patrolInitialDirectionDownHazard);
+                }
+
                 IPhysicsBody? movingBody = null;
                 Body2D spawnedBody;
 
@@ -653,6 +685,7 @@ public class World2D
                     case "DynamicObject":
                         var dynamicObject = new DynamicObject2D();
                         dynamicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, repeatCount);
+                        ConfigureDynamicPatrol(dynamicObject);
                         world.Objects.Add(dynamicObject);
                         movingBody = dynamicObject;
                         spawnedBody = dynamicObject;
@@ -697,33 +730,7 @@ public class World2D
                         dynamicHazard.EffectClipName = effectClipName;
                         dynamicHazard.IsKillable = killable;
                         dynamicHazard.EffectPersists = effectPersists;
-                        if (patrol)
-                        {
-                            // X defaults to the entire world width (this body's left edge sweeping
-                            // from the world's left edge to its right edge) when Patrol is enabled
-                            // without any explicit range - unless the placement configured a
-                            // vertical-only patrol via PatrolMinY/PatrolMaxY with no X override at
-                            // all, in which case this body patrols vertically only rather than
-                            // also silently sweeping the full world width.
-                            var hasExplicitX = patrolMinXOverride.HasValue || patrolMaxXOverride.HasValue;
-                            var hasExplicitY = patrolMinYOverride.HasValue || patrolMaxYOverride.HasValue;
-                            double? hazardPatrolMinX = null;
-                            double? hazardPatrolMaxX = null;
-                            if (hasExplicitX || !hasExplicitY)
-                            {
-                                hazardPatrolMinX = patrolMinXOverride ?? 0.0;
-                                hazardPatrolMaxX = patrolMaxXOverride ?? world.WidthCells - dynamicHazard.Size.X;
-                            }
-
-                            dynamicHazard.SetPatrol(
-                                hazardPatrolMinX, hazardPatrolMaxX,
-                                patrolCruiseSpeedOverride ?? Constants.GameDefaults.PatrolCruiseSpeed,
-                                patrolMinYOverride, patrolMaxYOverride,
-                                patrolCruiseSpeedYOverride ?? patrolCruiseSpeedOverride ?? Constants.GameDefaults.PatrolCruiseSpeed,
-                                patrolForceOverride ?? Constants.GameDefaults.PatrolForceMultiplier,
-                                patrolInitialDirectionRight,
-                                patrolInitialDirectionDownHazard);
-                        }
+                        ConfigureDynamicPatrol(dynamicHazard);
                         world.Objects.Add(dynamicHazard);
                         movingBody = dynamicHazard;
                         spawnedBody = dynamicHazard;

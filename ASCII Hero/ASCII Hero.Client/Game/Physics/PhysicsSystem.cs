@@ -391,7 +391,7 @@ public class PhysicsSystem
     /// immersed in this frame: <see cref="Assets.MaterialLibrary.Undefined"/>'s <c>Air</c>-like
     /// default unless <paramref name="body"/> overlaps one or more static <see cref="Body2D.IsPassable"/>
     /// volumes, in which case the highest-<see cref="Assets.Material.Density"/> overlapping
-    /// volume's own resolved material wins (see docs/Plans/AmbientMedium.md's tie-break rule).
+    /// volume's own resolved material wins (see docs/Decisions.md's medium-resolution rules).
     /// Deliberately a plain linear scan over <paramref name="world"/>'s passable statics, mirroring
     /// <see cref="CollisionSystem"/>'s existing per-frame climbable/hangable overlap scans, rather
     /// than adding a new broad-phase spatial structure just for this.
@@ -471,34 +471,7 @@ public class PhysicsSystem
         Body2D? resolvedCandidate = null;
         foreach (var candidate in world.Objects)
         {
-            if (!candidate.IsStatic || !candidate.IsPassable)
-            {
-                continue;
-            }
-
-            // EffectInstance2D sets IsPassable purely so a cosmetic effect (e.g. a killed
-            // hazard's persisting "crumble" husk) never blocks movement - it is not a
-            // level-design ambient-medium volume the way a placed Water/BodyOfWater section
-            // is, and never should be treated as one just because it happens to satisfy the
-            // same IsStatic/IsPassable check. Without this exclusion, a killable hazard's own
-            // (often fairly dense, e.g. Plant) material would make its leftover husk act as a
-            // dense medium the moment the player merely overlaps its footprint, producing
-            // unintended buoyancy (e.g. an oddly high jump) that has nothing to do with the
-            // husk's purely decorative role.
-            if (candidate is World.EffectInstance2D)
-            {
-                continue;
-            }
-
-            // Likewise, IsClimbable/IsHangable terrain (a ladder's rungs, a pipe/bar) is
-            // structural - something gripped/hung from - not a substance the player is ever
-            // meant to be immersed in, regardless of whatever material it's been given (e.g.
-            // for its render color, or simply because a future asset's DefaultMaterial isn't
-            // deliberately set to a zero-density placeholder the way Ladder_settings.ini's
-            // currently is). Excluded explicitly rather than relying on that being density-0
-            // by accident, which would silently break again the moment any climbable/hangable
-            // asset is given a real (denser-than-Air) material for an unrelated reason.
-            if (candidate.IsClimbable || candidate.IsHangable)
+            if (!IsMediumVolume(candidate))
             {
                 continue;
             }
@@ -550,8 +523,7 @@ public class PhysicsSystem
         var coveredIntervals = new List<(double Top, double Bottom)>();
         foreach (var candidate in world.Objects)
         {
-            if (!candidate.IsStatic || !candidate.IsPassable || candidate is World.EffectInstance2D
-                || candidate.IsClimbable || candidate.IsHangable)
+            if (!IsMediumVolume(candidate))
             {
                 continue;
             }
@@ -582,7 +554,21 @@ public class PhysicsSystem
     }
 
     /// <summary>
-    /// Merges a set of possibly-overlapping <c>[Top, Bottom)</c> vertical intervals and returns
+    /// True if <paramref name="candidate"/> is a level-authored ambient-medium volume (e.g. a placed
+    /// Water/BodyOfWater section): passable, static-for-collision plain terrain. Hazards and
+    /// collectables act through contact, <see cref="World.EffectInstance2D"/> is purely cosmetic,
+    /// and climbable/hangable terrain is structure to grip - none is a substance to be immersed
+    /// in, and each would otherwise leak its own material into the medium resolution.
+    /// </summary>
+    private static bool IsMediumVolume(Body2D candidate) =>
+        candidate.IsStatic
+        && candidate.IsPassable
+        && candidate is not (IHazardBody or ICollectableBody or World.EffectInstance2D)
+        && !candidate.IsClimbable
+        && !candidate.IsHangable;
+
+    /// <summary>
+    /// Merges a set of possibly-overlapping <c>[Top, Bottom)</c> vertical intervals
     /// the total length they cover, without double-counting overlapping regions - used by
     /// <see cref="ResolveCurrentMedium"/> so several stacked/adjacent placements of the same
     /// medium material don't inflate the submerged fraction beyond the body's own true covered
@@ -717,11 +703,11 @@ public class PhysicsSystem
             netForce.Y += mass * world.Gravity;
         }
 
-        // Ambient medium (see docs/Plans/AmbientMedium.md): resolved fresh every frame (mirroring
+        // Ambient medium (see docs/Decisions.md): resolved fresh every frame (mirroring
         // IsGrounded's "derived, not stored" philosophy, just needing an explicit recompute call
         // since it depends on spatial overlap rather than already-tracked contact state) and
         // exposed via Body2D.CurrentMedium for other systems (e.g. a future swim pose) to read.
-        // Resolved up front (rather than after patrol/walk force below, as originally) so this
+        // Resolved up front (before the patrol/walk force below) so this
         // same frame's medium - not a stale value from before this body's own contacts/position
         // were last updated - is available for ResolveMediumForceScale to dampen this frame's own
         // patrol/walk motor force by, below. body as Body2D is null for a non-Body2D IPhysicsBody
