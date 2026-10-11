@@ -2,7 +2,7 @@ namespace ASCII_Hero.Client.Game.Assets;
 
 /// <summary>
 /// Parses the raw text content of asset layer files
-/// (_characters/_foregroundcolors/_backgroundcolors/_materials.txt) into per-frame char grids,
+/// (_characters/_foregroundcolors/_backgroundcolors.txt) into per-frame char grids,
 /// applying the padding and "//end" frame-splitting rules. Only handles grid parsing; folder
 /// resolution and settings are handled by <see cref="AssetPathResolver"/> and
 /// <see cref="SpriteLoader"/>.
@@ -47,7 +47,7 @@ public static class AssetTextReader
     }
 
     /// <summary>
-    /// Parses an optional secondary layer (foregroundcolors/backgroundcolors/materials), padding
+    /// Parses an optional secondary layer (foregroundcolors/backgroundcolors), padding
     /// it to match the
     /// dimensions of the corresponding characters-layer frames. Missing frames, missing rows, and
     /// missing/short lines are all padded with <paramref name="emptyChar"/>, and a wholly

@@ -2,10 +2,10 @@ OOO
 O O
 OOO
 //end
-OOO
-O O
-OOO
+ O 
+ O 
+ O 
 //end
-OOO
-O O
-OOO
+   
+ O 
+   

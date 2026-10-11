@@ -22,7 +22,6 @@ Assets/
 					Player_walk_idle_characters.txt
 					Player_walk_idle_foregroundcolors.txt
 					Player_walk_idle_backgroundcolors.txt
-					Player_walk_idle_materials.txt
 					Player_walk_left_characters.txt
 					Player_walk_left_foregroundcolors.txt
 					Player_walk_left_backgroundcolors.txt
@@ -99,7 +98,7 @@ lowercase-prefixed, matching the asset/clip name (`Player_walk_idle_characters.t
 
 ## 2. Sprite files
 
-Pattern: `{AssetName}_{clipName}_{characters|foregroundcolors|backgroundcolors|materials}.txt`,
+{characters|foregroundcolors|backgroundcolors}.txt`
 plus one `{AssetName}_settings.ini` per asset folder.
 
 - `clipName` defaults to `default` for single-clip static assets (platforms, tiles).
@@ -115,14 +114,13 @@ plus one `{AssetName}_settings.ini` per asset folder.
 | `_characters.txt`           | The visible glyph for each cell. Required.                          |
 | `_foregroundcolors.txt`     | Foreground color code per cell (see `Global/ColorPalette.ini`). Optional.  |
 | `_backgroundcolors.txt`     | Background color code per cell (see `Global/ColorPalette.ini`). Optional.  |
-| `_materials.txt`            | Material code per cell (see `Global/MaterialLibrary.ini`). Optional.      |
 
 All layer files for the same clip share identical dimensions (rows and columns).
 Dimensions are never authored explicitly — they're inferred from the content of
 `_characters.txt` (its longest line and line count). Lines shorter than the
 inferred width are padded on the right with `EmptyChar`, so trailing empty
 columns never need to actually be typed out. The same padding applies to missing
-rows: if `_foregroundcolors.txt`, `_backgroundcolors.txt`, or `_materials.txt`
+rows: if `_foregroundcolors.txt` or `_backgroundcolors.txt`
 has fewer lines than `_characters.txt` (or is missing a file entirely, for the
 optional layers), the missing rows are treated as entirely `EmptyChar`.
 
@@ -176,41 +174,17 @@ material, excluded from collision) wherever `_characters.txt` contains `EmptyCha
 at that position. Other layer files must also use `EmptyChar` at the same
 position; the loader does not currently need distinct empty markers per layer.
 
-### 2.3 Materials — whole-object shorthand and per-cell precision
+### 2.3 Materials
 
-Both are supported, chosen per-asset:
-
-**Whole-object shorthand** — no `_materials.txt` file is needed at all:
+An asset's material is set for the whole object in its `settings.ini`:
 
 ```ini
 [Physics]
 DefaultMaterial = Glass
 ```
 
-Every non-empty cell of the asset uses `DefaultMaterial`.
-
-**Per-cell precision** — add `{AssetName}_{clipName}_materials.txt`, same
-dimensions as `_characters.txt`, containing single-character material codes:
-
-```ini
-[MaterialCodes]
-. = (inherit DefaultMaterial)
-R = Rubber
-```
-
-```
-Player_walk_idle_materials.txt
--------------------------
-.....
-..R..
-.....
-```
-
-Cells in `_materials.txt` marked with `EmptyChar` are skipped (no material, no
-collision), matching whatever is empty in `_characters.txt`. Cells present in
-`_characters.txt` but using the "inherit" code in `_materials.txt` fall back to
-`DefaultMaterial`. This lets an object be defined mostly as one material with a
-few cells overridden (e.g. a glass ball with a rubber-lined rim).
+Every non-empty cell of the asset uses `DefaultMaterial`. There is no per-cell
+material layer; to combine materials (e.g. grass on sand), place separate objects.
 
 ### 2.4 `settings.ini` sections (per-asset)
 
@@ -229,18 +203,14 @@ DefaultMaterial = Flesh
 FrameDurationSeconds = 0.5
 Mode = Loop
 DefaultFrame = 0
-
-[MaterialCodes]
-. = (inherit DefaultMaterial)
-B = Bone
 ```
 
-**`[Layout]`** — controls visual interpretation of layer files:
+**`[Layout]`**
 - `EmptyChar` (default `' '`) — which character in layer files means "no cell here."
 - `TileAxis` (default `None`) — whether this asset is a tileable unit (see §2.5).
 
 **`[Colors]`** (optional) — whole-asset default color codes (see `Global/ColorPalette.ini`),
-the color analog of `[Physics] DefaultMaterial`'s whole-object shorthand (§2.3):
+the color analog of `[Physics] DefaultMaterial` (§2.3):
 - `DefaultForegroundColor`/`DefaultBackgroundColor` — the color code used for any
   cell whose own `_foregroundcolors.txt`/`_backgroundcolors.txt` position is
   absent/empty. Resolution precedence for a given cell, checked in order,
@@ -255,9 +225,7 @@ the color analog of `[Physics] DefaultMaterial`'s whole-object shorthand (§2.3)
   everything else to fall through to this default.
 
 **`[Physics]`** — controls material assignment:
-- `DefaultMaterial` — the material code used for every non-empty cell when no
-  per-cell `_materials.txt` file exists, or when a cell in `_materials.txt` uses
-  the inherit marker.
+- `DefaultMaterial` — the material used for every non-empty cell.
 
 **`[Animation]`** (optional) — controls frame-over-time playback for clips with
 multiple frames. If omitted, multi-frame clips remain static at frame `DefaultFrame`
@@ -317,10 +285,7 @@ alive) still requires a separate asset (its own settings.ini) — per-clip
 `[Animation.{clipName}]` overrides one clip's timing, not a per-instance
 runtime toggle.
 
-**`[MaterialCodes]`** — maps single-character codes in `_materials.txt` to material
-names (see §2.3).
-
-### 2.5 Tileable assets (`TileAxis`)
+### 2.5 Tileable assets
 
 Some objects — platforms, walls, fences — are naturally repetitive: the same
 small unit repeated however many times are needed to reach a given length.
@@ -335,7 +300,7 @@ TileAxis = Horizontal
 ```
 
 - **`TileAxis = Horizontal`** — the asset's `_characters.txt` (and matching
-  `_foregroundcolors.txt`/`_backgroundcolors.txt`/`_materials.txt`) is authored
+  `_foregroundcolors.txt`/`_backgroundcolors.txt`) is authored
   **one cell wide** (any height). A placement's `Repeat` count (see §3.4)
   repeats that single column side-by-side to build up the actual platform
   length at spawn time.
@@ -348,7 +313,8 @@ TileAxis = Horizontal
   ...) is entirely unaffected by this feature.
 
 Tiling happens once, in memory, at spawn time — it repeats the authored unit's
-characters/foregroundcolors/backgroundcolors/materials grids to produce a
+characters/foregroundcolors/backgroundcolors grids (and the resolved material
+grid) to produce a
 normal, full-size frame that is otherwise indistinguishable from one that had
 been hand-authored at that exact size. Collision shape derivation (§ see
 `CollisionShapeBuilder`), rendering, and every other consumer of a loaded frame
@@ -505,8 +471,7 @@ Level1_settings.ini
 Level1_background_characters.txt        (optional)
 Level1_background_foregroundcolors.txt
 Level1_background_backgroundcolors.txt
-Level1_background_materials.txt   (optional)
-Level1_foreground_characters.txt        (optional)
+Level1_foreground_characters.txt 
 Level1_foreground_foregroundcolors.txt  (optional)
 Level1_foreground_backgroundcolors.txt  (optional)
 Level1_objects.txt
@@ -523,16 +488,10 @@ Level1_objects.ini
   it never overwrites or conflicts with the background/foreground layers —
   all are composited independently at load/render time.
 - `Level1_background_*` follows the exact same rules as a sprite clip (empty
-  cells, optional materials, `//end` frames — though a world background typically
+  cells, `//end` frames — though a world background typically
   has a single frame). This layer is purely visual/background terrain (e.g. distant
-  mountains); it may optionally carry per-cell materials for background elements
-  that are also physically solid (e.g. a rock ledge drawn as background art).
-  **Not yet implemented**: `World2D.LoadAsync` does not currently read
-  `Level1_background_materials.txt` or expose any per-cell background material
-  data — this is a documented design intent for a future alternative to
-  defining solid terrain via `_objects.ini`, not a working feature today. Omit
-  the file until this is implemented.
-  `Level1_background_characters.txt` itself is **optional** — a world with
+  mountains) and is never physically solid.
+  `Level1_background_characters.txt` itself
   none simply has nothing drawn on this layer, same as an absent
   `Level1_foreground_characters.txt`.
 - `Level1_foreground_*` is the background layer's counterpart on the other side
@@ -547,8 +506,7 @@ Level1_objects.ini
   layer, exactly as today. When present, it is **not** sized independently
   from its own content — like the background layer, its dimensions are fixed
   to the world's own width/height (from `Level1_objects.txt`), with any missing
-  rows/columns padded with `EmptyChar`. No `_foreground_materials.txt`
-  equivalent exists — this layer is always purely visual, never physically
+  rows/columns padded with `EmptyChar`. This layer is always purely visual, never physically
   solid.
 
 
@@ -583,10 +541,11 @@ in world cells per second squared.
 
 **`[World]`** (optional) — `Title`, a short human-readable name shown above
 this world's thumbnail on the world-selection screen (see §3.2). Falls back
-to the world's own folder/asset name (e.g. `Level1`) if omitted. `Health`
-(default the built-in starting health), the player's health when this world
-is loaded — spent one point at a time on ordinary (non-fatal) contact with a
-hazard.
+to the world's own folder/asset name (e.g. `Level1`) if omitted. `Lives`
+(default 3) is the number of lives the player starts with. `RingsPerLife`
+(default 25) is how many rings give an extra life. The player's health is a
+bar that is always full at the start of each life; hazards remove part of it
+(see `Damage` below) and an empty bar costs one life.
 
 ### 3.1 World thumbnail (`{Name}_thumb_*`)
 
@@ -613,7 +572,7 @@ Level1_thumb_backgroundcolors.txt   (optional)
 - Background color follows the same resolution precedence as an in-game cell
   (§2.4): a cell's own `_thumb_backgroundcolors.txt` code, then this world's
   own `[Colors] DefaultBackgroundColor` (§3), then the hardcoded engine
-  default (no fill). No `_materials.txt` though — a thumbnail is a small
+  default (no fill). A thumbnail has no material - it is a small
   decorative preview, not a physical/collidable object, so that concept
   doesn't apply.
 - Entirely optional per world; a world with no `_thumb_characters.txt` simply
@@ -653,19 +612,15 @@ filesystem" approach `[Poses]` already uses for a sprite's clips.
 
 ### 3.3 Object placement codes
 
-- A **single digit `0`-`9`** is the default, simplest code and unambiguously
-  occupies one grid cell (solves the "adjacent 1x1 objects" case, since no
-  multi-character parsing is needed).
-- When more than 10 object types are needed in one level, extend to
-  **uppercase-letter + digit** (`A0`-`Z9`). A 2-character code still represents a
-  single logical grid cell — it is read as one placement token even though it
-  visually spans two characters in the `.txt` file. This is an accepted minor
-  readability tradeoff in exchange for keeping the placement grid aligned 1:1
-  with the background grid's dimensions.
-- Leading-letter groupings (e.g. `P` = player/spawn, `E` = hazard, `M` = moving
-  object, `S` = static/scenery) are a **level-author convention only**. The
-  engine treats every code as an opaque lookup key into `[ObjectCodes]` — it does
-  not parse or assign meaning to the letter prefix itself.
+- A placement code is a **single character**: a digit `0`-`9` or an uppercase letter
+  `A`-`Z`, giving up to 36 distinct object types per world. Each code occupies exactly
+  one grid cell, so the placement grid stays aligned 1:1 with the background grid's
+  dimensions. There are no multi-character codes. The same code can be placed any number
+  of times, and every placement shares that code's section.
+- Letter choices (e.g. `P` = player/spawn, `E` = hazard, `M` = moving object,
+  `S` = static/scenery) are a **level-author convention only**. The engine treats every
+  code as an opaque lookup key into `[ObjectCodes]` — it does not assign meaning to the
+  character itself.
 - A marker only needs to appear once, at an object's anchor cell (its top-left).
   The object's own sprite dimensions (from its `_characters.txt`) determine its
   full footprint — multi-cell objects do not need repeated markers.
@@ -678,8 +633,8 @@ filesystem" approach `[Poses]` already uses for a sprite's clips.
 [ObjectCodes]
 0 = Player
 1 = BrickPlatform
-P0 = Player
-E0 = Goblin
+P = Player
+E = Goblin
 
 [Player]
 Asset = Player
@@ -771,9 +726,9 @@ The table below summarizes what each style supports:
 
 Each `[ObjectCodes]` entry maps a placement code to a section name, which in turn
 specifies which sprite asset/clip to spawn and any additional per-type properties.
-Per-instance overrides (e.g. one specific hazard with a custom patrol range) can use
-a dedicated numbered code (`E1`) with its own `[E1]` section, falling back to a
-shared template section for common properties.
+Per-instance overrides (e.g. one specific hazard with a custom patrol range) use
+their own dedicated code mapped to its own section (e.g. `2 = SnakeTwo` alongside
+`1 = SnakeOne`).
 
 Throughout the rest of this section, "an object type" (or "a section") means
 one `[SectionName]` block in a world's `{WorldName}_objects.ini` (e.g.
@@ -784,10 +739,10 @@ cell in `{WorldName}_objects.txt` that uses that section's code - placing the
 same code at five different spots spawns five bodies that all share that one
 section's tuning. To give one specific occurrence its own values instead
 (e.g. one particular goblin patrolling faster than all the others), author
-it under its own numbered code/section (the `E1`-style per-instance override
-just above) rather than editing the shared section - that one numbered
-section is then itself "an object type" in the sense used below, just one
-used by only a single occurrence.
+it under its own code/section (the per-instance override just above)
+rather than editing the shared section - that section is then itself "an
+object type" in the sense used below, just one used by only a single
+occurrence.
 
 There is no placement-time frame-selection key — a clip's starting/static frame is
 always controlled asset-wide via `[Animation] DefaultFrame` in the asset's own
@@ -1024,23 +979,25 @@ a placement's own `EffectPersists = true` (see below) leaves its pickup
 effect behind in its place afterward as a permanent "already used" marker,
 instead of the effect fading away like an ordinary pickup:
 
-- `Points` — awards a point of score.
-- `Health` — restores a point of the player's health.
+- `Diamond` — adds 1 to the score (used for diamonds).
+- `Ring` — counts one ring and adds 5 to the score. Every `RingsPerLife`
+  rings (see §3) the ring count returns to 0 and the player gains a life.
+  Does not restore health.
 - `Checkpoint` — records itself as where the player should next respawn
   from. Typically paired with `EffectPersists = true` so the checkpoint
   stays visibly marked as reached.
 - `LevelEnd` — finishes the level. Typically paired with
   `EffectPersists = true` for the same reason as `Checkpoint`.
-- `Key` — reserved for a future door/gate-unlock mechanic; currently has no
-  unlock effect of its own, behaving like an ordinary `Health`/`Points`
-  pickup.
+- `Key` — adds a key to the player's inventory and is removed. Requires a
+  `Lock = <name>` key naming the lock it opens; a key without `Lock` is inert
+  (like a missing `Type`). See "Doors and keys" below.
 
 ```ini
 [Ring]
 Asset = Ring
 Clip = default
 Kind = Collectable
-Type = Health
+Type = Ring
 EffectClip = fade
 
 [Checkpoint]
@@ -1052,6 +1009,58 @@ EffectClip = reached
 EffectPersists = true
 ```
 
+**Doors and keys.** A key (`Kind = Collectable`, `Type = Key`) and a door share
+a lock name through the required `Lock` key. A door is any other solid placement
+(e.g. `Kind = StaticObject`) with the same `Lock`. Names match case-insensitively
+and one key opens one door. The player opens a door by standing next to it (within
+one cell) and pressing the action key (`E` or `Enter`); the door is then removed
+and its `Sound` plays. Without a matching key the door is simply a solid wall.
+A world can use any number of differently named locks. Keys are kept on respawn.
+
+```ini
+[RedKey]
+Asset = Key
+Kind = Collectable
+Type = Key
+Lock = Red
+Sound = Pickup
+
+[RedDoor]
+Asset = Door
+Kind = StaticObject
+Lock = Red
+Sound = Pickup  ; Played when the door opens
+```
+
+**Sound keys on object placements.**
+`SoundLibrary.ini` (§4.3.1). Both keys are optional - omit them for a silent
+object. Which event the key refers to depends on the kind of object:
+
+| Key         | On a hazard (`*Hazard`)                                              | On a `Collectable`                              |
+|-------------|----------------------------------------------------------------------|-------------------------------------------------|
+| `Sound`     | Played when the player is hurt by touching it (once per fresh contact, not while health is already 0). | Played when the player picks it up. Only plays when `Type` is set (an untyped collectable is inert). |
+| `KillSound` | Played when the player squashes it by landing on top (only for a killable hazard). That contact plays `KillSound` *instead of* `Sound`. | Not used.                                       |
+
+Other kinds of object (platforms, walls, balls) never play these keys. A hazard
+can therefore have two different sounds - `Sound` for hurting the player and
+`KillSound` for being killed - but a single contact only ever plays one of them.
+
+```ini
+[Snake]
+Kind = DynamicHazard
+Sound = Hurt          ; Played when the player is hurt by touching it
+KillSound = Squash    ; Played when the player squashes it from above
+
+[Ring]
+Kind = Collectable
+Type = Ring
+Sound = Pickup        ; Played when the player picks it up
+```
+
+**`Damage` on hazards.** Optional, on any `*Hazard` placement: the share of a
+full health bar one hit removes (default 1, a whole bar, so the player loses a
+life at once). For example `Damage = 0.2` takes a fifth of the bar and
+`Damage = 0.5` half of it. A hit costing the last of the bar costs one life.
 The `Player` section may additionally override its own "muscle power" and
 target ground speeds, the same concepts `DynamicHazard`'s `PatrolForceMultiplier`/
 `PatrolCruiseSpeedX` expose for a patrolling hazard - deliberately the same
@@ -1085,7 +1094,7 @@ player reaches a `Checkpoint`. Both are optional (no effect if omitted).
 
 Any object type may also override its spawned body's material and/or color away
 from what its sprite asset would otherwise resolve to on its own (its
-`DefaultMaterial`/per-cell `_materials.txt`, and `DefaultForegroundColor`/
+`DefaultMaterial`, and `DefaultForegroundColor`/
 `DefaultBackgroundColor`/per-cell `_foregroundcolors.txt`/`_backgroundcolors.txt`
 respectively — see §2.3-§2.4). This lets one sprite asset be placed multiple
 times with different physical/visual identities, without authoring a separate
@@ -1206,8 +1215,8 @@ meaning of that same code rather than the world's own repurposed one.
 
 ### 4.2 `Global/MaterialLibrary.ini`
 
-Defines the shared material library, referenced by every `_materials.txt` file
-and by `DefaultMaterial` in any `settings.ini`.
+Defines the shared material library, referenced by `DefaultMaterial` in any
+`settings.ini`.
 
 ```ini
 [Glass]
@@ -1343,7 +1352,8 @@ A sound that isn't defined is simply silent - there is no fallback, so a level
 can be made completely silent.
 
 Sounds are referenced by name from: an object's `Sound` / `KillSound` keys in
-`_objects.ini` (hazard hit / kill, collectable pickup), and a sprite's
+`_objects.ini` (see "Sound keys on object placements" in §3.4 for what each
+means on a hazard versus a collectable), and a sprite's
 `[Sounds]` section in its settings file, which maps a pose name to a sound
 played on each animation frame step of a moving clip. The pose is the one
 currently displayed (`Walk`, `Crawl`, `Climb`, `Hang`, `Clamber`, `Swim`). Two
@@ -1376,12 +1386,12 @@ Order = Level1, TestMovement, TestPhysics
 ## 5. Design rationale summary
 
 - **Everything is a grid of parallel text-file layers**
-  (characters/foregroundcolors/backgroundcolors/materials) plus one `.ini` for
+  (characters/foregroundcolors/backgroundcolors) plus one `.ini` for
   metadata — sprites, world backgrounds, and object placement all follow this
   same shape, so there is only one loading concept to implement.
 - **Object placement never overwrites visual art.** The placement grid is a
   separate file from the background grid, avoiding the classic "special character
   eats a cell that could otherwise hold background art" problem.
-- **Whole-object vs. per-cell precision is a free choice**, not a fork in the
-  format — omitting the optional per-cell file simply falls back to a single
-  default value from `settings.ini`.
+- **Optional layers fall back to `settings.ini` defaults.** Omitting an optional
+  color layer file simply falls back to the default value from `settings.ini`;
+  materials are always set per asset via `DefaultMaterial`.

@@ -351,9 +351,10 @@ public class CollisionSystem
 
                     if (body is Player2D player && player.Health > 0)
                     {
-                        player.Health = Math.Max(0, player.Health - 1);
-                        if (player.Health == 0)
+                        player.Health = Math.Max(0, player.Health - hazard.Damage);
+                        if (player.Health <= 0)
                         {
+                            player.Lives = Math.Max(0, player.Lives - 1);
                             world.Respawn();
                         }
                     }
@@ -391,26 +392,32 @@ public class CollisionSystem
                 // EffectPersists key, not just Checkpoint/LevelEnd.
                 switch (typedCollectable.Type)
                 {
-                    case CollectableType.Points:
+                    case CollectableType.Diamond:
                         SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
                         world.QueueRemoval(collectable);
-                        if (movingBody is Player2D pointsPlayer)
+                        if (movingBody is Player2D diamondPlayer)
                         {
-                            pointsPlayer.Score++;
+                            diamondPlayer.Score += GameDefaults.DiamondScore;
                         }
                         break;
 
-                    case CollectableType.Health:
+                    case CollectableType.Ring:
                         SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
                         world.QueueRemoval(collectable);
-                        if (movingBody is Player2D healthPlayer)
+                        if (movingBody is Player2D ringPlayer)
                         {
-                            healthPlayer.Health++;
+                            ringPlayer.Score += GameDefaults.RingScore;
+                            ringPlayer.Rings++;
+                            if (ringPlayer.Rings >= world.RingsPerLife)
+                            {
+                                ringPlayer.Rings = 0;
+                                ringPlayer.Lives++;
+                            }
                         }
                         break;
 
                     case CollectableType.Checkpoint:
-                        // Same as Points/Health, but records the respawn point instead of
+                        // Same as Diamond/Ring, but records the respawn point instead of
                         // adjusting a player stat, and - if the collector is the player - also
                         // plays the player's own CheckpointReachedEffectClipName (e.g. a "happy" clip)
                         // as a second
@@ -427,7 +434,7 @@ public class CollisionSystem
                         break;
 
                     case CollectableType.LevelEnd:
-                        // Same as Points/Health, but signals level completion for GameLoop to act
+                        // Same as Diamond/Ring, but signals level completion for GameLoop to act
                         // on instead of adjusting a player stat.
                         SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
                         world.QueueRemoval(collectable);
@@ -438,8 +445,14 @@ public class CollisionSystem
                         break;
 
                     case CollectableType.Key:
-                        // Placeholder: behaves like an ordinary pickup for now. No door/gate-unlock
-                        // target wiring exists yet.
+                        // Only the player can carry a key, and a key needs its Lock name (see
+                        // Body2D.LockName) - without either it is left in place, inert.
+                        if (collectable.LockName is not { Length: > 0 } keyLockName || movingBody is not Player2D keyPlayer)
+                        {
+                            break;
+                        }
+
+                        keyPlayer.Keys.Add(keyLockName);
                         SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
                         world.QueueRemoval(collectable);
                         break;

@@ -21,7 +21,7 @@ public class Collectable2D : Body2D, ICollectableBody, IEffectTrigger
     /// permanent decorative body once its clip finishes playing, instead of self-removing -
     /// mirrors <see cref="IKillableBody.EffectPersists"/> on hazards/hazards. Used by
     /// <see cref="CollectableType.Checkpoint"/> so its "reached" effect remains visible as a
-    /// marker rather than fading away, unlike an ordinary pickup (e.g. a ring/star) whose effect
+    /// marker rather than fading away, unlike an ordinary pickup (e.g. a ring/diamond) whose effect
     /// is expected to vanish.
     /// </summary>
     public bool EffectPersists { get; set; }

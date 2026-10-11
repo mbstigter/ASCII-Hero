@@ -2,7 +2,7 @@ namespace ASCII_Hero.Client.Game.Assets;
 
 /// <summary>
 /// Loads a sprite asset's files (settings.ini + one or more clips' characters/foregroundcolors/
-/// backgroundcolors/materials layers) into an in-memory <see cref="SpriteAsset"/>, applying the
+/// backgroundcolors layers) into
 /// Global/World fallback rule (via <see cref="AssetPathResolver"/>) and the layer parsing/padding
 /// rules (via <see cref="AssetTextReader"/>). Reused identically for the player, static
 /// platforms, and any other sprite-backed object.
@@ -24,7 +24,6 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         var defaultForeColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultForegroundColor"));
         var defaultBackColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
         var defaultMaterial = settings.TryGetValue("Physics", "DefaultMaterial");
-        var materialCodes = settings.Section("MaterialCodes");
         var defaultFrameDurationSeconds = ParseFrameDurationSeconds(settings.TryGetValue("Animation", "FrameDurationSeconds"));
         var defaultAnimationMode = ParseAnimationMode(settings.TryGetValue("Animation", "Mode"));
         var defaultDefaultFrame = ParseDefaultFrame(settings.TryGetValue("Animation", "DefaultFrame"));
@@ -65,7 +64,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             var clipFolder = ResolveClipFolder(folder, clipName, clipFolders);
 
             clips[clipName] = await LoadClipAsync(
-                clipFolder, assetName, clipName, emptyChar, defaultMaterial, materialCodes,
+                clipFolder, assetName, clipName, emptyChar, defaultMaterial,
                 frameDurationSeconds, animationMode, clipDefaultFrame ?? 0, effectDurationSeconds);
         }
 
@@ -91,7 +90,6 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         string clipName,
         char emptyChar,
         string? defaultMaterial,
-        IReadOnlyDictionary<string, string> materialCodes,
         double? frameDurationSeconds,
         AnimationMode animationMode,
         int defaultFrame,
@@ -99,18 +97,19 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
     {
         var baseName = $"{folder}/{assetName}_{clipName}";
 
-        var charsContent = await fileProvider.TryReadTextAsync($"{baseName}_characters.txt")
+        var charsTask = fileProvider.TryReadTextAsync($"{baseName}_characters.txt");
+        var foreTask = fileProvider.TryReadTextAsync($"{baseName}_foregroundcolors.txt");
+        var backTask = fileProvider.TryReadTextAsync($"{baseName}_backgroundcolors.txt");
+        await Task.WhenAll(charsTask, foreTask, backTask);
+
+        var charsContent = charsTask.Result
             ?? throw new FileNotFoundException($"Missing required characters layer for {assetName}/{clipName}.");
-        var foreContent = await fileProvider.TryReadTextAsync($"{baseName}_foregroundcolors.txt");
-        var backContent = await fileProvider.TryReadTextAsync($"{baseName}_backgroundcolors.txt");
-        var materialContent = await fileProvider.TryReadTextAsync($"{baseName}_materials.txt");
+        var foreContent = foreTask.Result;
+        var backContent = backTask.Result;
 
         var charFrames = AssetTextReader.ParseCharsLayer(charsContent, emptyChar);
         var foreFrames = AssetTextReader.ParseSecondaryLayer(foreContent, charFrames, emptyChar);
         var backFrames = AssetTextReader.ParseSecondaryLayer(backContent, charFrames, emptyChar);
-        var materialFrames = materialContent is null
-            ? null
-            : AssetTextReader.ParseSecondaryLayer(materialContent, charFrames, emptyChar);
 
         var frames = new List<SpriteFrame>(charFrames.Count);
         for (var i = 0; i < charFrames.Count; i++)
@@ -120,7 +119,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
                 Chars = charFrames[i],
                 Fore = foreFrames[i],
                 Back = backFrames[i],
-                Materials = ResolveMaterials(charFrames[i], materialFrames?[i], emptyChar, defaultMaterial, materialCodes),
+                Materials = ResolveMaterials(charFrames[i], emptyChar, defaultMaterial),
             });
         }
 
@@ -137,10 +136,8 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
 
     private static string?[,] ResolveMaterials(
         char[,] chars,
-        char[,]? materialGrid,
         char emptyChar,
-        string? defaultMaterial,
-        IReadOnlyDictionary<string, string> materialCodes)
+        string? defaultMaterial)
     {
         var height = chars.GetLength(0);
         var width = chars.GetLength(1);
@@ -155,29 +152,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
                     continue;
                 }
 
-                if (materialGrid is null)
-                {
-                    // Whole-object shorthand: every non-empty cell uses DefaultMaterial.
-                    result[row, col] = defaultMaterial;
-                    continue;
-                }
-
-                var code = materialGrid[row, col];
-                if (code == emptyChar)
-                {
-                    continue;
-                }
-
-                var codeKey = code.ToString();
-                if (materialCodes.TryGetValue(codeKey, out var mapped) &&
-                    !mapped.StartsWith("(inherit", StringComparison.OrdinalIgnoreCase))
-                {
-                    result[row, col] = mapped;
-                }
-                else
-                {
-                    result[row, col] = defaultMaterial;
-                }
+                result[row, col] = defaultMaterial;
             }
         }
 

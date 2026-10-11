@@ -189,8 +189,8 @@ The live game state and the entity types that make it up.
 	behavior is not yet implemented.
   - `Collectable2D` - a static, non-solid item removed from the world when a
 	collector body touches it (e.g. a coin or power-up), regardless of its
-	`Type` (`CollectableType`: `Health`/`Points`/`Checkpoint`/`LevelEnd`/`Key`,
-	set from the placement's optional `Type` ini key, default `Health`) - see
+	`Type` (`CollectableType`: `Ring`/`Diamond`/`Checkpoint`/`LevelEnd`/`Key`,
+	set from the placement's optional `Type` ini key; absent = inert) - see
 	`CollisionSystem.ResolveHazardsAndCollectables` below for the actual
 	per-type pickup behavior. `Checkpoint`/`LevelEnd` typically set
 	`EffectPersists = true` so their pickup effect remains in the removed
@@ -234,9 +234,10 @@ The live game state and the entity types that make it up.
 	`DynamicHazard2D`) derives `Facing.Left`/`Right`/`Idle` from.
   - `IHazardBody` - damages a body on contact (marker only; the actual damage
 	is applied by `CollisionSystem.ResolveHazardsAndCollectables`, which
-	deducts 1 from `Player2D.Health` on the first frame of a fresh, non-fatal
-	contact - clamped at 0, calling `World2D.Respawn()` the instant a hit
-	brings health to exactly 0).
+	deducts the hazard's `Body2D.Damage` (default 1 = a full bar) from
+	`Player2D.Health` on the first frame of a fresh, non-fatal
+	contact - clamped at 0; when the bar empties it removes one `Player2D.Lives`
+	and calls `World2D.Respawn()`).
   - `ICollectableBody` - removed from the world on contact with a collector
 	(marker only); see `Collectable2D`'s own entry above for how its
 	`EffectPersists` can leave its pickup effect behind as a permanent marker
@@ -617,7 +618,7 @@ The live game state and the entity types that make it up.
   exposes them as game-oriented queries (`IsLeftPressed`, `IsUpPressed`,
   etc.), so gameplay code never depends on raw DOM key codes. Two full,
   independent key sets are supported for local co-op/preference - "Player 1"
-  (arrow keys + `Space`) and "Player 2" (`WASD` + `Left Ctrl`) - rather than
+  (arrow keys + `Space`, action `Enter`) and "Player 2" (`WASD` + `Left Ctrl`, action `E`) - rather than
   one shared movement set plus one shared jump key. `IsUpPressed` and
   `IsJumpPressed` are deliberately never combined into one query anywhere,
   even for the ordinary ground jump - see `PhysicsSystem` above for why
@@ -633,7 +634,10 @@ The live game state and the entity types that make it up.
   synthesis). `GameLoop` calls `PlayQueuedSounds()` after physics/collision
   and animation each frame, forwarding names queued on `World2D`
   (`PlaySound`/`DrainPendingSounds`) by `CollisionSystem` and
-  `AnimationSystem`.
+  `AnimationSystem`. At startup `GameLoop` registers the global-only
+  `SoundLibrary` so the world-select menu can play `MenuMove` when the
+  selection changes and `MenuSelect` when a world is confirmed; each loaded
+  world then replaces it with its own merged library.
 
 ### Menu
 
@@ -754,8 +758,9 @@ large jumps after e.g. a tab switch):
    fixed step - not once for the whole frame - so a large catch-up delta
    can't let a body integrate several times before ever being
    collision-checked. Collectable pickup itself branches on `Collectable2D.Type`
-   (`CollectableType`): all variants are removed on pickup. `Health`/`Points`
-   additionally increment `Player2D.Health`/`Score` respectively; `Checkpoint`
+   (`CollectableType`): all variants are removed on pickup. `Diamond`
+   adds 1 to `Player2D.Score`; `Ring` increments `Rings`, adds 5 to `Score` and, every
+   `World2D.RingsPerLife` rings, resets `Rings` and adds a life; `Checkpoint`
    records `World2D.RespawnPoint`; `LevelEnd` sets `World2D.LevelCompleted`
    for `GameLoop` to act on. `Checkpoint`/`LevelEnd` (and any other
    collectable with `EffectPersists = true`) spawn their pickup effect as a
@@ -786,7 +791,9 @@ large jumps after e.g. a tab switch):
    on top of the foreground layer and everything else - before
    `CanvasBridge.DrawFrameAsync` sends the complete list to JavaScript to
    paint onto the canvas. `_hudText` is refreshed every `Playing` frame from
-   `World2D.Player.Health`/`.Score`. An additional dev/testing FPS overlay
+   `World2D.Player.Lives`/`.Rings`/`.Score` on its first row; its second row is a
+   "Health" caption followed by `_hudBar` (`Player.Health`, 0-1), and a key icon
+   appears while a key is held. An additional dev/testing FPS overlay
    (`InputState.IsFpsToggleKeyPressed`, bound to `F`) can be toggled on top
    of the HUD, showing a smoothed frames-per-second reading computed each
    frame from that frame's own raw, unclamped elapsed time (not the fixed
@@ -801,7 +808,7 @@ large jumps after e.g. a tab switch):
    approach, also off by default. A third debug key
    (`InputState.IsRespawnDebugKeyPressed`, bound to `R`) instantly calls
    `World2D.Respawn()` - the same respawn `CollisionSystem` triggers
-   automatically once hazard damage brings `Player2D.Health` to exactly 0
+   automatically once hazard damage empties `Player2D.Health`
    (see Collision above), letting it be tested without needing to actually
    lose all health first.
 

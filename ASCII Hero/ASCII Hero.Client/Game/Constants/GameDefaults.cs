@@ -71,8 +71,8 @@ public static class GameDefaults
     /// than reusing Walk/Crawl/Hang, since swimming is its own distinct kind of locomotion -
     /// slower than Walk but faster than Crawl, roughly comparable to Hang. Not overridable via
     /// any ini file. If tweaked, recompute swim_left/swim_right's FrameDurationSeconds in
-    /// Player_settings.ini via <c>2.4 / SwimHorizontalSpeed</c> (see the formula noted at the top
-    /// of its <c>[Animation]</c> section).
+    /// Player_settings.ini via <c>5.4 / SwimHorizontalSpeed</c> (swimming's own, longer stroke
+    /// anchor - see the note at the top of its <c>[Animation]</c> section).
     /// </summary>
     public const double SwimHorizontalSpeed = 9.0;
 
@@ -81,8 +81,8 @@ public static class GameDefaults
     /// own dedicated constant, distinct from <see cref="SwimHorizontalSpeed"/>, since vertical
     /// thrust against buoyancy/gravity is a different kind of effort than horizontal strokes. Not
     /// overridable via any ini file. If tweaked, recompute swim_up/swim_down's
-    /// FrameDurationSeconds in Player_settings.ini via <c>2.4 / SwimVerticalSpeed</c> (see the
-    /// formula noted at the top of its <c>[Animation]</c> section).
+    /// FrameDurationSeconds in Player_settings.ini via <c>5.4 / SwimVerticalSpeed</c> (swimming's
+    /// own, longer stroke anchor - see the note at the top of its <c>[Animation]</c> section).
     /// </summary>
     public const double SwimVerticalSpeed = 5.0;
 
@@ -198,9 +198,21 @@ public static class GameDefaults
     /// </summary>
     public const double EffectLifetimeSeconds = 0.5;
 
-    /// <summary>
-    /// Starting <see cref="World.Player2D.Health"/> for a freshly-loaded world. Not overridable
-    /// via any ini file (no death/damage system exists yet to make tuning this meaningful).
-    /// </summary>
-    public const int PlayerStartingHealth = 3;
+    /// <summary>Full <see cref="World.Player2D.Health"/> bar value; health runs from 0 to this.</summary>
+    public const double PlayerFullHealth = 1.0;
+
+    /// <summary>Default starting <see cref="World.Player2D.Lives"/> (a world's <c>[World] Lives</c> overrides it).</summary>
+    public const int PlayerStartingLives = 3;
+
+    /// <summary>Default number of rings that add one life (a world's <c>[World] RingsPerLife</c> overrides it).</summary>
+    public const int DefaultRingsPerLife = 25;
+
+    /// <summary>Score added by picking up a diamond.</summary>
+    public const int DiamondScore = 1;
+
+    /// <summary>Score added by picking up a ring.</summary>
+    public const int RingScore = 5;
+
+    /// <summary>Default health a hazard hit removes
+    public const double DefaultHazardDamage = 1.0;
 }

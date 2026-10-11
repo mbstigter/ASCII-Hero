@@ -37,6 +37,11 @@ public class InputState
     /// screen, regardless of which pose/mode is active. See docs/Decisions.md.</summary>
     public bool IsEscapePressed => IsPressed("Escape");
 
+    /// <summary>The "action" input (opens a door the player holds the key for). "Player 1" (arrow
+    /// keys) uses <c>Enter</c>; "Player 2" (WASD) uses <c>E</c>. Distinct from jump and directional
+    /// input.</summary>
+    public bool IsActionPressed => IsPressed("Enter") || IsPressed("KeyE");
+
     /// <summary>Dev/testing shortcut - toggles the FPS debug overlay (see
     /// <see cref="GameLoop.OnFrame"/>). "F" is otherwise unused by any gameplay input.</summary>
     public bool IsFpsToggleKeyPressed => IsPressed("KeyF");

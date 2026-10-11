@@ -1,11 +1,11 @@
-ARRRR
 AMMMM
 ARRRR
+AMMMM
 A    
 A    
 //end
-AMMMM
 ARRRR
 AMMMM
+ARRRR
 A    
-A     
+A    

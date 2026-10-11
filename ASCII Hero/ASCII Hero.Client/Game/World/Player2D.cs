@@ -118,19 +118,31 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     public double CrawlSpeed { get; set; } = GameDefaults.CrawlSpeed;
 
     /// <summary>
-    /// Current score, incremented by picking up a <see cref="CollectableType.Points"/> collectable
+    /// Current score: +1 per <see cref="CollectableType.Diamond"/>, +5 per <see cref="CollectableType.Ring"/>
     /// (see <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/>).
     /// </summary>
     public int Score { get; set; }
 
     /// <summary>
-    /// Current health, incremented by picking up a <see cref="CollectableType.Health"/> collectable
-    /// and decremented by a non-fatal hazard hit (see
-    /// <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/>). Defaults to
-    /// <see cref="GameDefaults.PlayerStartingHealth"/>. Reaching exactly 0 triggers an automatic
-    /// <see cref="World2D.Respawn"/>, which also resets this back to <see cref="World2D.StartingHealth"/>.
+    /// Lock names of the keys currently held (one entry per key; duplicates allowed). Filled by
+    /// picking up a <see cref="CollectableType.Key"/>, consumed one at a time by
+    /// <see cref="World2D.TryOpenDoor"/>. Kept across respawns.
     /// </summary>
-    public int Health { get; set; } = GameDefaults.PlayerStartingHealth;
+    public List<string> Keys { get; } = [];
+
+    /// <summary>
+    /// Health of the current life, from 0 to <see cref="GameDefaults.PlayerFullHealth"/> (shown as
+    /// the HUD bar). Each hazard hit removes that hazard's <see cref="Body2D.Damage"/> (see
+    /// <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/>). Reaching 0 costs one
+    /// <see cref="Lives"/> and triggers <see cref="World2D.Respawn"/>, which refills the bar.
+    /// </summary>
+    public double Health { get; set; } = GameDefaults.PlayerFullHealth;
+
+    /// <summary>Remaining lives (shown in the HUD). Lost when <see cref="Health"/> runs out, gained every <see cref="World2D.RingsPerLife"/> rings.</summary>
+    public int Lives { get; set; } = GameDefaults.PlayerStartingLives;
+
+    /// <summary>Rings collected towards the next extra life; resets to 0 when it reaches <see cref="World2D.RingsPerLife"/>. Kept across respawns.</summary>
+    public int Rings { get; set; }
 
     public Player2D()
     {

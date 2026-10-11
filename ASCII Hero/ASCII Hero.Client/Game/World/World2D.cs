@@ -171,12 +171,16 @@ public class World2D
     public double Gravity { get; private set; } = Constants.PhysicsConstants.DefaultGravity;
 
     /// <summary>
-    /// The player's health when this world is loaded - from this world's own <c>[World] Health</c>
-    /// settings.ini key, falling back to <see cref="GameDefaults.PlayerStartingHealth"/> when
-    /// absent. Applied to <see cref="Player2D.Health"/> once the player is spawned in
-    /// <see cref="LoadAsync"/>.
+    /// The player's lives when this world is loaded - from this world's own <c>[World] Lives</c>
+    /// settings.ini key, falling back to <see cref="GameDefaults.PlayerStartingLives"/>.
     /// </summary>
-    public int StartingHealth { get; private set; } = GameDefaults.PlayerStartingHealth;
+    public int StartingLives { get; private set; } = GameDefaults.PlayerStartingLives;
+
+    /// <summary>
+    /// How many rings add one life - from <c>[World] RingsPerLife</c>, falling back to
+    /// <see cref="GameDefaults.DefaultRingsPerLife"/>.
+    /// </summary>
+    public int RingsPerLife { get; private set; } = GameDefaults.DefaultRingsPerLife;
 
     /// <summary>
     /// Width of the world, in cells - always derived from <c>_objects.txt</c>'s own content (the
@@ -212,18 +216,58 @@ public class World2D
     public bool LevelCompleted { get; set; }
 
     /// <summary>
+    /// Opens one door next to the player, if the player holds a key with the door's
+    /// <see cref="Body2D.LockName"/>: the door is removed (queued), that key is consumed and the
+    /// door's <c>Sound</c> plays. "Next to" means within one cell of the player's collision shape.
+    /// Returns whether a door was opened. Called by <see cref="GameLoop"/> on an action key press.
+    /// </summary>
+    public bool TryOpenDoor()
+    {
+        if (Player.Keys.Count == 0)
+        {
+            return false;
+        }
+
+        var reach = Player.CollisionRects
+            .Select(rect => new Physics.Rect(rect.X - 1, rect.Y - 1, rect.Width + 2, rect.Height + 2))
+            .ToList();
+
+        foreach (var door in Objects)
+        {
+            if (door.LockName is null || door is Collectable2D)
+            {
+                continue;
+            }
+
+            var keyIndex = Player.Keys.FindIndex(key => string.Equals(key, door.LockName, StringComparison.OrdinalIgnoreCase));
+            if (keyIndex < 0 || !door.CollisionRects.Any(doorRect => reach.Any(doorRect.Overlaps)))
+            {
+                continue;
+            }
+
+            Player.Keys.RemoveAt(keyIndex);
+            QueueRemoval(door);
+            PlaySound(door.SoundName);
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
     /// Resets the player back to a respawn state - position to <see cref="RespawnPoint"/> if set,
     /// otherwise <see cref="PlayerSpawnPosition"/>; velocity to <see cref="Vector2D.Zero"/> so it
-    /// doesn't retain any pre-death momentum; and health back to <see cref="StartingHealth"/>.
-    /// Called automatically by <see cref="Physics.CollisionSystem"/> the moment
-    /// <see cref="Player2D.Health"/> first reaches 0, and available as an instant debug/testing
-    /// action too (see <see cref="Browser.InputState.IsRespawnDebugKeyPressed"/>).
+    /// doesn't retain any pre-death momentum; and health back to a full bar. Called automatically
+    /// by <see cref="Physics.CollisionSystem"/> the moment <see cref="Player2D.Health"/> first
+    /// reaches 0 (which also costs a life), and available as an instant debug/testing
+    /// action too (see <see cref="Browser.InputState.IsRespawnDebugKeyPressed"/>). Held keys and
+    /// rings are kept.
     /// </summary>
     public void Respawn()
     {
         Player.Position = RespawnPoint ?? PlayerSpawnPosition;
         Player.Velocity = Vector2D.Zero;
-        Player.Health = StartingHealth;
+        Player.Health = GameDefaults.PlayerFullHealth;
     }
 
     /// <summary>
@@ -259,9 +303,12 @@ public class World2D
         world.EmptyChar = emptyChar;
         world.DefaultForeColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultForegroundColor"));
         world.DefaultBackColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
-        world.StartingHealth = IniValueParser.TryParseInt(settings.TryGetValue("World", "Health"), out var startingHealth)
-            ? startingHealth
-            : GameDefaults.PlayerStartingHealth;
+        world.StartingLives = IniValueParser.TryParseInt(settings.TryGetValue("World", "Lives"), out var startingLives) && startingLives > 0
+            ? startingLives
+            : GameDefaults.PlayerStartingLives;
+        world.RingsPerLife = IniValueParser.TryParseInt(settings.TryGetValue("World", "RingsPerLife"), out var ringsPerLife) && ringsPerLife > 0
+            ? ringsPerLife
+            : GameDefaults.DefaultRingsPerLife;
 
         var globalSettingsContent = await fileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/Settings.ini");
         var globalSettings = IniDocument.Parse(globalSettingsContent ?? string.Empty);
@@ -387,11 +434,16 @@ public class World2D
         // time) happen.
         var assetsLoaded = 0;
         var assetsToLoad = clipNamesByAsset.Count;
-        foreach (var (assetName, clipNames) in clipNamesByAsset)
+        var assetLoadTasks = clipNamesByAsset.Select(async entry =>
         {
-            await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName, [.. clipNames], worldName);
+            await GetOrLoadSpriteAsync(spriteLoader, spriteCache, entry.Key, [.. entry.Value], worldName);
             assetsLoaded++;
-            progress?.Report(assetsToLoad == 0 ? 5.0 : 4.0 + (double)assetsLoaded / assetsToLoad);
+            progress?.Report(4.0 + (double)assetsLoaded / assetsToLoad);
+        }).ToList();
+        await Task.WhenAll(assetLoadTasks);
+        if (assetsToLoad == 0)
+        {
+            progress?.Report(5.0);
         }
 
         // Materials-only sections (see above) each get their own synthesized asset, keyed by
@@ -681,7 +733,8 @@ public class World2D
                         world.PlayerSpawnPosition = position;
                         world.Player.HazardHitEffectClipName = hazardHitEffectClipName;
                         world.Player.CheckpointReachedEffectClipName = checkpointReachedEffectClipName;
-                        world.Player.Health = world.StartingHealth;
+                        world.Player.Lives = world.StartingLives;
+                        world.Player.Health = GameDefaults.PlayerFullHealth;
                         var playerMaterial = world.Materials.Get(materialOverride ?? world.Player.MaterialName);
                         world.Player.Density = densityOverride ?? playerMaterial.Density;
                         world.Player.Friction = frictionOverride ?? playerMaterial.Friction;
@@ -802,6 +855,10 @@ public class World2D
                 spawnedBody.IsPassable = passable;
                 spawnedBody.SoundName = objectSection.TryGetValue("Sound", out var soundNameText) ? soundNameText : null;
                 spawnedBody.KillSoundName = objectSection.TryGetValue("KillSound", out var killSoundNameText) ? killSoundNameText : null;
+                spawnedBody.Damage = objectSection.TryGetValue("Damage", out var damageText) && IniValueParser.TryParseDouble(damageText, out var parsedDamage) && parsedDamage >= 0
+                    ? parsedDamage
+                    : GameDefaults.DefaultHazardDamage;
+                spawnedBody.LockName = objectSection.TryGetValue("Lock", out var lockNameText) && !string.IsNullOrWhiteSpace(lockNameText) ? lockNameText : null;
                 spawnedBody.IsClimbable = climbable;
                 spawnedBody.IsHangable = hangable;
                 spawnedBody.ForeColorOverride = foreColorOverride;

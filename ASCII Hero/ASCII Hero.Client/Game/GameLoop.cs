@@ -1,4 +1,4 @@
-using ASCII_Hero.Client.Game.Assets;
+﻿using ASCII_Hero.Client.Game.Assets;
 using ASCII_Hero.Client.Game.Audio;
 using ASCII_Hero.Client.Game.Browser;
 using ASCII_Hero.Client.Game.Constants;
@@ -50,6 +50,12 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// <summary>How long <see cref="GameMode.LevelComplete"/> is shown before returning to the world-select screen.</summary>
     private const double LevelCompleteDisplaySeconds = 2.0;
 
+    /// <summary>Name of the sound (see Global/SoundLibrary.ini) played when the world-select highlight moves.</summary>
+    private const string MenuMoveSoundName = "MenuMove";
+
+    /// <summary>Name of the sound (see Global/SoundLibrary.ini) played when a world is confirmed in the world-select menu.</summary>
+    private const string MenuSelectSoundName = "MenuSelect";
+
     /// <summary>Elapsed time since entering <see cref="GameMode.LevelComplete"/>, driving its return-to-selection timer.</summary>
     private double _levelCompleteElapsedSeconds;
 
@@ -90,22 +96,20 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// <summary>
     /// HUD overlay shown in the top-left corner while playing, using the independent
     /// <see cref="UIFrame"/>/<see cref="UILabel"/> screen-space primitives directly. Refreshed
-    /// every <see cref="OnPlayingFrameAsync"/> tick from <see cref="World.Player2D.Health"/>/
-    /// <see cref="World.Player2D.Score"/>. Sized to fit 3-digit values for both numbers (the
-    /// widest either is ever expected to get) so the frame never needs to resize as they grow -
-    /// each number is also right-aligned to a fixed 3-character field so the surrounding text
-    /// doesn't shift/jitter as a value's own digit count changes.
+    /// every <see cref="OnPlayingFrameAsync"/> tick from <see cref="World.Player2D.Lives"/>/
+    /// <see cref="World.Player2D.Rings"/>/<see cref="World.Player2D.Score"/> (first row) and a
+    /// "Health" caption (second row, followed by <see cref="_hudBar"/>). Each number is right-aligned
+    /// to a fixed-width field so the surrounding text doesn't shift/jitter as its digit count changes.
     /// </summary>
-    private readonly UILabel _hudText = new(col: 2, row: 2, width: 24, height: 1, foreColor: RenderConstants.DefaultForeColor);
+    private readonly UILabel _hudText = new(col: 2, row: 2, width: 32, height: 2, foreColor: RenderConstants.DefaultForeColor);
 
-    private readonly UIFrame _hudBox = new(col: 1, row: 1, width: 26, height: 3, foreColor: RenderConstants.DefaultForeColor);
+    private readonly UIFrame _hudBox = new(col: 1, row: 1, width: 38, height: 4, foreColor: RenderConstants.DefaultForeColor);
 
     /// <summary>
-    /// Test horizontal gauge shown below the HUD frame while playing, using the independent
-    /// <see cref="UIBar"/> screen-space primitive - eventually meant for a health/stamina style
-    /// readout, not just this placeholder value.
+    /// Health gauge inside the HUD frame, right of the "Health" caption, using the independent
+    /// <see cref="UIBar"/> screen-space primitive; shows <see cref="World.Player2D.Health"/> (0-1).
     /// </summary>
-    private readonly UIBar _hudBar = new(col: 2, row: 4, width: 20, height: 1, minValue: 0, maxValue: 100, foreColor: RenderConstants.DefaultForeColor) { CurrentValue = 75 };
+    private readonly UIBar _hudBar = new(col: 9, row: 3, width: 20, height: 1, minValue: 0, maxValue: GameDefaults.PlayerFullHealth, foreColor: RenderConstants.DefaultForeColor) { CurrentValue = GameDefaults.PlayerFullHealth };
 
     /// <summary>
     /// Dev/testing FPS overlay, toggled by <see cref="InputState.IsFpsToggleKeyPressed"/> (see
@@ -118,6 +122,16 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private readonly UILabel _fpsLabel = new(col: 0, row: 0, width: 12, height: 1, foreColor: RenderConstants.DefaultForeColor);
 
     private bool _showFpsOverlay;
+
+    /// <summary>Edge-detection state for <see cref="InputState.IsActionPressed"/>.</summary>
+    private bool _wasActionKeyDown;
+
+    /// <summary>
+    /// HUD key icon inside <see cref="_hudBox"/>: drawn in the default HUD color while the player
+    /// holds at least one key, not drawn otherwise. Deliberately an on/off icon rather than a
+    /// list, since a world may use many differently named locks.
+    /// </summary>
+    private readonly UILabel _hudKeyLabel = new(col: 36, row: 2, width: 2, height: 1, foreColor: RenderConstants.DefaultForeColor);
 
     /// <summary>Edge-detection state for <see cref="InputState.IsFpsToggleKeyPressed"/>, mirroring
     /// the pattern <see cref="PhysicsSystem"/> uses for its own latched keys - without this, holding
@@ -149,7 +163,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// by default, shown directly under <see cref="_fpsLabel"/> (row 1) so the two overlays stack
     /// in the top-right corner without competing for the same row. Lets a level author watch
     /// <see cref="World.World2D.Objects"/>'s count live, e.g. to see it drop as collectables
-    /// (such as the new points stars) are picked up.
+    /// (such as diamonds) are picked up.
     /// </summary>
     private readonly UILabel _objectCounterLabel = new(col: 0, row: 1, width: 12, height: 1, foreColor: RenderConstants.DefaultForeColor);
 
@@ -229,6 +243,10 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             : 1.0;
         await soundPlayer.InitializeAsync(soundEnabled ? masterVolume : 0.0);
 
+        // The world-select menu has no world loaded yet, so register the global sounds up front
+        // (each world's own merged library replaces them once that world is loaded).
+        await soundPlayer.SetSoundsAsync(await SoundLibrary.LoadAsync(assetFileProvider, null));
+
         var visibleSlotCount = WorldSelectRenderer.ComputeVisibleSlotCount(_viewportWidthCells, worlds.Count);
         _worldSelect = new WorldSelectScreen(worlds, visibleSlotCount);
         _mode = GameMode.WorldSelecting;
@@ -257,10 +275,9 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         // through several fixed steps in the very first Playing frame.
         _physicsAccumulatorSeconds = 0;
 
-        // Placeholder readout - no actual points/rings tracking exists yet; this just shows
-        // what the HUD text line is eventually meant to display (see _hudText's own doc comment).
         _hudText.Lines.Clear();
-        _hudText.Lines.Add($"Health: {_world.Player.Health,3}   Score: {_world.Player.Score,3}");
+        _hudText.Lines.Add($"Lives:{_world.Player.Lives,3}  Rings:{_world.Player.Rings,3}  Score:{_world.Player.Score,4}");
+        _hudText.Lines.Add("Health");
 
         _camera.SnapTo(
             _world.CameraTarget.Position,
@@ -401,7 +418,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
 
         // Dev/testing shortcut: instantly respawn the player (see World2D.Respawn) regardless of
-        // current health - edge-triggered the same way the FPS/object-counter overlay toggles are,
+        // current health/lives - edge-triggered the same way the FPS/object-counter overlay toggles are,
         // so holding the key down doesn't respawn every single frame.
         var respawnDebugKeyDown = _input.IsRespawnDebugKeyPressed;
         if (respawnDebugKeyDown && !_wasRespawnDebugKeyDown)
@@ -410,7 +427,16 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
         _wasRespawnDebugKeyDown = respawnDebugKeyDown;
 
-        // A single real animation frame's deltaSeconds can vary - from ordinary frame-to-frame
+        // Action key (E / Enter): edge-triggered like the debug keys above, so one press opens at
+        // most one door instead of one per frame.
+        var actionKeyDown = _input.IsActionPressed;
+        if (actionKeyDown && !_wasActionKeyDown && _world.TryOpenDoor())
+        {
+            _world.ApplyPendingRemovals();
+        }
+        _wasActionKeyDown = actionKeyDown;
+
+        // A single real
         // jitter, or occasionally far more than ordinary after a real hitch (a GC pause, a slow
         // JS interop round-trip, a dropped/re-entrant frame - see _isProcessingFrame's own doc
         // comment). Physics/Collision are instead run in a fixed-timestep accumulator (the
@@ -461,8 +487,16 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         var glyphs = _renderer.BuildFrame(_world, _camera, _viewportWidthCells, _viewportHeightCells);
         UIRenderer.AddFrame(glyphs, _hudBox, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         _hudText.Lines.Clear();
-        _hudText.Lines.Add($"Health: {_world.Player.Health,3}   Score: {_world.Player.Score,3}");
+        _hudText.Lines.Add($"Lives:{_world.Player.Lives,3}  Rings:{_world.Player.Rings,3}  Score:{_world.Player.Score,4}");
+        _hudText.Lines.Add("Health");
         UIRenderer.AddLabel(glyphs, _hudText, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+        _hudBar.CurrentValue = _world.Player.Health;
+        if (_world.Player.Keys.Count > 0)
+        {
+            _hudKeyLabel.Lines.Clear();
+            _hudKeyLabel.Lines.Add("o╤");
+            UIRenderer.AddLabel(glyphs, _hudKeyLabel, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+        }
         UIRenderer.AddBar(glyphs, _hudBar, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
 
         if (_showFpsOverlay)
@@ -525,10 +559,16 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// </summary>
     private async Task OnWorldSelectingFrameAsync(double deltaSeconds)
     {
+        var previousSelectedIndex = _worldSelect.SelectedIndex;
         _worldSelect.Update(_input, deltaSeconds);
 
+        if (_worldSelect.SelectedIndex != previousSelectedIndex)
+        {
+            soundPlayer.Play(MenuMoveSoundName);
+        }
         if (_worldSelect.Confirmed)
         {
+            soundPlayer.Play(MenuSelectSoundName);
             // Switch modes synchronously, then kick off the load WITHOUT awaiting it here - see
             // _loadWorldTask's doc comment for why: awaiting it inline would hold this OnFrame
             // call's _isProcessingFrame guard for the whole load, starving every intervening

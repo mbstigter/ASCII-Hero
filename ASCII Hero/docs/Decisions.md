@@ -235,7 +235,10 @@ capture the "why" behind a decision without needing a lengthy narrative.
   so 12 * 0.2 = 2.4). See the `Player_settings.ini` `[Animation]` section
   comment for the full worked table, and each `GameDefaults` speed
   constant's own doc comment for the reminder to recompute its paired
-  clip(s) if that speed is tweaked.
+  clip(s) if that speed is tweaked. Swimming is the deliberate exception: a
+  swimmer glides further per stroke than a walker per step, so swim clips use
+  their own, longer anchor (`FrameDurationSeconds = 5.4 / speed`) for fewer,
+  slower strokes.
 - **`Kind` is mandatory in `_objects.ini`** and its values match concrete
   class names 1:1 (`StaticObject`, `DynamicObject`, `KinematicObject`,
   `StaticHazard`, `DynamicHazard`, `KinematicHazard`, `Collectable`,
@@ -254,8 +257,19 @@ capture the "why" behind a decision without needing a lengthy narrative.
   designers can make silent levels.
 - **Player movement sounds are per pose** (`[Sounds]` in the sprite
   settings), played on animation frame steps, kept subtle.
-- **Each sound is a single pitch slide; multi-note sounds are deliberately
+- **Object sound keys are `Sound` and `KillSound`, with `Sound` meaning
+  "the object's main event"**: for a hazard, the player being hurt by it; for
+  a collectable, being picked up. `KillSound` is for a hazard being squashed
+  and replaces `Sound` for that contact. The keys were deliberately not split
+  into per-kind names (`HurtSound`/`PickupSound`): that would be a breaking
+  rename with silent failures on missed keys, and would need a new key for
+  every future kind of object.
+- **Each sound is a single pitch slide;
   not implemented yet** (kept simple for now).
+- **The world-select menu plays subtle `MenuMove`/`MenuSelect` sounds** when
+  the selection moves / a world is confirmed. `GameLoop` detects both (so
+  `WorldSelectScreen` stays audio-free) and loads the global-only sound
+  library at startup, since no world library exists yet in the menu.
 
 ## World Objects & Capability Model
 
@@ -283,18 +297,24 @@ capture the "why" behind a decision without needing a lengthy narrative.
   This is a distinct scheme from `KinematicObject2D`'s own constant-velocity,
   non-force patrol (chosen to leave room for non-linear future paths without
   redesigning the body).
-- **Ordinary (non-fatal) hazard contact deducts 1 health from the player**,
-  once per fresh contact (rising edge on `_activeHazardContacts`, the same
-  gate already used for the contact effect), clamped at 0. The instant a hit
-  brings health to exactly 0, `CollisionSystem` calls `World2D.Respawn()` -
-  see the respawn bullet below.
-- **A world's starting health is a placement-independent `[World] Health`
-  key in that world's own `_settings.ini`** (default
-  `GameDefaults.PlayerStartingHealth`), applied to `Player2D.Health` when the
+- **Player state is four counters: Lives, Health, Rings and Score.** Health is a
+  0-1 bar for the current life (HUD bar); Lives, Rings and Score are shown in
+  the HUD text. Ordinary (non-fatal) hazard contact removes the hazard's
+  `Damage` (placement key, default 1 = whole bar; e.g. 0.2 toxic plant, 0.5
+  butterflies), once per fresh contact (rising edge on
+  `_activeHazardContacts`), clamped at 0. When the bar empties,
+  `CollisionSystem` removes one life and calls `World2D.Respawn()` (refills
+  the bar) - see the respawn bullet below. Game over at 0 lives is not
+  implemented yet.
+- **Rings** (`CollectableType.Ring`) add one to `Player2D.Rings` and 5 to
+  Score (`GameDefaults.RingScore`); they do not heal. Every `RingsPerLife` rings (`[World] RingsPerLife`,
+  default 25) the count resets to 0 and a life is added. Rings survive respawn.
+- **A world's starting lives are `[World] Lives`** (default
+  `GameDefaults.PlayerStartingLives`), applied to `Player2D.Lives` when the
   player object is spawned - mirroring how `[World] Title` and `[Physics]
   Gravity` are already world-level settings rather than per-placement keys.
 - **Collectable variants are driven by a required `Type` key on the
-  placement's ini section** (`CollectableType`: `Points`/`Health`/
+  `Diamond`/`Ring`/
   `Checkpoint`/`LevelEnd`/`Key`), not a distinct `Kind` value and not an
   asset-level `_settings.ini` key - matching how
   `Killable`/`EffectPersists`/`EffectClip` are already placement-level keys,
@@ -304,10 +324,12 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `CollisionSystem` treats as inert (no effect, not removed, no player state
   changed) - deliberately, so a placement that forgets `Type` fails loudly
   during testing instead of silently behaving like some other variant.
-  `Points`/`Health` are removed on pickup and increment
-  `Player2D.Score`/`Health` respectively;
-  `Key` is removed on pickup with no unlock wiring yet (a future door/gate
-  mechanic's placeholder). `Checkpoint`/`LevelEnd` are also removed on
+  `Diamond`/`Ring` are removed on pickup and increment
+  `Player2D.Score` (and `Rings` for `Ring`);
+  `Key` is removed on pickup and adds its required `Lock` name to
+  `Player2D.Keys` (inert without one); a door is any other placement with a
+  matching `Lock`, opened by the action key (`E`/`Enter`) when the player is
+  within one cell of it, consuming one key. `Checkpoint`/`LevelEnd` are also removed on
   pickup like every other collectable; a collectable's own
   `Collectable2D.EffectPersists` (mirroring `IKillableBody.EffectPersists`
   on hazards/hazards) controls whether its pickup effect remains in its
@@ -330,7 +352,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   even for the ordinary ground jump** - letting `Up` also trigger a
   jump is unintuitive and rejected.
 - **Two full, independent key sets** are supported for local co-op/preference
-  - "Player 1" (arrows + `Space`) and "Player 2" (`WASD` + `Left Ctrl`).
+  - "Player 1" (arrows + `Space` + `Enter` as action) and "Player 2" (`WASD` + `Left Ctrl` + `E` as action).
 - **"Stance" is the stored choice, "pose" is the displayed result.** The
   player's `Stance` (`Walk` = upright/stretched, `Crawl` = compact/clamber) is
   the only stored state (`IsClambering` is derived from it while hanging), and
@@ -410,14 +432,14 @@ capture the "why" behind a decision without needing a lengthy narrative.
   bound to `O`), stacked directly under the FPS overlay (same row-1 vs.
   row-0 top-right corner), displaying `World2D.Objects.Count` (e.g. "42 Obj")
   - added so a level author can watch the count drop live as collectables
-  (e.g. the points stars) are picked up. Off by default, same
+  (e.g. diamonds) are picked up. Off by default, same
   right-aligned-by-rendered-length approach as the FPS overlay.
 - **`World2D.Respawn()` resets the player's position, velocity, and health**
   (position to `RespawnPoint` if a `Checkpoint` has been reached, else
   `PlayerSpawnPosition` - the original `Player` placement position recorded
   once at load; velocity to `Vector2D.Zero` so no pre-death momentum
-  carries over; health back to `StartingHealth`). Called automatically by
-  `CollisionSystem` the instant hazard damage brings health to exactly 0
+  carries over; health back to a full bar). Called automatically by
+  `CollisionSystem` the instant hazard damage empties the bar (after removing a life)
   (guarded so an already-dead/mid-respawn player can't retrigger it every
   frame), and separately exposed as an instant dev/testing action via a
   third debug key, `InputState.IsRespawnDebugKeyPressed` bound to `R`

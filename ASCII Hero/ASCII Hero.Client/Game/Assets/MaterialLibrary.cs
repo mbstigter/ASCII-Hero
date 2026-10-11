@@ -40,16 +40,16 @@ public readonly record struct Material(
 /// <summary>
 /// The shared material library (Global/MaterialLibrary.ini merged with an optional world-local
 /// MaterialLibrary.ini: world entries override same-named sections, sections only defined
-/// globally still apply). Maps a material name (as found in a sprite's <c>DefaultMaterial</c>/
-/// <c>MaterialCodes</c> settings or a world's own <c>_materials.txt</c> per-cell layer, resolved
+/// globally still apply). Maps a material name (as found in a sprite's <c>DefaultMaterial</c>
+/// setting, resolved
 /// by <see cref="SpriteLoader"/> into <see cref="SpriteFrame.Materials"/>) to its physical
 /// properties. Loading/merging is handled by the shared <see cref="IniOverrideLoader"/>.
 /// </summary>
 public class MaterialLibrary
 {
     /// <summary>
-    /// Fallback used when a body has no resolvable material (e.g. a sprite with neither
-    /// <c>DefaultMaterial</c> nor a per-cell material layer): physically inert (massless,
+    /// Fallback used when a body has no resolvable material (e.g. a sprite with no
+    /// <c>DefaultMaterial</c>): physically inert (massless,
     /// frictionless, no bounce).
     /// </summary>
     public static readonly Material Undefined = new(Density: 0.0, Friction: 0.0, Restitution: 0.0);

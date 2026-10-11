@@ -85,11 +85,10 @@ not like a pixel-art game with ASCII characters placed on top.
   frame for these (and other) animated clips.
 - **`World2D.Respawn()` has no cosmetic feedback of its own** - no death
   animation, effect, or brief invulnerability window on respawn; it's an
-  instant, silent position/velocity/health reset (see docs/Decisions.md).
-  Revisit if reaching 0 health ever needs to feel more like an event.
-- **`CollectableType.Key` has no unlock target.** Picking one up currently
-  behaves like an ordinary `Health`/`Points` pickup (removed, plays its
-  effect) with no other effect - it's a placeholder for a future door/gate
-  mechanic that would need its own way of naming which door/gate a given key
-  unlocks (e.g. a shared `KeyId` placement key matched against a locked
-  object's own `KeyId`).
+  instant, silent position/velocity/health-bar reset (a life is lost first) (see docs/Decisions.md).
+  Revisit if emptying the health bar ever needs to feel more like an event.
+- **Keys and doors are matched by a required `Lock` name** on both the key
+  (`CollectableType.Key`) and the door (any solid placement). A key without
+  `Lock` is inert, like a collectable without `Type`. The HUD shows only a
+  single on/off key icon (lit while at least one key is held), not a list,
+  since a world may use many locks. Keys survive respawn.

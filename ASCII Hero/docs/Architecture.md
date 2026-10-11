@@ -83,8 +83,7 @@ core's own force/collision/medium math.
   platform.
 - Every body's physical properties — `Density`, `Friction`, `Restitution` —
   are resolved once at spawn time from a named material (`Body2D.MaterialName`,
-  derived from the dominant non-empty material of the active sprite frame's
-  per-cell `_materials.txt`/`DefaultMaterial` layer) looked up in
+  derived from the sprite's `DefaultMaterial`) looked up in
   `World2D.Materials` (a `MaterialLibrary` that merges
   `Global/MaterialLibrary.ini` with an optional level-local override,
   mirroring `ColorPalette`'s Global+Level pattern); `Mass` is always
@@ -173,8 +172,8 @@ core's own force/collision/medium math.
   carry or re-seat mechanism is needed (see docs/Decisions.md).
 - Hazard contact is resolved generically: any `IPhysicsBody` overlapping any
   `IHazardBody` in `World2D.Objects` is detected, with no concrete-type checks
-  on either side. Hazard contact detection exists but does not yet apply any
-  effect, since no health/damage system exists in the game yet.
+  on either side. A fresh hit on the player removes the hazard's `Damage`
+  (a share of the health bar) and an empty bar costs a life (see docs/Decisions.md).
 - Collectable pickup is resolved similarly, but narrower: only a body
   implementing `ICollectorBody` (e.g. the player) overlapping an
   `ICollectableBody` triggers a pickup — a non-collector moving body (the

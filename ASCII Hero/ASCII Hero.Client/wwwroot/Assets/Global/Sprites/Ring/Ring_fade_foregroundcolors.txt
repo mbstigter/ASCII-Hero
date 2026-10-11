@@ -2,10 +2,10 @@ NNN
 N N
 NNN
 //end
-YYY
-Y Y
-YYY
+ M 
+ M 
+ M 
 //end
-999
-9 9
-999
+   
+ L 
+   

@@ -11,14 +11,18 @@ namespace ASCII_Hero.Client.Game.World;
 /// </summary>
 public enum CollectableType
 {
-    /// <summary>Removed on pickup, increments the collecting <see cref="Player2D"/>'s <see cref="Player2D.Score"/>.</summary>
-    Points,
-
-    /// <summary>Removed on pickup, increments the collecting <see cref="Player2D"/>'s <see cref="Player2D.Health"/>.</summary>
-    Health,
+    /// <summary>Removed on pickup, adds 1 to the collecting <see cref="Player2D"/>'s <see cref="Player2D.Score"/> and nothing else.</summary>
+    Diamond,
 
     /// <summary>
-    /// Removed on pickup like <see cref="Health"/>/<see cref="Points"/>, but its own
+    /// Removed on pickup, adds one to the collecting <see cref="Player2D"/>'s <see cref="Player2D.Rings"/>
+    /// (and one point to its score). Every <see cref="World2D.RingsPerLife"/> rings reset the count
+    /// to 0 and add a <see cref="Player2D.Lives"/>. Does not restore health.
+    /// </summary>
+    Ring,
+
+    /// <summary>
+    /// Removed on pickup like <see cref="Diamond"/>/<see cref="Ring"/>, but its own
     /// <see cref="Collectable2D.EffectPersists"/> effect remains in its place permanently as a
     /// used marker (mirrors a killed <see cref="StaticHazard2D"/>'s persistent husk). Also records
     /// its position as <see cref="World2D.RespawnPoint"/>, consumed by <see cref="World2D.Respawn"/>.
@@ -26,14 +30,15 @@ public enum CollectableType
     Checkpoint,
 
     /// <summary>
-    /// Removed on pickup like <see cref="Health"/>/<see cref="Points"/>, and sets
+    /// Removed on pickup like <see cref="Diamond"/>/<see cref="Ring"/>, and sets
     /// <see cref="World2D.LevelCompleted"/> so <see cref="GameLoop"/> can transition out of play.
     /// </summary>
     LevelEnd,
 
     /// <summary>
-    /// Removed on pickup like <see cref="Health"/>/<see cref="Points"/>. Placeholder for a future
-    /// door/gate-unlock system - currently has no unlock target wiring.
+    /// Removed on pickup like <see cref="Diamond"/>/<see cref="Ring"/>, and adds its required
+    /// <see cref="Body2D.LockName"/> to <see cref="Player2D.Keys"/>. A key without a <c>Lock</c>
+    /// name is inert. Opens a door with the same lock name, see <see cref="World2D.TryOpenDoor"/>.
     /// </summary>
     Key,
 }

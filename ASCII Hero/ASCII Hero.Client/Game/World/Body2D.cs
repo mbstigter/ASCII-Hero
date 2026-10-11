@@ -1,4 +1,5 @@
 using ASCII_Hero.Client.Game.Assets;
+using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.Physics;
 
 namespace ASCII_Hero.Client.Game.World;
@@ -235,17 +236,34 @@ public abstract class Body2D
     public bool IsPassable { get; set; }
 
     /// <summary>
-    /// Optional <c>SoundLibrary.ini</c> name played when this body is picked up (a collectable) or
-    /// when it hurts the player on contact (a hazard), from the placement's <c>Sound</c> key. Null
-    /// means silent - there is no default sound.
+    /// Optional <c>SoundLibrary.ini</c> name, from the placement's <c>Sound</c> key. Its meaning
+    /// depends on the kind of body: for a collectable it plays when the player picks it up; for a
+    /// hazard it plays when the player is hurt by touching it (a squash plays
+    /// <see cref="KillSoundName"/> instead). Null means silent - there is no default sound.
     /// </summary>
     public string? SoundName { get; set; }
 
     /// <summary>
-    /// Optional <c>SoundLibrary.ini</c> name played when this (killable) hazard is killed, from the
-    /// placement's <c>KillSound</c> key. Null means silent.
+    /// Optional <c>SoundLibrary.ini</c> name, from the placement's <c>KillSound</c> key: played
+    /// when the player squashes this (killable) hazard by landing on it, instead of
+    /// <see cref="SoundName"/>. Not used by any other kind of body. Null means silent.
     /// </summary>
     public string? KillSoundName { get; set; }
+
+    /// <summary>
+    /// Health removed from the player per hit when this body is a hazard, from the placement's
+    /// <c>Damage</c> key; 1.0 is a whole health bar. Not used by any other kind of body.
+    /// </summary>
+    public double Damage { get; set; } = GameDefaults.DefaultHazardDamage;
+
+    /// <summary>
+    /// Optional lock name, from the placement's <c>Lock</c> key. On a <c>Kind = Collectable</c>
+    /// with <c>Type = Key</c> it names the lock that key opens (required - a key without it is
+    /// inert). On any other body it makes the body a door: solid until the player, holding a key
+    /// with the same name, presses the action key next to it (see <see cref="World2D.TryOpenDoor"/>).
+    /// Names match case-insensitively. Null on every ordinary body.
+    /// </summary>
+    public string? LockName { get; set; }
 
     /// <summary>
     /// Whether the player can climb this static body (e.g. a ladder) - straight up/down movement,
@@ -597,7 +615,7 @@ public abstract class Body2D
     /// Reduces a frame's per-cell material grid to one representative name: the most common
     /// non-null value among its cells, ties broken by first-encountered (row-major) order for a
     /// stable, deterministic result. Returns null if every cell is null (no material data at all,
-    /// e.g. an asset with neither <c>DefaultMaterial</c> nor a per-cell <c>_materials.txt</c>).
+    /// e.g. an asset with no <c>DefaultMaterial</c>).
     /// </summary>
     private static string? ResolveDominantMaterial(string?[,] materials)
     {
