@@ -252,7 +252,7 @@ multiple frames. If omitted, multi-frame clips remain static at frame `DefaultFr
   Center frame so `PingPong` bounces symmetrically, or for a static shape-variant
   clip that should always render a frame other than `0`.
 - `EffectDurationSeconds` (optional, per-clip only) — only used when the clip is
-  played as an effect (e.g. a `spark`/`happy` clip): the total time the effect
+  (e.g. a `hurt`/`checkpointreached` clip)
   plays before it disappears, replacing the default of frame count ×
   `FrameDurationSeconds` (one pass). A looping clip therefore keeps looping for
   this long. It does not stop a persistent effect (one that holds its last frame,
@@ -437,7 +437,7 @@ walk = Walk
 crawl = Crawl
 ```
 
-- Each key is a clip-name prefix — either a whole clip name (e.g. `spark`) or
+(e.g. `hurt`)
   the part of a clip name before its first `_` (e.g. `walk` matches
   `walk_idle`, `walk_left`, `walk_right`). The longer, exact-clip-name form is
   checked first, so a prefix rule (`walk = Walk`) and a same-named exact
@@ -456,7 +456,7 @@ crawl = Crawl
   above, all of which keep referring to clips by their plain name.
 
 `Player` is the reference busy asset using this: `Player_settings.ini` (and its
-one-off `spark` effect clip) stay in `Sprites/Player/`, while `walk`, `crawl`,
+one-off `hurt` effect clip
 `jump`, `climb`, `hang`, and `clamber` clips each live in their own matching
 subfolder (`Sprites/Player/Walk/`, `Sprites/Player/Crawl/`, ...).
 
@@ -1023,13 +1023,13 @@ Asset = Key
 Kind = Collectable
 Type = Key
 Lock = Red
-Sound = Pickup
+Sound = KeyPickup
 
 [RedDoor]
 Asset = Door
 Kind = StaticObject
 Lock = Red
-Sound = Pickup  ; Played when the door opens
+Sound = DoorOpen  ; Played when the door opens
 ```
 
 **Sound keys on object placements.**
@@ -1054,7 +1054,7 @@ KillSound = Squash    ; Played when the player squashes it from above
 [Ring]
 Kind = Collectable
 Type = Ring
-Sound = Pickup        ; Played when the player picks it up
+Sound = RingPickup    ; Played when the player picks it up
 ```
 
 **`Damage` on hazards.** Optional, on any `*Hazard` placement: the share of a
@@ -1089,8 +1089,10 @@ CrawlSpeed = 8 ; Default = GameDefaults.CrawlSpeed (6)
 
 The `Player` section may also name effect clips (on the player's own sprite
 asset) for specific situations: `HazardHitEffectClip` plays when the player
-takes a non-fatal hazard hit, and `CheckpointReachedEffectClip` plays when the
-player reaches a `Checkpoint`. Both are optional (no effect if omitted).
+takes a non-fatal hazard hit, `CheckpointReachedEffectClip` plays when the
+player reaches a `Checkpoint`, `LevelEndReachedEffectClip` plays when the player
+reaches a `LevelEnd`, and `DiedEffectClip` plays when the player loses a life.
+All are optional (no effect if omitted).
 
 Any object type may also override its spawned body's material and/or color away
 from what its sprite asset would otherwise resolve to on its own (its

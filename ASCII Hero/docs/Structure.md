@@ -237,7 +237,7 @@ The live game state and the entity types that make it up.
 	deducts the hazard's `Body2D.Damage` (default 1 = a full bar) from
 	`Player2D.Health` on the first frame of a fresh, non-fatal
 	contact - clamped at 0; when the bar empties it removes one `Player2D.Lives`
-	and calls `World2D.Respawn()`).
+	and sets `World2D.PendingTransition` to `Death`).
   - `ICollectableBody` - removed from the world on contact with a collector
 	(marker only); see `Collectable2D`'s own entry above for how its
 	`EffectPersists` can leave its pickup effect behind as a permanent marker
@@ -255,8 +255,8 @@ The live game state and the entity types that make it up.
 	`SpawnEffect` helper can also spawn an explicit, call-site-chosen clip
 	independent of `EffectClipName` - used so the player can have more than
 	one distinct effect for different situations (e.g. `Player2D`'s
-	`HazardHitEffectClipName` "spark" on a hazard hit vs. its own separate
-	`CheckpointReachedEffectClipName` "happy" clip on reaching a `Checkpoint`;
+	"hurt" on a hazard hit
+	"checkpointreached" clip
 	`Player2D` is deliberately not an `IEffectTrigger`) as
 	independent, possibly-overlapping `EffectInstance2D`s, rather than being
 	limited to one fixed clip per body.
@@ -657,14 +657,14 @@ The live game state and the entity types that make it up.
   screen, one loaded `World2D`. Driven entirely by JavaScript's
   `requestAnimationFrame` calling back into C# - never by Blazor's
   `StateHasChanged`.
-  - Internally a strict four-state `GameMode` (`WorldSelecting` ->
-    `LoadingWorld` -> `Playing` -> `LevelComplete` -> back to
+  - Internally a strict five-state `GameMode` (`WorldSelecting` ->
+    `LoadingWorld` -> `Playing` -> `LevelComplete` or `GameOver` -> back to
     `WorldSelecting`) - never more than one is active, and
     `OnFrame` switches on it to decide whether to drive
     `WorldSelectScreen`/`WorldSelectRenderer`, redraw the frozen selection
     layout plus a filling "Loading..." `UIBar` (a world's `World2D.LoadAsync`
     is in flight), run the normal gameplay tick, or freeze gameplay and show
-    a brief "Level Complete!" message (see below) before looping back to
+    a "Level Complete!"/"Game Over!" message (see below) before looping back to
     world selection.
   - `OnFrame` is invoked by JS in a fire-and-forget fashion - the next
     `requestAnimationFrame` call is scheduled without waiting for the
@@ -761,8 +761,8 @@ large jumps after e.g. a tab switch):
    (`CollectableType`): all variants are removed on pickup. `Diamond`
    adds 1 to `Player2D.Score`; `Ring` increments `Rings`, adds 5 to `Score` and, every
    `World2D.RingsPerLife` rings, resets `Rings` and adds a life; `Checkpoint`
-   records `World2D.RespawnPoint`; `LevelEnd` sets `World2D.LevelCompleted`
-   for `GameLoop` to act on. `Checkpoint`/`LevelEnd` (and any other
+   records `World2D.RespawnPoint`; `LevelEnd` sets `World2D.PendingTransition`
+   to `LevelEnd` for `GameLoop` to act on.
    collectable with `EffectPersists = true`) spawn their pickup effect as a
    permanent husk in their place, the same way a killed hazard's effect can
    persist. `World2D.ApplyPendingRemovals`
@@ -805,22 +805,25 @@ large jumps after e.g. a tab switch):
    dev/testing overlay (`InputState.IsObjectCounterToggleKeyPressed`, bound
    to `O`) stacks directly under the FPS overlay, showing `World2D.Objects`'s
    live count (e.g. "42 Obj") - same right-aligned-by-rendered-length
-   approach, also off by default. A third debug key
-   (`InputState.IsRespawnDebugKeyPressed`, bound to `R`) instantly calls
-   `World2D.Respawn()` - the same respawn `CollisionSystem` triggers
-   automatically once hazard damage empties `Player2D.Health`
-   (see Collision above), letting it be tested without needing to actually
-   lose all health first.
+   approach, also off by default.
 
-When `World2D.LevelCompleted` becomes true (set by `CollisionSystem` on a
-`CollectableType.LevelEnd` pickup - see above), `GameLoop` switches from
-`GameMode.Playing` into a `GameMode.LevelComplete` state instead of running
-the per-frame tick above: gameplay is frozen (no Physics/Collision/Animation/
-Camera update), the last rendered world frame is redrawn with a centered
-"Level Complete!" message on top for a fixed duration
-(`LevelCompleteDisplaySeconds`), then `GameLoop` returns to
-`GameMode.WorldSelecting`, the same reset path used by the existing Escape-
-to-quit shortcut.
+   When `CollisionSystem` sets `World2D.PendingTransition` (`LevelEnd` on a
+   `CollectableType.LevelEnd` pickup, `Death` when hazard damage empties
+   `Player2D.Health` - see above), the Playing tick skips Physics/Collision
+   (Animation, Camera and Render keep running, so the player's own
+   `LevelEndReachedEffectClip`/`DiedEffectClip` plays) until
+   `PendingTransitionSeconds` have passed. `GameLoop.AdvancePendingTransition` then
+   carries it out: `LevelEnd` switches to `GameMode.LevelComplete`; `Death` calls
+   `World2D.Respawn()` and play continues if `Player2D.Lives` is above 0,
+   otherwise it switches to `GameMode.GameOver`. In both end modes gameplay is
+   frozen, the last rendered world frame is redrawn with a centered "Level
+   Complete!"/"Game Over!" message on top (`GameLoop.AddEndScreenMessage`: a
+   short trail of `UIFrame` boxes shrinks in a ripple onto the final box, then
+   the `UILabel` appears inside it on a solid black background; green for
+   Level Complete, red for Game Over; the animation is driven by an elapsed
+   timer reset on entering the mode), and a jump
+   those keys were released once) returns `GameLoop` to `GameMode.WorldSelecting`,
+   the same reset path used by the existing Escape-to-quit shortcut.
 
 
 

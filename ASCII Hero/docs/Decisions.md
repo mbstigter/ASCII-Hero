@@ -303,9 +303,10 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `Damage` (placement key, default 1 = whole bar; e.g. 0.2 toxic plant, 0.5
   butterflies), once per fresh contact (rising edge on
   `_activeHazardContacts`), clamped at 0. When the bar empties,
-  `CollisionSystem` removes one life and calls `World2D.Respawn()` (refills
-  the bar) - see the respawn bullet below. Game over at 0 lives is not
-  implemented yet.
+  `CollisionSystem` removes one life and starts a `PendingTransition.Death`
+  (see the pending-transition bullet below); the bar is refilled by the
+  respawn that follows. At 0 lives the death leads to a "Game Over!" screen
+  instead of a respawn.
 - **Rings** (`CollectableType.Ring`) add one to `Player2D.Rings` and 5 to
   Score (`GameDefaults.RingScore`); they do not heal. Every `RingsPerLife` rings (`[World] RingsPerLife`,
   default 25) the count resets to 0 and a life is added. Rings survive respawn.
@@ -336,15 +337,25 @@ capture the "why" behind a decision without needing a lengthy narrative.
   place afterward as a permanent "already used" marker instead of fading
   away - used by `Checkpoint`/`LevelEnd` in practice, but available to any
   collectable variant.
-  `Checkpoint` records `World2D.RespawnPoint`, not yet consumed by anything
-  (no death/respawn system exists); `LevelEnd` sets `World2D.LevelCompleted`,
-  consumed by `GameLoop`'s `GameMode.LevelComplete` (see below).
-- **Level completion is a minimal, fixed-duration `GameMode`**, not a full
-  win screen: `GameLoop` freezes gameplay (no Physics/Collision/Animation/
-  Camera update) for `LevelCompleteDisplaySeconds`, shows a centered "Level
-  Complete!" `UILabel` over the last rendered frame, then returns to
-  `GameMode.WorldSelecting` - reusing the same reset path as the existing
-  Escape-to-quit shortcut rather than adding a second one.
+  `Checkpoint` records `World2D.RespawnPoint`, consumed by `World2D.Respawn()`;
+  `LevelEnd` starts a `PendingTransition.LevelEnd`, consumed by `GameLoop`
+  (see below).
+- **Level end and death share one pending-transition mechanism**:
+  `CollisionSystem` sets `World2D.PendingTransition` (`LevelEnd` or `Death`)
+  and spawns the player's own effect clip (`LevelEndReachedEffectClip` /
+  `DiedEffectClip`); the collectable's/hazard's sound plays as usual. While a
+  transition is pending `GameLoop` skips physics/collision (effects keep
+  animating) and, after `PendingTransitionSeconds`, carries it out: `LevelEnd`
+  -> `GameMode.LevelComplete`; `Death` with lives left -> `World2D.Respawn()`
+  and play resumes; `Death` with no lives left -> `GameMode.GameOver`. Both end
+  screens are the same minimal mode (`OnEndScreenFrameAsync`): the last frame
+  with a centered "Level Complete!"/"Game Over!" `UILabel` (solid black
+  background, inside a `UIFrame` box that ripples inward from a compact
+  larger size; green for Level Complete, red for Game Over), dismissed by a
+  jump or action key press (only after those keys have been released once, so
+  a held key doesn't dismiss it instantly), then back to
+  `GameMode.WorldSelecting` - the same reset path as the Escape-to-quit
+  shortcut.
 
 ## Player Movement & Input
 
@@ -438,14 +449,10 @@ capture the "why" behind a decision without needing a lengthy narrative.
   (position to `RespawnPoint` if a `Checkpoint` has been reached, else
   `PlayerSpawnPosition` - the original `Player` placement position recorded
   once at load; velocity to `Vector2D.Zero` so no pre-death momentum
-  carries over; health back to a full bar). Called automatically by
-  `CollisionSystem` the instant hazard damage empties the bar (after removing a life)
-  (guarded so an already-dead/mid-respawn player can't retrigger it every
-  frame), and separately exposed as an instant dev/testing action via a
-  third debug key, `InputState.IsRespawnDebugKeyPressed` bound to `R`
-  (edge-triggered like `F`/`O`, alongside `GameLoop`'s existing FPS/object-
-  count overlay toggles), for testing respawn without needing to actually
-  lose all health first.
+  carries over; health back to a full bar). Called by `GameLoop` once the
+  `Death` pending transition has played out and lives remain (the bar
+  emptying is guarded by the fresh-contact check in `CollisionSystem`, so an
+  already-dead player can't retrigger it). There is no debug respawn key.
 - **Background/foreground layer colors are precomputed once at world load**
   (`World2D.BackgroundForeColors`/`BackgroundBackColors`/`ForegroundForeColors`/
   `ForegroundBackColors`), instead of resolving each visible cell's color code

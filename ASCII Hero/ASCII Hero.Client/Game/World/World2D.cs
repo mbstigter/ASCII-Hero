@@ -210,10 +210,11 @@ public class World2D
 
     /// <summary>
     /// Set by <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/> when the player
-    /// triggers a <see cref="CollectableType.LevelEnd"/> collectable. Polled by <see cref="GameLoop"/>
-    /// each frame while playing to transition into its level-complete flow.
+    /// reaches a <see cref="CollectableType.LevelEnd"/> or loses their last health. While not
+    /// <see cref="World.PendingTransition.None"/>, <see cref="GameLoop"/> freezes physics so the
+    /// triggering effect and sound can play, then carries out the transition and resets this.
     /// </summary>
-    public bool LevelCompleted { get; set; }
+    public PendingTransition PendingTransition { get; set; }
 
     /// <summary>
     /// Opens one door next to the player, if the player holds a key with the door's
@@ -257,11 +258,9 @@ public class World2D
     /// <summary>
     /// Resets the player back to a respawn state - position to <see cref="RespawnPoint"/> if set,
     /// otherwise <see cref="PlayerSpawnPosition"/>; velocity to <see cref="Vector2D.Zero"/> so it
-    /// doesn't retain any pre-death momentum; and health back to a full bar. Called automatically
-    /// by <see cref="Physics.CollisionSystem"/> the moment <see cref="Player2D.Health"/> first
-    /// reaches 0 (which also costs a life), and available as an instant debug/testing
-    /// action too (see <see cref="Browser.InputState.IsRespawnDebugKeyPressed"/>). Held keys and
-    /// rings are kept.
+    /// doesn't retain any pre-death momentum; and health back to a full bar. Called by
+    /// <see cref="GameLoop"/> once the <see cref="World.PendingTransition.Death"/> delay has passed
+    /// and the player still has lives left. Held keys and rings are kept.
     /// </summary>
     public void Respawn()
     {
@@ -406,6 +405,8 @@ public class World2D
             var effectClipName = objectSection.TryGetValue("EffectClip", out var effectClipText) ? effectClipText : null;
             var hazardHitEffectClipName = objectSection.TryGetValue("HazardHitEffectClip", out var hazardHitEffectClipText) ? hazardHitEffectClipText : null;
             var checkpointReachedEffectClipName = objectSection.TryGetValue("CheckpointReachedEffectClip", out var checkpointReachedEffectClipText) ? checkpointReachedEffectClipText : null;
+            var levelEndReachedEffectClipName = objectSection.TryGetValue("LevelEndReachedEffectClip", out var levelEndReachedEffectClipText) ? levelEndReachedEffectClipText : null;
+            var diedEffectClipName = objectSection.TryGetValue("DiedEffectClip", out var diedEffectClipText) ? diedEffectClipText : null;
 
             if (!clipNamesByAsset.TryGetValue(assetName, out var clipNames))
             {
@@ -425,6 +426,14 @@ public class World2D
             if (checkpointReachedEffectClipName is not null)
             {
                 clipNames.Add(checkpointReachedEffectClipName);
+            }
+            if (levelEndReachedEffectClipName is not null)
+            {
+                clipNames.Add(levelEndReachedEffectClipName);
+            }
+            if (diedEffectClipName is not null)
+            {
+                clipNames.Add(diedEffectClipName);
             }
         }
 
@@ -498,6 +507,8 @@ public class World2D
                 string? effectClipName;
                 string? hazardHitEffectClipName;
                 string? checkpointReachedEffectClipName;
+                string? levelEndReachedEffectClipName;
+                string? diedEffectClipName;
 
                 if (hasAsset)
                 {
@@ -505,8 +516,10 @@ public class World2D
                     effectClipName = objectSection.TryGetValue("EffectClip", out var effectClipText) ? effectClipText : null;
                     hazardHitEffectClipName = objectSection.TryGetValue("HazardHitEffectClip", out var hazardHitEffectClipText) ? hazardHitEffectClipText : null;
                     checkpointReachedEffectClipName = objectSection.TryGetValue("CheckpointReachedEffectClip", out var checkpointReachedEffectClipText) ? checkpointReachedEffectClipText : null;
+                    levelEndReachedEffectClipName = objectSection.TryGetValue("LevelEndReachedEffectClip", out var levelEndReachedEffectClipText) ? levelEndReachedEffectClipText : null;
+                    diedEffectClipName = objectSection.TryGetValue("DiedEffectClip", out var diedEffectClipText) ? diedEffectClipText : null;
 
-                    // The sprite (with every clip this section could ever need, including its
+                    // The sprite
                     // effect clip if any) was already loaded and cached during the pre-scan above.
                     sprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName!, [clipName], worldName);
                     frameIndex = sprite.GetClip(clipName).DefaultFrame;
@@ -552,6 +565,8 @@ public class World2D
                     effectClipName = null;
                     hazardHitEffectClipName = null;
                     checkpointReachedEffectClipName = null;
+                    levelEndReachedEffectClipName = null;
+                    diedEffectClipName = null;
                 }
 
 
@@ -733,6 +748,8 @@ public class World2D
                         world.PlayerSpawnPosition = position;
                         world.Player.HazardHitEffectClipName = hazardHitEffectClipName;
                         world.Player.CheckpointReachedEffectClipName = checkpointReachedEffectClipName;
+                        world.Player.LevelEndReachedEffectClipName = levelEndReachedEffectClipName;
+                        world.Player.DiedEffectClipName = diedEffectClipName;
                         world.Player.Lives = world.StartingLives;
                         world.Player.Health = GameDefaults.PlayerFullHealth;
                         var playerMaterial = world.Materials.Get(materialOverride ?? world.Player.MaterialName);

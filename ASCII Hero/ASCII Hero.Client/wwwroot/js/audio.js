@@ -7,6 +7,7 @@ let masterGain = null;
 let noiseBuffer = null;
 let sounds = new Map();
 let unlockHandler = null;
+let userHasInteracted = false;
 
 export function initialize(masterVolume) {
     audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -17,6 +18,7 @@ export function initialize(masterVolume) {
     // Browsers keep an AudioContext suspended until the user has interacted with the page, so it
     // is resumed on the first key press/click.
     unlockHandler = () => {
+        userHasInteracted = true;
         if (audioContext && audioContext.state === 'suspended') {
             audioContext.resume();
         }
@@ -30,6 +32,15 @@ export function setSounds(definitions) {
 }
 
 export function play(name) {
+    if (audioContext && audioContext.state === 'suspended' && userHasInteracted) {
+        audioContext.resume().then(() => {
+            if (audioContext.state === 'running') {
+                play(name);
+            }
+        });
+        return;
+    }
+
     if (!audioContext || audioContext.state !== 'running') {
         return;
     }

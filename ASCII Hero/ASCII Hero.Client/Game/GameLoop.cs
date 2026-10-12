@@ -1,4 +1,4 @@
-﻿using ASCII_Hero.Client.Game.Assets;
+using ASCII_Hero.Client.Game.Assets;
 using ASCII_Hero.Client.Game.Audio;
 using ASCII_Hero.Client.Game.Browser;
 using ASCII_Hero.Client.Game.Constants;
@@ -12,55 +12,41 @@ namespace ASCII_Hero.Client.Game;
 
 /// <summary>
 /// Ties together world state, physics, collision, camera and rendering, and drives them once
-/// per animation frame. This is the game loop; it is invoked from JS via requestAnimationFrame,
-/// never via Blazor's StateHasChanged.
+/// per animation frame. Invoked from JS via requestAnimationFrame, never via Blazor's StateHasChanged.
 /// </summary>
 public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFileProvider, ISoundPlayer soundPlayer)
 {
+    // ---------------------------------------------------------------------------------------
+    // Modes
+    // ---------------------------------------------------------------------------------------
 
-
-    /// <summary>
-    /// The three strictly-separate states <see cref="OnFrame"/> can be in. Exactly one of these
-    /// is ever "live" at a time - see the guards in <see cref="OnFrame"/> and
-    /// <see cref="OnWorldSelectingFrameAsync"/> for how a transition between them is made atomic
-    /// even though <see cref="OnFrame"/> is invoked by JS in a fire-and-forget fashion (the next
-    /// requestAnimationFrame call is scheduled without waiting for this one's Task to finish - see
-    /// game-interop.js) and both loading a world and world-selection input can span a genuine
-    /// async gap (HTTP fetches).
-    /// </summary>
+    /// <summary>The state <see cref="OnFrame"/> is in; exactly one is active at a time.</summary>
     private enum GameMode
     {
-        /// <summary>Driving <see cref="WorldSelectScreen"/>/<see cref="WorldSelectRenderer"/>; no <see cref="World2D"/> exists yet.</summary>
+        /// <summary>World-selection screen; no <see cref="World2D"/> exists yet.</summary>
         WorldSelecting,
 
-        /// <summary>A world was confirmed and <see cref="World2D.LoadAsync"/> is running in the background via <see cref="_loadWorldTask"/>; each frame redraws the selection screen plus the filling loading bar until it completes.</summary>
+        /// <summary>A confirmed world is loading in the background; the selection screen and a filling progress bar are drawn.</summary>
         LoadingWorld,
 
-        /// <summary>Driving the normal per-frame Physics/Collision/Camera/Render tick against a loaded <see cref="World2D"/>.</summary>
+        /// <summary>Normal Physics/Collision/Camera/Render tick against the loaded <see cref="World2D"/>.</summary>
         Playing,
 
-        /// <summary>
-        /// The player reached a <see cref="World.CollectableType.LevelEnd"/> collectable (see
-        /// <see cref="World2D.LevelCompleted"/>). Freezes gameplay, shows a brief message, then
-        /// returns to <see cref="WorldSelecting"/> after <see cref="LevelCompleteDisplaySeconds"/>.
-        /// </summary>
+        /// <summary>Gameplay is frozen and a message is shown, then the game returns to <see cref="WorldSelecting"/>.</summary>
         LevelComplete,
+
+        /// <summary>Same as <see cref="LevelComplete"/>, but shown when the player lost their last life.</summary>
+        GameOver,
     }
 
-    /// <summary>How long <see cref="GameMode.LevelComplete"/> is shown before returning to the world-select screen.</summary>
-    private const double LevelCompleteDisplaySeconds = 2.0;
+    private GameMode _mode = GameMode.WorldSelecting;
 
-    /// <summary>Name of the sound (see Global/SoundLibrary.ini) played when the world-select highlight moves.</summary>
-    private const string MenuMoveSoundName = "MenuMove";
+    /// <summary>Guards <see cref="OnFrame"/> against overlapping calls; an overlapping frame is simply dropped.</summary>
+    private bool _isProcessingFrame;
 
-    /// <summary>Name of the sound (see Global/SoundLibrary.ini) played when a world is confirmed in the world-select menu.</summary>
-    private const string MenuSelectSoundName = "MenuSelect";
-
-    /// <summary>Elapsed time since entering <see cref="GameMode.LevelComplete"/>, driving its return-to-selection timer.</summary>
-    private double _levelCompleteElapsedSeconds;
-
-    /// <summary>Message shown centered on screen while <see cref="GameMode.LevelComplete"/> is active.</summary>
-    private readonly UILabel _levelCompleteLabel = new(col: 0, row: 0, width: 20, height: 1, foreColor: RenderConstants.DefaultForeColor) { Lines = { "Level Complete!" } };
+    // ---------------------------------------------------------------------------------------
+    // Systems and world state
+    // ---------------------------------------------------------------------------------------
 
     private readonly InputState _input = new();
     private readonly PhysicsSystem _physics = new();
@@ -71,142 +57,118 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
     private World2D _world = null!;
     private WorldSelectScreen _worldSelect = null!;
-    private GameMode _mode = GameMode.WorldSelecting;
 
-    /// <summary>
-    /// The "Loading [World]" progress bar shown under the thumbnail row while <see cref="GameMode.LoadingWorld"/>
-    /// is active - created fresh each time a world is confirmed (see <see cref="OnWorldSelectingFrameAsync"/>)
-    /// and filled in by the <see cref="IProgress{T}"/> callback passed to <see cref="World2D.LoadAsync"/>
-    /// as loading proceeds, so <see cref="OnFrame"/> can keep redrawing it instead of freezing the
-    /// last selection-screen frame.
-    /// </summary>
-    private UIBar? _loadingBar;
-
-    /// <summary>
-    /// The in-flight <see cref="LoadWorldAsync"/> call while <see cref="GameMode.LoadingWorld"/> is
-    /// active. Deliberately *not* awaited from within <see cref="OnWorldSelectingFrameAsync"/> -
-    /// doing so would hold <see cref="OnFrame"/>'s <see cref="_isProcessingFrame"/> guard for the
-    /// entire load, causing every intervening requestAnimationFrame tick (and so every intervening
-    /// redraw of <see cref="_loadingBar"/>) to be dropped, which is why the bar used to appear but
-    /// never visibly fill. Instead, each <see cref="OnFrame"/> tick while <see cref="GameMode.LoadingWorld"/>
-    /// is active redraws the bar and polls this task for completion.
-    /// </summary>
-    private Task? _loadWorldTask;
-
-    /// <summary>
-    /// HUD overlay shown in the top-left corner while playing, using the independent
-    /// <see cref="UIFrame"/>/<see cref="UILabel"/> screen-space primitives directly. Refreshed
-    /// every <see cref="OnPlayingFrameAsync"/> tick from <see cref="World.Player2D.Lives"/>/
-    /// <see cref="World.Player2D.Rings"/>/<see cref="World.Player2D.Score"/> (first row) and a
-    /// "Health" caption (second row, followed by <see cref="_hudBar"/>). Each number is right-aligned
-    /// to a fixed-width field so the surrounding text doesn't shift/jitter as its digit count changes.
-    /// </summary>
-    private readonly UILabel _hudText = new(col: 2, row: 2, width: 32, height: 2, foreColor: RenderConstants.DefaultForeColor);
-
-    private readonly UIFrame _hudBox = new(col: 1, row: 1, width: 38, height: 4, foreColor: RenderConstants.DefaultForeColor);
-
-    /// <summary>
-    /// Health gauge inside the HUD frame, right of the "Health" caption, using the independent
-    /// <see cref="UIBar"/> screen-space primitive; shows <see cref="World.Player2D.Health"/> (0-1).
-    /// </summary>
-    private readonly UIBar _hudBar = new(col: 9, row: 3, width: 20, height: 1, minValue: 0, maxValue: GameDefaults.PlayerFullHealth, foreColor: RenderConstants.DefaultForeColor) { CurrentValue = GameDefaults.PlayerFullHealth };
-
-    /// <summary>
-    /// Dev/testing FPS overlay, toggled by <see cref="InputState.IsFpsToggleKeyPressed"/> (see
-    /// <see cref="OnFrame"/>) - off by default so it never appears for an ordinary player, but one
-    /// keypress away when diagnosing frame-timing-dependent issues (e.g. the sub-step/pose-jitter
-    /// bug this was added for - see docs/Decisions.md). Positioned in the top-right corner, in its
-    /// own independent <see cref="UILabel"/> rather than reusing <see cref="_hudText"/>, so it
-    /// never competes with real HUD content for the same screen space.
-    /// </summary>
-    private readonly UILabel _fpsLabel = new(col: 0, row: 0, width: 12, height: 1, foreColor: RenderConstants.DefaultForeColor);
-
-    private bool _showFpsOverlay;
-
-    /// <summary>Edge-detection state for <see cref="InputState.IsActionPressed"/>.</summary>
-    private bool _wasActionKeyDown;
-
-    /// <summary>
-    /// HUD key icon inside <see cref="_hudBox"/>: drawn in the default HUD color while the player
-    /// holds at least one key, not drawn otherwise. Deliberately an on/off icon rather than a
-    /// list, since a world may use many differently named locks.
-    /// </summary>
-    private readonly UILabel _hudKeyLabel = new(col: 36, row: 2, width: 2, height: 1, foreColor: RenderConstants.DefaultForeColor);
-
-    /// <summary>Edge-detection state for <see cref="InputState.IsFpsToggleKeyPressed"/>, mirroring
-    /// the pattern <see cref="PhysicsSystem"/> uses for its own latched keys - without this, holding
-    /// the key down would toggle the overlay on/off every single frame instead of once per press.</summary>
-    private bool _wasFpsToggleKeyDown;
-
-    /// <summary>Edge-detection state for <see cref="InputState.IsRespawnDebugKeyPressed"/> - without
-    /// this, holding the key down would call <see cref="World.World2D.Respawn"/> every single frame
-    /// instead of once per press.</summary>
-    private bool _wasRespawnDebugKeyDown;
-
-    /// <summary>
-    /// Smoothed frames-per-second reading shown by <see cref="_fpsLabel"/>, updated once per real
-    /// animation frame in <see cref="OnFrame"/> from that frame's own *unclamped* deltaSeconds
-    /// (before the 0.1s simulation clamp below) - deliberately the raw browser-reported frame time,
-    /// not the sub-stepped simulation time, since the whole point of this overlay is to show actual
-    /// real-world frame pacing, including hitches the simulation clamp/sub-stepping otherwise hides
-    /// from gameplay. A simple exponential moving average smooths out the frame-to-frame noise an
-    /// instantaneous 1/deltaSeconds reading would otherwise show, while still reacting quickly
-    /// enough to be useful for spotting a real, sustained frame-rate change.
-    /// </summary>
-    private double _smoothedFps;
-
-    private const double FpsSmoothingFactor = 0.1;
-
-    /// <summary>
-    /// Dev/testing world object-count overlay, toggled by
-    /// <see cref="InputState.IsObjectCounterToggleKeyPressed"/> (see <see cref="OnFrame"/>) - off
-    /// by default, shown directly under <see cref="_fpsLabel"/> (row 1) so the two overlays stack
-    /// in the top-right corner without competing for the same row. Lets a level author watch
-    /// <see cref="World.World2D.Objects"/>'s count live, e.g. to see it drop as collectables
-    /// (such as diamonds) are picked up.
-    /// </summary>
-    private readonly UILabel _objectCounterLabel = new(col: 0, row: 1, width: 12, height: 1, foreColor: RenderConstants.DefaultForeColor);
-
-    private bool _showObjectCounterOverlay;
-
-    /// <summary>Edge-detection state for <see cref="InputState.IsObjectCounterToggleKeyPressed"/>,
-    /// mirroring <see cref="_wasFpsToggleKeyDown"/>'s own pattern/rationale.</summary>
-    private bool _wasObjectCounterToggleKeyDown;
-
-    /// <summary>
-    /// Unspent real elapsed time carried forward between frames for the fixed-timestep Physics/
-    /// Collision accumulator in <see cref="OnPlayingFrameAsync"/> (the standard "fix your
-    /// timestep" pattern) - each frame adds that frame's <c>deltaSeconds</c> here, then drains
-    /// whatever whole multiple of <see cref="PhysicsConstants.FixedPhysicsStepSeconds"/> is currently
-    /// available, leaving any remainder (always strictly less than one fixed step) sitting here
-    /// for the next frame to pick up, rather than folding it into an odd-sized partial step this
-    /// frame. This is what keeps every Physics/Collision step identically sized regardless of how
-    /// the real frame rate happens to fluctuate frame to frame - see
-    /// <see cref="PhysicsConstants.FixedPhysicsStepSeconds"/>'s own doc comment for why an
-    /// inconsistent step size was itself enough to visibly perturb collision/pose resolution,
-    /// independent of the earlier oversized-single-step tunneling concern.
-    /// </summary>
+    /// <summary>Unspent time carried between frames by the fixed-timestep physics loop (always less than one fixed step).</summary>
     private double _physicsAccumulatorSeconds;
 
-    /// <summary>
-    /// Blanket re-entrancy guard for <see cref="OnFrame"/> itself, on top of (not instead of) the
-    /// explicit <see cref="GameMode"/> transition guard below: since a fire-and-forget-scheduled
-    /// frame can take arbitrarily long (in particular, one that does real async I/O), a dropped
-    /// frame here is harmless - the next requestAnimationFrame call, moments later, simply picks
-    /// up from whatever state this call left behind - but re-entering this method's logic
-    /// mid-flight never is.
-    /// </summary>
-    private bool _isProcessingFrame;
+    // ---------------------------------------------------------------------------------------
+    // Viewport
+    // ---------------------------------------------------------------------------------------
 
     private double _viewportWidthCells;
     private double _viewportHeightCells;
     private int _viewportWidthPixels;
     private int _viewportHeightPixels;
 
+    // ---------------------------------------------------------------------------------------
+    // World selection and loading
+    // ---------------------------------------------------------------------------------------
+
+    /// <summary>Sound played when the world-select highlight moves (see Global/SoundLibrary.ini).</summary>
+    private const string MenuMoveSoundName = "MenuMove";
+
+    /// <summary>Sound played when a world is confirmed (see Global/SoundLibrary.ini).</summary>
+    private const string MenuSelectSoundName = "MenuSelect";
+
+    /// <summary>Progress bar shown while <see cref="GameMode.LoadingWorld"/> is active; created when a world is confirmed.</summary>
+    private UIBar? _loadingBar;
+
+    /// <summary>The in-flight world load; polled each frame while <see cref="GameMode.LoadingWorld"/> is active, never awaited inline.</summary>
+    private Task? _loadWorldTask;
+
+    // ---------------------------------------------------------------------------------------
+    // Pending transitions and end screens (level complete / game over)
+    // ---------------------------------------------------------------------------------------
+
+    /// <summary>How long the player's level-end or death effect and sound play before the transition is carried out (see <see cref="World2D.PendingTransition"/>).</summary>
+    private const double PendingTransitionSeconds = 1.0;
+
+    private double _pendingTransitionElapsedSeconds;
+
+    /// <summary>Set once no jump/action key is held on an end screen, so a key still held from gameplay doesn't dismiss it instantly.</summary>
+    private bool _endScreenKeysReleased;
+
+    /// <summary>Message of the active <see cref="GameMode.LevelComplete"/>/<see cref="GameMode.GameOver"/> screen; one text row (with a space either side) inside the final ripple box, on a solid background so it stays readable over the world.</summary>
+    private readonly UILabel _endScreenLabel = new(col: 0, row: 0, width: 20, height: 1, backColor: EndScreenTextBackColor);
+
+    /// <summary>Border around the end screen message; redrawn at several sizes while the ripple animation plays.</summary>
+    private readonly UIFrame _endScreenFrame = new(col: 0, row: 0, width: 0, height: 0);
+
+    /// <summary>Time since the end screen opened; drives the ripple animation.</summary>
+    private double _endScreenElapsedSeconds;
+
+    /// <summary>Number of shrinking steps from the largest ripple box down to the box that holds the message.</summary>
+    private const int EndScreenRippleSteps = 12;
+
+    /// <summary>How long each ripple step lasts.</summary>
+    private const double EndScreenStepSeconds = 0.06;
+
+    /// <summary>How many boxes are visible at once while the ripple converges.</summary>
+    private const int EndScreenRippleTrail = 4;
+
+    /// <summary>Per step, the box shrinks by this many cells on each axis (1 per side).</summary>
+    private const int EndScreenStepCells = 2;
+
+    private const string EndScreenGameOverColor = "#ff0000";
+    private const string EndScreenTextBackColor = "#000000";
+
+    // ---------------------------------------------------------------------------------------
+    // HUD (top-left): frame, text row, health bar and key icon
+    // ---------------------------------------------------------------------------------------
+
+    private readonly UIFrame _hudBox = new(col: 1, row: 1, width: 34, height: 4, foreColor: RenderConstants.DefaultForeColor);
+
+    /// <summary>Lives/Rings/Score on the first row and the "Health:" caption on the second.</summary>
+    private readonly UILabel _hudText = new(col: 2, row: 2, width: 32, height: 2, foreColor: RenderConstants.DefaultForeColor);
+
+    /// <summary>Health gauge (0-1) right of the "Health:" caption.</summary>
+    private readonly UIBar _hudBar = new(col: 10, row: 3, width: 20, height: 1, minValue: 0, maxValue: GameDefaults.PlayerFullHealth, foreColor: RenderConstants.DefaultForeColor) { CurrentValue = GameDefaults.PlayerFullHealth };
+
+    /// <summary>Key icon right of the health bar; shown while the player holds at least one key.</summary>
+    private readonly UILabel _hudKeyLabel = new(col: 32, row: 3, width: 2, height: 1, foreColor: RenderConstants.DefaultForeColor);
+
+    // ---------------------------------------------------------------------------------------
+    // Debug overlays (top-right) and debug keys
+    // ---------------------------------------------------------------------------------------
+
+    private const double FpsSmoothingFactor = 0.1;
+
+    /// <summary>FPS overlay, toggled by <see cref="InputState.IsFpsToggleKeyPressed"/>.</summary>
+    private readonly UILabel _fpsLabel = new(col: 0, row: 0, width: 12, height: 1, foreColor: RenderConstants.DefaultForeColor);
+
+    /// <summary>World object-count overlay, toggled by <see cref="InputState.IsObjectCounterToggleKeyPressed"/>; sits under the FPS overlay.</summary>
+    private readonly UILabel _objectCounterLabel = new(col: 0, row: 1, width: 12, height: 1, foreColor: RenderConstants.DefaultForeColor);
+
+    private bool _showFpsOverlay;
+    private bool _showObjectCounterOverlay;
+
+    /// <summary>Smoothed frames per second, based on the raw (unclamped) frame time.</summary>
+    private double _smoothedFps;
+
+    // ---------------------------------------------------------------------------------------
+    // Edge-detection state for keys that trigger once per press
+    // ---------------------------------------------------------------------------------------
+
+    private bool _wasFpsToggleKeyDown;
+    private bool _wasObjectCounterToggleKeyDown;
+    private bool _wasActionKeyDown;
+
+    // ---------------------------------------------------------------------------------------
+    // Startup
+    // ---------------------------------------------------------------------------------------
+
     public async Task StartAsync(string canvasElementId)
     {
-        // The world catalog's titles/thumbnails are cheap to load - unlike a full World2D - so
-        // they're loaded up front alongside everything else the selection screen needs.
         var worlds = await WorldCatalog.LoadAllAsync(assetFileProvider);
 
         var globalSettingsContent = await assetFileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/Settings.ini");
@@ -219,12 +181,8 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             ? parsedRows
             : RenderConstants.DefaultViewportRows;
 
-        // The font's own true native pixel size has no default: a browser's text-measuring API
-        // cannot reliably report it for a true bitmap font (see docs/Decisions.md's Rendering &
-        // Camera section), so it must always be supplied explicitly. There is no separate scale
-        // factor either - these values are the final, already-scaled on-screen cell size (e.g. an
-        // 8x14 font at 2x zoom is simply configured as 16/28), so a deliberately non-uniform value
-        // (e.g. 15x28) can squeeze/stretch the font in one direction if ever desired.
+        // The font's native pixel size has no default and must be supplied explicitly. These are
+        // the final on-screen cell size (already scaled), so a non-uniform value stretches the font.
         if (!IniValueParser.TryParseInt(globalSettings.TryGetValue("Render", "FontWidthPixels"), out var fontWidthPixels))
         {
             throw new InvalidOperationException("Global/Settings.ini is missing a required [Render] FontWidthPixels value.");
@@ -243,8 +201,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             : 1.0;
         await soundPlayer.InitializeAsync(soundEnabled ? masterVolume : 0.0);
 
-        // The world-select menu has no world loaded yet, so register the global sounds up front
-        // (each world's own merged library replaces them once that world is loaded).
+        // Register the global sounds for the menu; a world's own library replaces them once loaded.
         await soundPlayer.SetSoundsAsync(await SoundLibrary.LoadAsync(assetFileProvider, null));
 
         var visibleSlotCount = WorldSelectRenderer.ComputeVisibleSlotCount(_viewportWidthCells, worlds.Count);
@@ -252,48 +209,9 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         _mode = GameMode.WorldSelecting;
     }
 
-    private async Task LoadWorldAsync(string worldName)
-    {
-        // Assets are loaded once, up front, over HTTP (see IAssetFileProvider) so gameplay never
-        // stalls mid-frame waiting on a fetch; the frame loop only starts driving Physics/etc.
-        // once this completes. _loadingBar is filled in as each logical loading step completes
-        // (see World2D.LoadStepCount), read back by OnFrame's GameMode.LoadingWorld case so the
-        // bar visibly fills instead of the canvas freezing on the last selection-screen frame.
-        var progress = new Progress<double>(stepsCompleted =>
-        {
-            if (_loadingBar is not null)
-            {
-                _loadingBar.CurrentValue = stepsCompleted;
-            }
-        });
-        _world = await World2D.LoadAsync(assetFileProvider, worldName, progress);
-        await soundPlayer.SetSoundsAsync(_world.Sounds);
-
-        // Discard any leftover accumulated time from a previous world (or the time genuinely
-        // spent loading this one, which was never real gameplay time) - starting the new world
-        // with a stale/inflated _physicsAccumulatorSeconds would otherwise immediately burn
-        // through several fixed steps in the very first Playing frame.
-        _physicsAccumulatorSeconds = 0;
-
-        _hudText.Lines.Clear();
-        _hudText.Lines.Add($"Lives:{_world.Player.Lives,3}  Rings:{_world.Player.Rings,3}  Score:{_world.Player.Score,4}");
-        _hudText.Lines.Add("Health");
-
-        _camera.SnapTo(
-            _world.CameraTarget.Position,
-            _world.CameraTarget.Size,
-            _world.WidthCells,
-            _world.HeightCells,
-            _viewportWidthCells,
-            _viewportHeightCells);
-    }
-
     private void ApplyCellMetrics(CellMetrics cellMetrics, int viewportColumns, int viewportRows)
     {
-        // Defensive guard: if the browser ever reports a non-finite or non-positive cell size
-        // (e.g. a font measurement taken before layout/font-load settled), fall back to the
-        // previous/default cell size instead of propagating NaN/Infinity into the renderer,
-        // which would later throw an OverflowException when cast to int in WorldRenderer.
+        // Fall back to the previous/default cell size if the browser reports an invalid one.
         var width = cellMetrics.CellWidthPixels;
         var height = cellMetrics.CellHeightPixels;
 
@@ -309,14 +227,16 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         _renderer.CellWidthPixels = width;
         _renderer.CellHeightPixels = height;
 
-        // The viewport is always exactly viewportColumns/Rows cells - never a division of a fixed
-        // pixel size by the cell size - so it's an exact whole number of cells regardless of which
-        // font/scale is active (see RenderConstants.DefaultViewportColumns/Rows's own doc comment).
+        // The viewport is always exactly viewportColumns x viewportRows cells.
         _viewportWidthCells = viewportColumns;
         _viewportHeightCells = viewportRows;
         _viewportWidthPixels = (int)Math.Round(viewportColumns * _renderer.CellWidthPixels);
         _viewportHeightPixels = (int)Math.Round(viewportRows * _renderer.CellHeightPixels);
     }
+
+    // ---------------------------------------------------------------------------------------
+    // JS entry points
+    // ---------------------------------------------------------------------------------------
 
     [JSInvokable]
     public void OnKeyDown(string code) => _input.KeyDown(code);
@@ -327,8 +247,6 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     [JSInvokable]
     public async Task OnFrame(double deltaSeconds)
     {
-        // See _isProcessingFrame's doc comment - dropping an overlapping frame outright here is
-        // simpler and safer than trying to make every state's frame logic itself re-entrant-safe.
         if (_isProcessingFrame)
         {
             return;
@@ -337,35 +255,8 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         _isProcessingFrame = true;
         try
         {
-            // Edge-triggered so holding "F" down doesn't flicker the overlay on/off every frame -
-            // see _wasFpsToggleKeyDown's own doc comment.
-            var fpsToggleKeyDown = _input.IsFpsToggleKeyPressed;
-            if (fpsToggleKeyDown && !_wasFpsToggleKeyDown)
-            {
-                _showFpsOverlay = !_showFpsOverlay;
-            }
-            _wasFpsToggleKeyDown = fpsToggleKeyDown;
-
-            // Same edge-triggered pattern as the FPS toggle above - see _wasObjectCounterToggleKeyDown's
-            // own doc comment.
-            var objectCounterToggleKeyDown = _input.IsObjectCounterToggleKeyPressed;
-            if (objectCounterToggleKeyDown && !_wasObjectCounterToggleKeyDown)
-            {
-                _showObjectCounterOverlay = !_showObjectCounterOverlay;
-            }
-            _wasObjectCounterToggleKeyDown = objectCounterToggleKeyDown;
-
-            // Uses this frame's raw, unclamped deltaSeconds - see _smoothedFps's own doc comment
-            // for why the simulation clamp below must not affect this reading. Guarded against a
-            // zero/negative delta (e.g. the very first frame, or an unexpected browser timestamp
-            // glitch) which would otherwise divide by zero or report an infinite/negative rate.
-            if (deltaSeconds > 0)
-            {
-                var instantaneousFps = 1.0 / deltaSeconds;
-                _smoothedFps = _smoothedFps <= 0
-                    ? instantaneousFps
-                    : _smoothedFps + (instantaneousFps - _smoothedFps) * FpsSmoothingFactor;
-            }
+            UpdateOverlayToggles();
+            UpdateSmoothedFps(deltaSeconds);
 
             // Clamp delta to avoid huge jumps after tab switches, etc.
             deltaSeconds = Math.Clamp(deltaSeconds, 0, 0.1);
@@ -375,18 +266,15 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
                 case GameMode.WorldSelecting:
                     await OnWorldSelectingFrameAsync(deltaSeconds);
                     break;
+                case GameMode.LoadingWorld:
+                    await OnLoadingWorldFrameAsync();
+                    break;
                 case GameMode.Playing:
                     await OnPlayingFrameAsync(deltaSeconds);
                     break;
-                case GameMode.LoadingWorld:
-                    // A confirmed world's World2D is loading in the background via _loadWorldTask
-                    // (started, not awaited, by OnWorldSelectingFrameAsync) - keep redrawing the
-                    // selection screen plus the filling _loadingBar each frame, and switch to
-                    // Playing once that task completes.
-                    await OnLoadingWorldFrameAsync();
-                    break;
                 case GameMode.LevelComplete:
-                    await OnLevelCompleteFrameAsync(deltaSeconds);
+                case GameMode.GameOver:
+                    await OnEndScreenFrameAsync(deltaSeconds);
                     break;
             }
         }
@@ -396,20 +284,138 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
     }
 
-    /// <summary>Forwards every sound game logic queued on the world this frame to the sound player.</summary>
-    private void PlayQueuedSounds()
+    private void UpdateOverlayToggles()
     {
-        foreach (var soundName in _world.DrainPendingSounds())
+        var fpsToggleKeyDown = _input.IsFpsToggleKeyPressed;
+        if (fpsToggleKeyDown && !_wasFpsToggleKeyDown)
         {
-            soundPlayer.Play(soundName);
+            _showFpsOverlay = !_showFpsOverlay;
+        }
+        _wasFpsToggleKeyDown = fpsToggleKeyDown;
+
+        var objectCounterToggleKeyDown = _input.IsObjectCounterToggleKeyPressed;
+        if (objectCounterToggleKeyDown && !_wasObjectCounterToggleKeyDown)
+        {
+            _showObjectCounterOverlay = !_showObjectCounterOverlay;
+        }
+        _wasObjectCounterToggleKeyDown = objectCounterToggleKeyDown;
+    }
+
+    private void UpdateSmoothedFps(double rawDeltaSeconds)
+    {
+        if (rawDeltaSeconds <= 0)
+        {
+            return;
+        }
+
+        var instantaneousFps = 1.0 / rawDeltaSeconds;
+        _smoothedFps = _smoothedFps <= 0
+            ? instantaneousFps
+            : _smoothedFps + (instantaneousFps - _smoothedFps) * FpsSmoothingFactor;
+    }
+
+    // ---------------------------------------------------------------------------------------
+    // World selection and loading frames
+    // ---------------------------------------------------------------------------------------
+
+    /// <summary>Handles the world-selection screen: moves the highlight and starts loading the chosen world on confirm.</summary>
+    private async Task OnWorldSelectingFrameAsync(double deltaSeconds)
+    {
+        var previousSelectedIndex = _worldSelect.SelectedIndex;
+        _worldSelect.Update(_input, deltaSeconds);
+
+        if (_worldSelect.SelectedIndex != previousSelectedIndex)
+        {
+            soundPlayer.Play(MenuMoveSoundName);
+        }
+        if (_worldSelect.Confirmed)
+        {
+            soundPlayer.Play(MenuSelectSoundName);
+
+            // Start the load without awaiting it, so frames keep being drawn while it runs.
+            _mode = GameMode.LoadingWorld;
+            _loadingBar = WorldLoadingRenderer.CreateLoadingBar(_worldSelect, _viewportWidthCells, _viewportHeightCells, World2D.LoadStepCount);
+            _loadWorldTask = LoadWorldAsync(_worldSelect.SelectedWorld.WorldName);
+
+            await OnLoadingWorldFrameAsync();
+            return;
+        }
+
+        var glyphs = WorldSelectRenderer.BuildFrame(
+            _worldSelect, _viewportWidthCells, _viewportHeightCells,
+            _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+        await DrawAsync(glyphs);
+    }
+
+    private async Task LoadWorldAsync(string worldName)
+    {
+        var progress = new Progress<double>(stepsCompleted =>
+        {
+            if (_loadingBar is not null)
+            {
+                _loadingBar.CurrentValue = stepsCompleted;
+            }
+        });
+        _world = await World2D.LoadAsync(assetFileProvider, worldName, progress);
+        await soundPlayer.SetSoundsAsync(_world.Sounds);
+
+        // Time spent loading is not gameplay time.
+        _physicsAccumulatorSeconds = 0;
+
+        // Keys still held from the menu must not count as fresh presses in the first frame.
+        _wasActionKeyDown = _input.IsActionPressed;
+
+        _camera.SnapTo(
+            _world.CameraTarget.Position,
+            _world.CameraTarget.Size,
+            _world.WidthCells,
+            _world.HeightCells,
+            _viewportWidthCells,
+            _viewportHeightCells);
+    }
+
+    /// <summary>Draws the selection screen with the loading bar, and switches to <see cref="GameMode.Playing"/> once the load completes.</summary>
+    private async Task OnLoadingWorldFrameAsync()
+    {
+        if (_loadingBar is null || _loadWorldTask is null)
+        {
+            return;
+        }
+
+        var glyphs = WorldLoadingRenderer.BuildLoadingFrame(
+            _worldSelect, _loadingBar, _viewportWidthCells, _viewportHeightCells,
+            _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+        await DrawAsync(glyphs);
+
+        if (_loadWorldTask.IsCompleted)
+        {
+            try
+            {
+                await _loadWorldTask;
+                _mode = GameMode.Playing;
+            }
+            catch (Exception ex)
+            {
+                // No error screen exists; log to the browser console and return to world selection.
+                Console.Error.WriteLine($"Failed to load world '{_worldSelect.SelectedWorld.WorldName}': {ex}");
+                _mode = GameMode.WorldSelecting;
+                _worldSelect.ResetConfirmation();
+            }
+            finally
+            {
+                _loadingBar = null;
+                _loadWorldTask = null;
+            }
         }
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Playing frame
+    // ---------------------------------------------------------------------------------------
+
     private async Task OnPlayingFrameAsync(double deltaSeconds)
     {
-        // Dev/testing shortcut: abandon the current world and return to the world-select screen -
-        // see InputState.IsEscapePressed's doc comment. Also the same _mode reset a future
-        // level-complete/death flow will use once those exist (see docs/Decisions.md).
+        // Dev shortcut: abandon the world and return to world selection.
         if (_input.IsEscapePressed)
         {
             _worldSelect.ResetConfirmation();
@@ -417,58 +423,15 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             return;
         }
 
-        // Dev/testing shortcut: instantly respawn the player (see World2D.Respawn) regardless of
-        // current health/lives - edge-triggered the same way the FPS/object-counter overlay toggles are,
-        // so holding the key down doesn't respawn every single frame.
-        var respawnDebugKeyDown = _input.IsRespawnDebugKeyPressed;
-        if (respawnDebugKeyDown && !_wasRespawnDebugKeyDown)
+        HandleActionKeys();
+        if (_world.PendingTransition == PendingTransition.None)
         {
-            _world.Respawn();
+            RunFixedPhysicsSteps(deltaSeconds);
         }
-        _wasRespawnDebugKeyDown = respawnDebugKeyDown;
-
-        // Action key (E / Enter): edge-triggered like the debug keys above, so one press opens at
-        // most one door instead of one per frame.
-        var actionKeyDown = _input.IsActionPressed;
-        if (actionKeyDown && !_wasActionKeyDown && _world.TryOpenDoor())
-        {
-            _world.ApplyPendingRemovals();
-        }
-        _wasActionKeyDown = actionKeyDown;
-
-        // A single real
-        // jitter, or occasionally far more than ordinary after a real hitch (a GC pause, a slow
-        // JS interop round-trip, a dropped/re-entrant frame - see _isProcessingFrame's own doc
-        // comment). Physics/Collision are instead run in a fixed-timestep accumulator (the
-        // standard "fix your timestep" pattern): this frame's deltaSeconds is added to
-        // _physicsAccumulatorSeconds, then drained in however many whole
-        // PhysicsConstants.FixedPhysicsStepSeconds-sized steps are currently available, leaving any
-        // remainder for next frame rather than folding it into an odd-sized partial step this
-        // frame - see PhysicsConstants.FixedPhysicsStepSeconds's own doc comment for why every step
-        // must be identically sized, not just capped, to avoid perturbing collision/pose
-        // resolution right at a grounded/airborne boundary. Collision is resolved once per fixed
-        // step (not once for the whole frame) so a large catch-up delta can't let a body integrate
-        // several times before ever being collision-checked, which would risk tunneling through a
-        // wall (neither Physics nor Collision uses continuous/swept detection). Pending removals
-        // are likewise applied after every fixed step, not just once at the end, so a later step's
-        // collision pass never sees a body that should already be gone. Animation/camera/render
-        // remain once per real frame using the full original deltaSeconds - both are purely
-        // presentational and already tolerant of a larger delta.
-        _physicsAccumulatorSeconds += deltaSeconds;
-        while (_physicsAccumulatorSeconds >= PhysicsConstants.FixedPhysicsStepSeconds)
-        {
-            _physics.Step(_world, _input, PhysicsConstants.FixedPhysicsStepSeconds);
-            _collision.Resolve(_world);
-            _world.ApplyPendingRemovals();
-            _physicsAccumulatorSeconds -= PhysicsConstants.FixedPhysicsStepSeconds;
-        }
-
         PlayQueuedSounds();
 
-        if (_world.LevelCompleted)
+        if (_world.PendingTransition != PendingTransition.None && AdvancePendingTransition(deltaSeconds))
         {
-            _mode = GameMode.LevelComplete;
-            _levelCompleteElapsedSeconds = 0;
             return;
         }
 
@@ -485,29 +448,107 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             deltaSeconds);
 
         var glyphs = _renderer.BuildFrame(_world, _camera, _viewportWidthCells, _viewportHeightCells);
-        UIRenderer.AddFrame(glyphs, _hudBox, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+        AddHud(glyphs);
+        AddDebugOverlays(glyphs);
+        await DrawAsync(glyphs);
+    }
+
+    /// <summary>
+    /// Counts down the pending transition set by <see cref="CollisionSystem"/> (physics is frozen
+    /// meanwhile, effects keep animating). Once <see cref="PendingTransitionSeconds"/> have passed,
+    /// carries it out: a level end opens the level-complete screen, a death respawns the player or,
+    /// with no lives left, opens the game-over screen. Returns whether the mode changed, so the
+    /// caller skips the rest of this playing frame.
+    /// </summary>
+    private bool AdvancePendingTransition(double deltaSeconds)
+    {
+        _pendingTransitionElapsedSeconds += deltaSeconds;
+        if (_pendingTransitionElapsedSeconds < PendingTransitionSeconds)
+        {
+            return false;
+        }
+
+        var transition = _world.PendingTransition;
+        _world.PendingTransition = PendingTransition.None;
+        _pendingTransitionElapsedSeconds = 0;
+
+        if (transition == PendingTransition.Death && _world.Player.Lives > 0)
+        {
+            _world.Respawn();
+            return false;
+        }
+
+        _mode = transition == PendingTransition.LevelEnd ? GameMode.LevelComplete : GameMode.GameOver;
+        _endScreenKeysReleased = false;
+        _endScreenElapsedSeconds = 0;
+        return true;
+    }
+
+    /// <summary>Handles the once-per-press action key (opens doors).</summary>
+    private void HandleActionKeys()
+    {
+        var actionKeyDown = _input.IsActionPressed;
+        if (actionKeyDown && !_wasActionKeyDown && _world.TryOpenDoor())
+        {
+            _world.ApplyPendingRemovals();
+        }
+        _wasActionKeyDown = actionKeyDown;
+    }
+
+    /// <summary>
+    /// Runs Physics and Collision in identically sized fixed steps, carrying any remainder to the
+    /// next frame. Pending removals are applied after every step.
+    /// </summary>
+    private void RunFixedPhysicsSteps(double deltaSeconds)
+    {
+        _physicsAccumulatorSeconds += deltaSeconds;
+        while (_physicsAccumulatorSeconds >= PhysicsConstants.FixedPhysicsStepSeconds)
+        {
+            _physics.Step(_world, _input, PhysicsConstants.FixedPhysicsStepSeconds);
+            _collision.Resolve(_world);
+            _world.ApplyPendingRemovals();
+            _physicsAccumulatorSeconds -= PhysicsConstants.FixedPhysicsStepSeconds;
+        }
+    }
+
+    /// <summary>Forwards every sound queued on the world this frame to the sound player.</summary>
+    private void PlayQueuedSounds()
+    {
+        foreach (var soundName in _world.DrainPendingSounds())
+        {
+            soundPlayer.Play(soundName);
+        }
+    }
+
+    /// <summary>Adds the HUD: lives, rings, score, health bar and key icon.</summary>
+    private void AddHud(List<Glyph> glyphs)
+    {
+        var cellWidth = _renderer.CellWidthPixels;
+        var cellHeight = _renderer.CellHeightPixels;
+
+        UIRenderer.AddFrame(glyphs, _hudBox, cellWidth, cellHeight);
+
         _hudText.Lines.Clear();
         _hudText.Lines.Add($"Lives:{_world.Player.Lives,3}  Rings:{_world.Player.Rings,3}  Score:{_world.Player.Score,4}");
-        _hudText.Lines.Add("Health");
-        UIRenderer.AddLabel(glyphs, _hudText, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+        _hudText.Lines.Add("Health:");
+        UIRenderer.AddLabel(glyphs, _hudText, cellWidth, cellHeight);
+
         _hudBar.CurrentValue = _world.Player.Health;
+        UIRenderer.AddBar(glyphs, _hudBar, cellWidth, cellHeight);
+
         if (_world.Player.Keys.Count > 0)
         {
             _hudKeyLabel.Lines.Clear();
             _hudKeyLabel.Lines.Add("o╤");
-            UIRenderer.AddLabel(glyphs, _hudKeyLabel, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+            UIRenderer.AddLabel(glyphs, _hudKeyLabel, cellWidth, cellHeight);
         }
-        UIRenderer.AddBar(glyphs, _hudBar, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+    }
 
+    /// <summary>Adds the FPS and object-count overlays, right-aligned to the top-right corner.</summary>
+    private void AddDebugOverlays(List<Glyph> glyphs)
+    {
         if (_showFpsOverlay)
         {
-            // Right-aligned against the current viewport width (itself dependent on the browser's
-            // reported cell metrics - see ApplyCellMetrics) so the label stays flush with the
-            // top-right corner rather than a fixed column that would only be correct for one
-            // particular viewport/cell size. The number leads (e.g. "144 FPS", not "FPS: 144") so
-            // Col is recomputed from this frame's actual rendered text length, not _fpsLabel.Width
-            // (which is only an upper-bound truncation cap) - otherwise the string would grow
-            // rightward off the corner, or leave a gap, as the digit count changes.
             var fpsText = $"{_smoothedFps:F0} FPS";
             _fpsLabel.Col = _viewportWidthCells - fpsText.Length;
             _fpsLabel.Lines.Clear();
@@ -517,28 +558,28 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
         if (_showObjectCounterOverlay)
         {
-            // Same right-aligned-by-actual-text-length approach as _fpsLabel above, stacked
-            // directly underneath it (row 1).
             var objectCountText = $"{_world.Objects.Count} Obj";
             _objectCounterLabel.Col = _viewportWidthCells - objectCountText.Length;
             _objectCounterLabel.Lines.Clear();
             _objectCounterLabel.Lines.Add(objectCountText);
             UIRenderer.AddLabel(glyphs, _objectCounterLabel, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         }
-
-        await canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs);
     }
 
-    /// <summary>
-    /// Drives one frame of <see cref="GameMode.LevelComplete"/>: keeps drawing the last playing
-    /// frame's glyphs (gameplay is frozen - no Physics/Collision/Animation/Camera update) with a
-    /// centered "Level Complete!" message on top, then returns to <see cref="GameMode.WorldSelecting"/>
-    /// once <see cref="LevelCompleteDisplaySeconds"/> has elapsed.
-    /// </summary>
-    private async Task OnLevelCompleteFrameAsync(double deltaSeconds)
+    // ---------------------------------------------------------------------------------------
+    // End screen frame (level complete / game over)
+    // ---------------------------------------------------------------------------------------
+
+    /// <summary>Shows the frozen last frame with a ripple-animated message box until a jump or action key press, then returns to world selection.</summary>
+    private async Task OnEndScreenFrameAsync(double deltaSeconds)
     {
-        _levelCompleteElapsedSeconds += deltaSeconds;
-        if (_levelCompleteElapsedSeconds >= LevelCompleteDisplaySeconds)
+        _endScreenElapsedSeconds += deltaSeconds;
+        var confirmPressed = _input.IsJumpPressed || _input.IsActionPressed;
+        if (!confirmPressed)
+        {
+            _endScreenKeysReleased = true;
+        }
+        else if (_endScreenKeysReleased)
         {
             _worldSelect.ResetConfirmation();
             _mode = GameMode.WorldSelecting;
@@ -546,95 +587,58 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
 
         var glyphs = _renderer.BuildFrame(_world, _camera, _viewportWidthCells, _viewportHeightCells);
-        _levelCompleteLabel.Col = (_viewportWidthCells - _levelCompleteLabel.Lines[0].Length) / 2;
-        _levelCompleteLabel.Row = _viewportHeightCells / 2;
-        UIRenderer.AddLabel(glyphs, _levelCompleteLabel, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
-        await canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs);
+        AddEndScreenMessage(glyphs);
+        await DrawAsync(glyphs);
     }
 
     /// <summary>
-    /// Drives one frame of the pre-game world-selection screen: Left/Right (or A/D) moves the
-    /// selection, the jump/action key confirms it, at which point the chosen world's actual
-    /// World2D is loaded and gameplay begins once that completes. See docs/AssetFormat.md §3.2.
+    /// Draws the end screen message in a centered box: a short trail of boxes shrinks step by step
+    /// onto the final box (just big enough for the message), then the message appears inside it.
+    /// Green for level complete, red for game over. Only adds glyphs on top of the world.
     /// </summary>
-    private async Task OnWorldSelectingFrameAsync(double deltaSeconds)
+    private void AddEndScreenMessage(List<Glyph> glyphs)
     {
-        var previousSelectedIndex = _worldSelect.SelectedIndex;
-        _worldSelect.Update(_input, deltaSeconds);
+        var isLevelComplete = _mode == GameMode.LevelComplete;
+        var text = isLevelComplete ? "Level Complete!" : "Game Over!";
+        var color = isLevelComplete ? RenderConstants.DefaultForeColor : EndScreenGameOverColor;
 
-        if (_worldSelect.SelectedIndex != previousSelectedIndex)
+        var finalWidth = text.Length + 4;
+        var finalHeight = 3;
+
+        // Level 0 is the final box; each level above it is EndScreenStepCells larger on each axis.
+        var level = Math.Max(0, EndScreenRippleSteps - (int)(_endScreenElapsedSeconds / EndScreenStepSeconds));
+        var outermostLevel = level == 0 ? 0 : Math.Min(level + EndScreenRippleTrail - 1, EndScreenRippleSteps);
+
+        _endScreenFrame.ForeColor = color;
+        for (var frameLevel = outermostLevel; frameLevel >= level; frameLevel--)
         {
-            soundPlayer.Play(MenuMoveSoundName);
-        }
-        if (_worldSelect.Confirmed)
-        {
-            soundPlayer.Play(MenuSelectSoundName);
-            // Switch modes synchronously, then kick off the load WITHOUT awaiting it here - see
-            // _loadWorldTask's doc comment for why: awaiting it inline would hold this OnFrame
-            // call's _isProcessingFrame guard for the whole load, starving every intervening
-            // requestAnimationFrame tick (and so _loadingBar's redraw) until it's already done.
-            _mode = GameMode.LoadingWorld;
-            _loadingBar = WorldLoadingRenderer.CreateLoadingBar(_worldSelect, _viewportWidthCells, _viewportHeightCells, World2D.LoadStepCount);
-
-            var worldName = _worldSelect.SelectedWorld.WorldName;
-            _loadWorldTask = LoadWorldAsync(worldName);
-
-            await OnLoadingWorldFrameAsync();
-            return;
+            _endScreenFrame.Width = finalWidth + EndScreenStepCells * frameLevel;
+            _endScreenFrame.Height = finalHeight + EndScreenStepCells * frameLevel;
+            _endScreenFrame.Col = Math.Floor((_viewportWidthCells - _endScreenFrame.Width) / 2);
+            _endScreenFrame.Row = Math.Floor((_viewportHeightCells - _endScreenFrame.Height) / 2);
+            UIRenderer.AddFrame(glyphs, _endScreenFrame, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         }
 
-        var glyphs = WorldSelectRenderer.BuildFrame(
-            _worldSelect, _viewportWidthCells, _viewportHeightCells,
-            _renderer.CellWidthPixels, _renderer.CellHeightPixels);
-        await canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs);
-    }
-
-    /// <summary>
-    /// Draws the frozen world-selection layout plus the current <see cref="_loadingBar"/> fill
-    /// level, and switches to <see cref="GameMode.Playing"/> once <see cref="_loadWorldTask"/>
-    /// completes. Called once right as loading starts (so the bar appears at 0 immediately) and
-    /// from every subsequent <see cref="OnFrame"/> tick that lands while <see cref="GameMode.LoadingWorld"/>
-    /// is still active.
-    /// </summary>
-    private async Task OnLoadingWorldFrameAsync()
-    {
-        if (_loadingBar is null || _loadWorldTask is null)
+        if (level > 0)
         {
             return;
         }
 
-        var glyphs = WorldLoadingRenderer.BuildLoadingFrame(
-            _worldSelect, _loadingBar, _viewportWidthCells, _viewportHeightCells,
-            _renderer.CellWidthPixels, _renderer.CellHeightPixels);
-        await canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs);
-
-        if (_loadWorldTask.IsCompleted)
-        {
-            try
-            {
-                // Propagate any load failure instead of silently swallowing it.
-                await _loadWorldTask;
-
-                _mode = GameMode.Playing;
-            }
-            catch (Exception ex)
-            {
-                // Without this, a faulted _loadWorldTask stays IsCompleted forever, so every
-                // subsequent OnFrame tick would re-await (and re-throw from) it here - which is
-                // exactly why the bar previously appeared to get permanently "stuck" at whatever
-                // percentage it last reached instead of surfacing the actual failure. Logged via
-                // Console (visible in the browser dev tools console for a WASM app) since there's
-                // no dedicated error-screen UI yet; falling back to WorldSelecting lets the player
-                // at least try again or pick a different world instead of a dead loading screen.
-                Console.Error.WriteLine($"Failed to load world '{_worldSelect.SelectedWorld.WorldName}': {ex}");
-                _mode = GameMode.WorldSelecting;
-                _worldSelect.ResetConfirmation();
-            }
-            finally
-            {
-                _loadingBar = null;
-                _loadWorldTask = null;
-            }
-        }
+        // The label sits on the frame's single interior row; its black background is a solid panel behind the text.
+        var interiorWidth = text.Length + 2;
+        _endScreenLabel.Col = _endScreenFrame.Col + 1;
+        _endScreenLabel.Row = _endScreenFrame.Row + 1;
+        _endScreenLabel.Width = interiorWidth;
+        _endScreenLabel.ForeColor = color;
+        _endScreenLabel.Lines.Clear();
+        _endScreenLabel.Lines.Add($" {text} ");
+        UIRenderer.AddLabel(glyphs, _endScreenLabel, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
     }
+
+    // ---------------------------------------------------------------------------------------
+    // Drawing
+    // ---------------------------------------------------------------------------------------
+
+    private Task DrawAsync(List<Glyph> glyphs) =>
+        canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs);
 }

@@ -31,7 +31,8 @@ public enum CollectableType
 
     /// <summary>
     /// Removed on pickup like <see cref="Diamond"/>/<see cref="Ring"/>, and sets
-    /// <see cref="World2D.LevelCompleted"/> so <see cref="GameLoop"/> can transition out of play.
+    /// <see cref="World2D.PendingTransition"/> to <see cref="PendingTransition.LevelEnd"/> so
+    /// <see cref="GameLoop"/> can transition out of play.
     /// </summary>
     LevelEnd,
 

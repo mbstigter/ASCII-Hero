@@ -66,11 +66,23 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// Optional clip name (on this instance's own <see cref="Body2D.Sprite"/>) to play as a
     /// cosmetic effect when a <see cref="CollectableType.Checkpoint"/> is reached. Null (the
     /// default) means no effect. Kept as its own separate slot rather than reusing
-    /// <see cref="HazardHitEffectClipName"/> so the player
-    /// a hazard-hit spark vs. a checkpoint-reached happy clip) - see
+    /// <see cref="HazardHitEffectClipName"/> so the player can show different effects for
+    /// different situations - see
     /// <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/>.
     /// </summary>
     public string? CheckpointReachedEffectClipName { get; set; }
+
+    /// <summary>
+    /// Optional clip name to play as a cosmetic effect when a <see cref="CollectableType.LevelEnd"/>
+    /// is reached. Null (the default) means no effect.
+    /// </summary>
+    public string? LevelEndReachedEffectClipName { get; set; }
+
+    /// <summary>
+    /// Optional clip name to play as a cosmetic effect when the player loses a life (see
+    /// <see cref="PendingTransition.Death"/>). Null (the default) means no effect.
+    /// </summary>
+    public string? DiedEffectClipName { get; set; }
 
     /// <summary>
     /// The mass-scaled force this frame's sustained locomotion input contributes - computed each
@@ -134,7 +146,8 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// Health of the current life, from 0 to <see cref="GameDefaults.PlayerFullHealth"/> (shown as
     /// the HUD bar). Each hazard hit removes that hazard's <see cref="Body2D.Damage"/> (see
     /// <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/>). Reaching 0 costs one
-    /// <see cref="Lives"/> and triggers <see cref="World2D.Respawn"/>, which refills the bar.
+    /// <see cref="Lives"/> and starts a <see cref="PendingTransition.Death"/>; the respawn that follows
+    /// (see <see cref="World2D.Respawn"/>) refills the bar.
     /// </summary>
     public double Health { get; set; } = GameDefaults.PlayerFullHealth;
 

@@ -83,10 +83,11 @@ not like a pixel-art game with ASCII characters placed on top.
 - **Enhance sprites**, especially Crawl and Clamber, which currently feel
   underdeveloped compared to Walk/Hang - consider adding a third animation
   frame for these (and other) animated clips.
-- **`World2D.Respawn()` has no cosmetic feedback of its own** - no death
-  animation, effect, or brief invulnerability window on respawn; it's an
-  instant, silent position/velocity/health-bar reset (a life is lost first) (see docs/Decisions.md).
-  Revisit if emptying the health bar ever needs to feel more like an event.
+- **Losing a life is a short event, not an instant reset**: the player's
+  `died` effect and the hazard's sound play with physics frozen for about a
+  second, then the player respawns (see docs/Decisions.md). There is still no
+  invulnerability window after respawning; revisit if respawning next to a
+  hazard feels unfair.
 - **Keys and doors are matched by a required `Lock` name** on both the key
   (`CollectableType.Key`) and the door (any solid placement). A key without
   `Lock` is inert, like a collectable without `Type`. The HUD shows only a

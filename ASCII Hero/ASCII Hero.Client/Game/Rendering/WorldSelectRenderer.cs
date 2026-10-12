@@ -5,19 +5,17 @@ using ASCII_Hero.Client.Game.Menu;
 namespace ASCII_Hero.Client.Game.Rendering;
 
 /// <summary>
-/// Builds the glyph list for the world-selection screen: a horizontal row of world thumbnails,
-/// each with its title above it, and a static selector box around whichever slot the current
-/// selection lands in. Unlike <see cref="WorldRenderer"/> this has no camera - it lays out
-/// directly in screen (viewport) cell coordinates, since the selection screen isn't part of any
-/// <see cref="World.World2D"/>. See docs/AssetFormat.md §3.2. Compare <see cref="WorldLoadingRenderer"/>,
-/// which draws the loading-progress overlay shown once a world is confirmed - a separate
-/// <c>GameMode</c> that happens to reuse this class's static layout as its backdrop, but is
-/// otherwise its own screen/concern, not a variant of the selection screen itself.
+/// Builds the glyph list for the world-selection screen: logo, a row of world thumbnails with
+/// titles, a selector box around the current selection, scroll arrows and a controls hint.
+/// Lays out directly in viewport cell coordinates (no camera). See docs/AssetFormat.md §3.2.
 /// </summary>
 public static class WorldSelectRenderer
 {
-    // One cell of breathing room to either side of a slot's 16-wide thumbnail, used to draw the
-    // selector box's left/right border without needing extra space reserved between slots.
+    // ---------------------------------------------------------------------------------------
+    // Layout
+    // ---------------------------------------------------------------------------------------
+
+    // One cell of padding on each side of a slot's thumbnail; holds the selector box border.
     private const int SlotHorizontalPadding = 1;
     internal const int SlotPitch = WorldCatalog.ThumbnailWidth + SlotHorizontalPadding * 2;
 
@@ -25,8 +23,10 @@ public static class WorldSelectRenderer
     private const int SlotVerticalPadding = 1;
     internal const int BlockHeight = TitleRowCount + SlotVerticalPadding + WorldCatalog.ThumbnailHeight + SlotVerticalPadding;
 
-    // ASCII logo shown above the thumbnail row/selector frame - purely decorative, drawn via a
-    // single multi-line UILabel same as any other screen-space text.
+    // ---------------------------------------------------------------------------------------
+    // Logo and controls hint
+    // ---------------------------------------------------------------------------------------
+
     private static readonly string[] LogoLines =
     [
         @"    ___   _____ ______________   __  __              ",
@@ -39,12 +39,17 @@ public static class WorldSelectRenderer
     private const int LogoHeight = 5;
     private const int LogoGapRows = 1;
 
-    // Small "more options this way" indicators drawn just outside the outer edge of the
-    // leftmost/rightmost visible thumbnail, shown only when scrolling that direction would
-    // actually reveal another world. Each is a 6-row chevron built from '/'/'\' pairs stepping
-    // diagonally toward the tip; the two arrays are the same shape, just with rows (and slash
-    // direction) reversed, so the tip points outward - left for the left-scroll hint, right for
-    // the right-scroll hint.
+    private static readonly string[] ControlsLines =
+    [
+        "           ↑                        W",
+        "Controls: ←↓→ + Space + Enter  or: ASD + Left Control + E",
+    ];
+
+    // ---------------------------------------------------------------------------------------
+    // Scroll arrows
+    // ---------------------------------------------------------------------------------------
+
+    // Chevrons drawn outside the outermost visible thumbnail when more worlds lie in that direction.
     private static readonly string[] LeftScrollArrow =
     [
         " / / ",
@@ -61,14 +66,15 @@ public static class WorldSelectRenderer
     ];
     private static readonly int ScrollArrowWidth = LeftScrollArrow.Max(line => line.Length);
     private static readonly int ScrollArrowHeight = LeftScrollArrow.Length;
-    // Horizontal gap left between a thumbnail's outer edge and its scroll arrow, so the arrow
-    // reads as a separate indicator rather than touching the thumbnail.
     private const int ScrollArrowGap = 1;
 
+    // ---------------------------------------------------------------------------------------
+    // Public API
+    // ---------------------------------------------------------------------------------------
+
     /// <summary>
-    /// Picks 5, 3, or 1 visible slots - whichever largest odd count both fits the viewport width
-    /// and doesn't exceed how many worlds actually exist (so a short catalog doesn't reserve
-    /// slots nothing will ever occupy).
+    /// Picks 5, 3 or 1 visible slots: the largest odd count that fits the viewport width and
+    /// does not exceed the number of worlds.
     /// </summary>
     public static int ComputeVisibleSlotCount(double viewportWidthCells, int worldCount)
     {
@@ -95,9 +101,8 @@ public static class WorldSelectRenderer
         var startCol = (viewportWidthCells - totalRowWidth) / 2;
         var startRow = (viewportHeightCells - BlockHeight) / 2;
 
-        var logoLabel = new UILabel((viewportWidthCells - LogoWidth) / 2, startRow - LogoGapRows - LogoHeight, width: LogoWidth, height: LogoHeight, foreColor: RenderConstants.DefaultForeColor);
-        logoLabel.Lines.AddRange(LogoLines);
-        UIRenderer.AddLabel(glyphs, logoLabel, cellWidthPixels, cellHeightPixels);
+        AddLogo(glyphs, viewportWidthCells, startRow, cellWidthPixels, cellHeightPixels);
+        AddControls(glyphs, viewportWidthCells, startRow + BlockHeight, cellWidthPixels, cellHeightPixels);
 
         for (var slot = 0; slot < screen.VisibleSlotCount; slot++)
         {
@@ -136,10 +141,32 @@ public static class WorldSelectRenderer
         return glyphs;
     }
 
-    /// <summary>
-    /// Draws a "more options this way" chevron entirely outside a thumbnail's outer edge (never
-    /// overlapping the thumbnail itself), vertically centered against it.
-    /// </summary>
+    // ---------------------------------------------------------------------------------------
+    // Drawing helpers
+    // ---------------------------------------------------------------------------------------
+
+    /// <summary>Adds the logo, centered horizontally and placed above the thumbnail block.</summary>
+    private static void AddLogo(
+        List<Glyph> glyphs, double viewportWidthCells, double blockStartRow,
+        double cellWidthPixels, double cellHeightPixels)
+    {
+        var label = new UILabel((viewportWidthCells - LogoWidth) / 2, blockStartRow - LogoGapRows - LogoHeight, width: LogoWidth, height: LogoHeight, foreColor: RenderConstants.DefaultForeColor);
+        label.Lines.AddRange(LogoLines);
+        UIRenderer.AddLabel(glyphs, label, cellWidthPixels, cellHeightPixels);
+    }
+
+    /// <summary>Adds the controls hint, centered horizontally at the given row.</summary>
+    private static void AddControls(
+        List<Glyph> glyphs, double viewportWidthCells, double row,
+        double cellWidthPixels, double cellHeightPixels)
+    {
+        var width = ControlsLines.Max(line => line.Length);
+        var label = new UILabel((viewportWidthCells - width) / 2, row, width: width, height: ControlsLines.Length, foreColor: RenderConstants.DefaultForeColor);
+        label.Lines.AddRange(ControlsLines);
+        UIRenderer.AddLabel(glyphs, label, cellWidthPixels, cellHeightPixels);
+    }
+
+    /// <summary>Adds a scroll chevron outside a thumbnail's edge, vertically centered on it.</summary>
     private static void AddScrollArrow(
         List<Glyph> glyphs, string[] arrowLines, double arrowCol, double thumbRow,
         double cellWidthPixels, double cellHeightPixels)
@@ -163,6 +190,7 @@ public static class WorldSelectRenderer
         }
     }
 
+    /// <summary>Adds a world's title centered above its thumbnail, truncated to the thumbnail width.</summary>
     private static void AddTitle(
         List<Glyph> glyphs, WorldSummary world, double thumbCol, double titleRow,
         double cellWidthPixels, double cellHeightPixels)
@@ -177,6 +205,7 @@ public static class WorldSelectRenderer
         UIRenderer.AddLabel(glyphs, label, cellWidthPixels, cellHeightPixels);
     }
 
+    /// <summary>Adds the selector box around a slot's thumbnail.</summary>
     private static void AddSelectionBox(
         List<Glyph> glyphs, double slotOriginCol, double thumbRow,
         double cellWidthPixels, double cellHeightPixels)
@@ -186,6 +215,7 @@ public static class WorldSelectRenderer
         UIRenderer.AddFrame(glyphs, frame, cellWidthPixels, cellHeightPixels);
     }
 
+    /// <summary>Adds a world's current thumbnail animation frame, skipping empty cells.</summary>
     private static void AddThumbnail(
         List<Glyph> glyphs, WorldSummary world, double thumbCol, double thumbRow,
         double cellWidthPixels, double cellHeightPixels)

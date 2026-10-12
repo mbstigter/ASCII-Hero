@@ -154,7 +154,7 @@ Climbable and hangable surfaces are ordinary terrain objects marked with `Climba
 - **Per-pose footstep sounds.** `[Sounds]` maps a pose (`Walk`, `Crawl`, `Climb`, `Hang`,
   `Clamber`, `Swim`) to a sound played on each animation frame step. `JumpStart` and `Land`
   play when the player leaves and returns to the ground.
-- **Ready-made library.** It includes `Pickup`, `Heal`, `Checkpoint`, `LevelEnd`, `Hurt`,
+`DiamondPickup`, `RingPickup`, `KeyPickup`, `DoorOpen`, `Checkpoint`, `LevelEnd`,
   `Squash`, `Jump`, `Land`, `Step`, `SoftStep`, `Grab`, `Splash`, `MenuMove` and `MenuSelect` (subtle sounds for moving through the world selection menu and choosing a world).
 - **Per-world sound overrides.** A world can replace or add sounds with its own
   `SoundLibrary.ini`.
@@ -183,6 +183,6 @@ plus optional color layers.
 - Kinematic objects move at constant velocity or bounce between bounds. Arbitrary movement
   paths are not supported yet.
 - Doors open only through keys and the action key; there are no levers or switches yet.
-- Respawn is instant, with no death animation or invulnerability window.
+- Respawn has no invulnerability window.
 
 See [Design.md](Design.md#planned--future-work) for the full list.

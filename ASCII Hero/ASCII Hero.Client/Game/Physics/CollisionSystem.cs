@@ -330,7 +330,8 @@ public class CollisionSystem
                 // if the moving body is the player, 1 health is deducted - both gated to the
                 // first frame of a fresh contact so a sustained overlap doesn't repeat every frame.
                 // If that deduction is what brings health to exactly 0 (a fresh death, not an
-                // already-dead player standing in a hazard), the player is respawned immediately.
+                // already-dead player standing in a hazard), a Death transition starts: it costs a
+                // life, and GameLoop respawns (or ends the game) once the death effect has played.
                 var contact = (hazard, movingBody);
                 currentHazardContacts.Add(contact);
                 if (!_activeHazardContacts.Contains(contact))
@@ -355,7 +356,11 @@ public class CollisionSystem
                         if (player.Health <= 0)
                         {
                             player.Lives = Math.Max(0, player.Lives - 1);
-                            world.Respawn();
+                            world.PendingTransition = PendingTransition.Death;
+                            if (player.DiedEffectClipName is { } diedEffectClipName)
+                            {
+                                SpawnEffect(player, diedEffectClipName, world);
+                            }
                         }
                     }
                 }
@@ -419,8 +424,8 @@ public class CollisionSystem
                     case CollectableType.Checkpoint:
                         // Same as Diamond/Ring, but records the respawn point instead of
                         // adjusting a player stat, and - if the collector is the player - also
-                        // plays the player's own CheckpointReachedEffectClipName (e.g. a "happy" clip)
-                        // as a second
+                        // plays the player's own checkpoint-reached effect clip (e.g. "checkpointreached")
+                        // as a second, independent effect.
                         SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
                         world.QueueRemoval(collectable);
                         if (movingBody is Player2D checkpointPlayer)
@@ -434,13 +439,19 @@ public class CollisionSystem
                         break;
 
                     case CollectableType.LevelEnd:
-                        // Same as Diamond/Ring, but signals level completion for GameLoop to act
-                        // on instead of adjusting a player stat.
+                        // Same as Diamond/Ring, but starts a LevelEnd transition instead of
+                        // adjusting a player stat: GameLoop lets the player's level-end effect and
+                        // the sound play before completing the level.
                         SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
                         world.QueueRemoval(collectable);
-                        if (movingBody is Player2D)
+                        if (movingBody is Player2D levelEndPlayer)
                         {
-                            world.LevelCompleted = true;
+                            if (levelEndPlayer.LevelEndReachedEffectClipName is { } levelEndReachedEffectClipName)
+                            {
+                                SpawnEffect(levelEndPlayer, levelEndReachedEffectClipName, world);
+                            }
+
+                            world.PendingTransition = PendingTransition.LevelEnd;
                         }
                         break;
 
@@ -491,8 +502,8 @@ public class CollisionSystem
     /// current position - the same underlying spawn as <see cref="SpawnEffectIfConfigured"/>, but
     /// for an explicit, call-site-chosen clip rather than a body's own single configured
     /// <see cref="IEffectTrigger.EffectClipName"/>. Lets one body (e.g. the player) play
-    /// different effects for different situations (e.g. a hazard-hit spark vs. a
-    /// checkpoint-reached happy clip) as independent, possibly-overlapping
+    /// different effects for different situations (e.g. a hazard-hit "hurt" clip vs. a
+    /// checkpoint-reached clip) as independent, possibly-overlapping
     /// <see cref="EffectInstance2D"/> instances, instead of being limited to one fixed,
     /// ini-configured clip.
     /// </summary>
