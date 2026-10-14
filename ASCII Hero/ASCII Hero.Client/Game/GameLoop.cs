@@ -91,7 +91,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     // ---------------------------------------------------------------------------------------
 
     /// <summary>How long the player's level-end or death effect and sound play before the transition is carried out (see <see cref="World2D.PendingTransition"/>).</summary>
-    private const double PendingTransitionSeconds = 1.0;
+    private const double PendingTransitionSeconds = 2.0;
 
     private double _pendingTransitionElapsedSeconds;
 

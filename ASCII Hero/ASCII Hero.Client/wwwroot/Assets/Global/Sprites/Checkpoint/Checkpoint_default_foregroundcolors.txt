@@ -1,11 +1,29 @@
-AMMMM
-ARRRR
-AMMMM
-A    
-A    
+ QPP 
+RQPPP
+ QPP 
+  A  
+  A  
 //end
-ARRRR
-AMMMM
-ARRRR
-A    
-A    
+ RQP 
+QRQPP
+ RQP 
+  A  
+  A  
+//end
+ QRQ 
+PQRQP
+ QRQ 
+  A  
+  A  
+//end
+ PQR 
+PPQRQ
+ PQR 
+  A  
+  A  
+//end
+ PPQ 
+PPPQR
+ PPQ 
+  A  
+  A  

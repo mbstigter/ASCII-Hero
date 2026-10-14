@@ -1,29 +1,53 @@
-ARRRR
-AMMMM
-ARRRR
-A    
-A    
+ RRR 
+RRRRR
+ RRR 
+  A  
+  A  
 //end
-ARRR 
-AMMM 
-ARRR 
-A    
-A    
+  Q  
+ QQQ 
+  Q  
+  A  
+  A  
 //end
-AMM  
-ARR  
-AMM  
-A    
-A    
+  P  
+  P  
+  P  
+  A  
+  A  
 //end
-AM   
-AR   
-AM   
-A    
-A    
+  R  
+ RRR 
+  R  
+  A  
+  A  
 //end
-A    
-A    
-A    
-A    
-A    
+ QQQ 
+QQQQQ
+ QQQ 
+  A  
+  A  
+//end
+  P  
+ PPP 
+  P  
+  A  
+  A  
+//end
+  R  
+  R  
+  R  
+  A  
+  A  
+//end
+  Q  
+ QQQ 
+  Q  
+  A  
+  A  
+//end
+ PPP 
+PPPPP
+ PPP 
+  A  
+  A  
