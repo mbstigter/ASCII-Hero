@@ -33,8 +33,8 @@ public class InputState
     /// keys.</summary>
     public bool IsJumpPressed => IsPressed("Space") || IsPressed("ControlLeft");
 
-    /// <summary>Dev/testing shortcut - abandons the current world and returns to the world-select
-    /// screen, regardless of which pose/mode is active. See docs/Decisions.md.</summary>
+    /// <summary>Escape - asks to exit the current world (confirm with the action key, cancel with Escape
+    /// again). See docs/Decisions.md.</summary>
     public bool IsEscapePressed => IsPressed("Escape");
 
     /// <summary>The "action" input (opens a gate the player holds the key for, or operates a nearby

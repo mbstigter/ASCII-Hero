@@ -658,7 +658,7 @@ The live game state and the entity types that make it up.
   window (`ScrollOffset`) that keeps the selection centered in the middle
   slot once there are enough worlds on both sides. Edge-triggers Left/Right
   (so holding the key doesn't repeat every frame) and exposes `Confirmed`
-  once the jump/action key is pressed.
+  once the action key is pressed.
 
 ### Game Loop
 
@@ -803,8 +803,8 @@ large jumps after e.g. a tab switch):
    `CanvasBridge.DrawFrameAsync` sends the complete list to JavaScript to
    paint onto the canvas. `_hudText` is refreshed every `Playing` frame from
    `World2D.Player.Lives`/`.Rings`/`.Score` on its first row; its second row is a
-   "Health" caption followed by `_hudBar` (`Player.Health`, 0-1), and a key icon
-   appears while a key is held. An additional dev/testing FPS overlay
+   and a key icon
+   followed by a superscript count (`¹`-`⁹`, `ⁿ` for more than 9) appears while a key is held.
    (`InputState.IsFpsToggleKeyPressed`, bound to `F`) can be toggled on top
    of the HUD, showing a smoothed frames-per-second reading computed each
    frame from that frame's own raw, unclamped elapsed time (not the fixed

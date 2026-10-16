@@ -37,6 +37,9 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
         /// <summary>Same as <see cref="LevelComplete"/>, but shown when the player lost their last life.</summary>
         GameOver,
+
+        /// <summary>Gameplay is frozen and an "Exit game?" message is shown; confirming returns to <see cref="WorldSelecting"/>, Escape resumes <see cref="Playing"/>.</summary>
+        ConfirmExit,
     }
 
     private GameMode _mode = GameMode.WorldSelecting;
@@ -95,7 +98,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
     private double _pendingTransitionElapsedSeconds;
 
-    /// <summary>Set once no jump/action key is held on an end screen, so a key still held from gameplay doesn't dismiss it instantly.</summary>
+    /// <summary>Set once no action key is held on an end screen, so a key still held from gameplay doesn't dismiss it instantly.</summary>
     private bool _endScreenKeysReleased;
 
     /// <summary>Message of the active <see cref="GameMode.LevelComplete"/>/<see cref="GameMode.GameOver"/> screen; one text row (with a space either side) inside the final ripple box, on a solid background so it stays readable over the world.</summary>
@@ -120,22 +123,23 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private const int EndScreenStepCells = 2;
 
     private const string EndScreenGameOverColor = "#ff0000";
+    private const string ConfirmExitColor = "#ffb000";
     private const string EndScreenTextBackColor = "#000000";
 
     // ---------------------------------------------------------------------------------------
     // HUD (top-left): frame, text row, health bar and key icon
     // ---------------------------------------------------------------------------------------
 
-    private readonly UIFrame _hudBox = new(col: 1, row: 1, width: 34, height: 4, foreColor: RenderConstants.DefaultForeColor);
+    private readonly UIFrame _hudBox = new(col: 1, row: 1, width: 36, height: 4, foreColor: RenderConstants.DefaultForeColor);
 
     /// <summary>Lives/Rings/Score on the first row and the "Health:" caption on the second.</summary>
-    private readonly UILabel _hudText = new(col: 2, row: 2, width: 32, height: 2, foreColor: RenderConstants.DefaultForeColor);
+    private readonly UILabel _hudText = new(col: 3, row: 2, width: 32, height: 2, foreColor: RenderConstants.DefaultForeColor);
 
     /// <summary>Health gauge (0-1) right of the "Health:" caption.</summary>
-    private readonly UIBar _hudBar = new(col: 10, row: 3, width: 20, height: 1, minValue: 0, maxValue: GameDefaults.PlayerFullHealth, foreColor: RenderConstants.DefaultForeColor) { CurrentValue = GameDefaults.PlayerFullHealth };
+    private readonly UIBar _hudBar = new(col: 11, row: 3, width: 20, height: 1, minValue: 0, maxValue: GameDefaults.PlayerFullHealth, foreColor: RenderConstants.DefaultForeColor) { CurrentValue = GameDefaults.PlayerFullHealth };
 
     /// <summary>Key icon right of the health bar; shown while the player holds at least one key.</summary>
-    private readonly UILabel _hudKeyLabel = new(col: 32, row: 3, width: 2, height: 1, foreColor: RenderConstants.DefaultForeColor);
+    private readonly UILabel _hudKeyLabel = new(col: 33, row: 3, width: 3, height: 1, foreColor: RenderConstants.DefaultForeColor);
 
     // ---------------------------------------------------------------------------------------
     // Debug overlays (top-right) and debug keys
@@ -162,6 +166,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private bool _wasFpsToggleKeyDown;
     private bool _wasObjectCounterToggleKeyDown;
     private bool _wasActionKeyDown;
+    private bool _wasEscapeKeyDown;
 
     // ---------------------------------------------------------------------------------------
     // Startup
@@ -275,6 +280,9 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
                 case GameMode.LevelComplete:
                 case GameMode.GameOver:
                     await OnEndScreenFrameAsync(deltaSeconds);
+                    break;
+                case GameMode.ConfirmExit:
+                    await OnConfirmExitFrameAsync(deltaSeconds);
                     break;
             }
         }
@@ -415,13 +423,17 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
     private async Task OnPlayingFrameAsync(double deltaSeconds)
     {
-        // Dev shortcut: abandon the world and return to world selection.
-        if (_input.IsEscapePressed)
+        // Escape asks for confirmation before abandoning the world.
+        var escapeDown = _input.IsEscapePressed;
+        if (escapeDown && !_wasEscapeKeyDown)
         {
-            _worldSelect.ResetConfirmation();
-            _mode = GameMode.WorldSelecting;
+            _wasEscapeKeyDown = true;
+            _mode = GameMode.ConfirmExit;
+            _endScreenKeysReleased = false;
+            _endScreenElapsedSeconds = 0;
             return;
         }
+        _wasEscapeKeyDown = escapeDown;
 
         HandleActionKeys();
         if (_world.PendingTransition == PendingTransition.None)
@@ -539,10 +551,13 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         if (_world.Player.Keys.Count > 0)
         {
             _hudKeyLabel.Lines.Clear();
-            _hudKeyLabel.Lines.Add("o╤");
+            _hudKeyLabel.Lines.Add("o╤" + ToSuperscriptDigit(_world.Player.Keys.Count));
             UIRenderer.AddLabel(glyphs, _hudKeyLabel, cellWidth, cellHeight);
         }
     }
+
+    /// <summary>Superscript for 1-9 held keys; 'ⁿ' for more than 9.</summary>
+    private static char ToSuperscriptDigit(int count) => count is >= 1 and <= 9 ? "¹²³⁴⁵⁶⁷⁸⁹"[count - 1] : 'ⁿ';
 
     /// <summary>Adds the FPS and object-count overlays, right-aligned to the top-right corner.</summary>
     private void AddDebugOverlays(List<Glyph> glyphs)
@@ -570,11 +585,11 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     // End screen frame (level complete / game over)
     // ---------------------------------------------------------------------------------------
 
-    /// <summary>Shows the frozen last frame with a ripple-animated message box until a jump or action key press, then returns to world selection.</summary>
+    /// <summary>Shows the frozen last frame with a ripple-animated message box until an action key press, then returns to world selection.</summary>
     private async Task OnEndScreenFrameAsync(double deltaSeconds)
     {
         _endScreenElapsedSeconds += deltaSeconds;
-        var confirmPressed = _input.IsJumpPressed || _input.IsActionPressed;
+        var confirmPressed = _input.IsActionPressed;
         if (!confirmPressed)
         {
             _endScreenKeysReleased = true;
@@ -587,20 +602,57 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
 
         var glyphs = _renderer.BuildFrame(_world, _camera, _viewportWidthCells, _viewportHeightCells);
+        AddHud(glyphs);
         AddEndScreenMessage(glyphs);
         await DrawAsync(glyphs);
     }
 
     /// <summary>
-    /// Draws the end screen message in a centered box: a short trail of boxes shrinks step by step
+    /// Draws the frozen frame with an "Exit game?"
+    /// selection; a fresh Escape press cancels and resumes play.
+    /// </summary>
+    private async Task OnConfirmExitFrameAsync(double deltaSeconds)
+    {
+        _endScreenElapsedSeconds += deltaSeconds;
+
+        var escapeDown = _input.IsEscapePressed;
+        if (escapeDown && !_wasEscapeKeyDown)
+        {
+            _wasEscapeKeyDown = true;
+            _mode = GameMode.Playing;
+            return;
+        }
+        _wasEscapeKeyDown = escapeDown;
+
+        var confirmPressed = _input.IsActionPressed;
+        if (!confirmPressed)
+        {
+            _endScreenKeysReleased = true;
+        }
+        else if (_endScreenKeysReleased)
+        {
+            _worldSelect.ResetConfirmation();
+            _mode = GameMode.WorldSelecting;
+            return;
+        }
+
+        var glyphs = _renderer.BuildFrame(_world, _camera, _viewportWidthCells, _viewportHeightCells);
+        AddHud(glyphs);
+        AddEndScreenMessage(glyphs);
+        await DrawAsync(glyphs);
+    }
+
+    /// <summary>
+    /// Draws the end screen message in a centered box: a short trail
     /// onto the final box (just big enough for the message), then the message appears inside it.
     /// Green for level complete, red for game over. Only adds glyphs on top of the world.
     /// </summary>
     private void AddEndScreenMessage(List<Glyph> glyphs)
     {
         var isLevelComplete = _mode == GameMode.LevelComplete;
-        var text = isLevelComplete ? "Level Complete!" : "Game Over!";
-        var color = isLevelComplete ? RenderConstants.DefaultForeColor : EndScreenGameOverColor;
+        var isConfirmExit = _mode == GameMode.ConfirmExit;
+        var text = isConfirmExit ? "Exit game?" : isLevelComplete ? "Level Complete!" : "Game Over!";
+        var color = isConfirmExit ? ConfirmExitColor : isLevelComplete ? RenderConstants.DefaultForeColor : EndScreenGameOverColor;
 
         var finalWidth = text.Length + 4;
         var finalHeight = 3;

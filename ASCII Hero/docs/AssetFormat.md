@@ -601,7 +601,7 @@ the selector box) rather than ordinary Blazor HTML/CSS.
   (edge-triggered - holding the key down does not repeat); the row only
   scrolls once the selection would otherwise land outside the visible
   slots, at which point it shifts by one thumbnail so the selection stays
-  centered again. Confirming (the jump/action key) starts `GameLoop` with
+  centered again. Confirming (the action key) starts `GameLoop` with
   the selected world.
 
 Since this is a Blazor WebAssembly app with no server-side directory listing,

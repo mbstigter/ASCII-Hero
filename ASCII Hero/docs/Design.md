@@ -92,6 +92,7 @@ not like a pixel-art game with ASCII characters placed on top.
   (`CollectableType.Key`) and the gate (`Kind = Gate`). A key without
   `Lock` is inert, like a collectable without `Type`. Gates can alternatively be
   driven by a button or lever through a shared `Link` name (one switch, one
-  target); both mechanisms are never combined on one gate. The HUD shows only a
-  single on/off key icon (lit while at least one key is held), not a list,
-  since a world may use many locks. Keys survive respawn.
+  The HUD shows only a
+  single key icon (shown while at least one key is held) with a small
+  superscript count (`¹`-`⁹`, `ⁿ` for more than 9), not a list, since a world
+  may use many locks.

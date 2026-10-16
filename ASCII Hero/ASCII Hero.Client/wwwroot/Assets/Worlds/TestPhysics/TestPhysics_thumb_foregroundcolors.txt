@@ -9,8 +9,8 @@ UUUUUUUUAAAAAAAA
 //end
                 
                 
-  K       K  N  
-     N          
+  K       K     
+     N       N  
                 
                 
                 
@@ -20,7 +20,7 @@ UUUUUUUUAAAAAAAA
                 
                 
   K       K     
-             N  
-     N          
+                
+     N       N  
                 
 UUUUUUUUAAAAAAAA

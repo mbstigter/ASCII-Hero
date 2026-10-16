@@ -14,6 +14,7 @@ AsciiHero is a browser-based retro ASCII platform game built with C# and .NET 10
 - Preserve smooth movement and scrolling.
 - Treat the ASCII character grid as a visual representation, not as the physics coordinate system.
 - Do not resurrect rejected design approaches unless explicitly asked.
+- Reuse existing code patterns when designing or implementing new game functionality (e.g., interface properties on hazards, World2D.LoadAsync case blocks, SetFrame clip swapping) rather than introducing new mechanisms.
 
 ### Documentation Guidelines
 

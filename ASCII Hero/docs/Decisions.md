@@ -355,7 +355,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   with a centered "Level Complete!"/"Game Over!" `UILabel` (solid black
   background, inside a `UIFrame` box that ripples inward from a compact
   larger size; green for Level Complete, red for Game Over), dismissed by a
-  jump or action key press (only after those keys have been released once, so
+  action key press (only after that key has been released once, so
   a held key doesn't dismiss it instantly), then back to
   `GameMode.WorldSelecting` - the same reset path as the Escape-to-quit
   shortcut.
@@ -469,7 +469,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **Level selection is a strict `GameMode` state machine** backed by a
   `Global/Worlds.ini` catalog (world metadata/thumbnails loaded without
   loading the full playable world).
-- **`Esc` returns to the world-select screen** as a dev/testing shortcut.
+- **`Esc` asks "Exit game?"** (amber ripple box, `GameMode.ConfirmExit`); the action key (Enter/E) confirms and returns to the world-select screen, a second `Esc` cancels. Menu and end-screen confirmations likewise use only the action key.
 
 ## Notably rejected/reverted approaches
 

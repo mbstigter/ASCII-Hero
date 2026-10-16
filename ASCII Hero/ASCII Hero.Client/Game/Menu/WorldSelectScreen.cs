@@ -5,7 +5,7 @@ namespace ASCII_Hero.Client.Game.Menu;
 
 /// <summary>
 /// State and input handling for the world-selection screen: a row of world thumbnails with a
-/// selector box. Left/Right moves the selection; jump or action keys confirm it.
+/// selector box. Left/Right moves the selection; action keys confirm it.
 /// See docs/AssetFormat.md §3.2.
 /// </summary>
 public class WorldSelectScreen(IReadOnlyList<WorldSummary> worlds, int visibleSlotCount)
@@ -44,7 +44,7 @@ public class WorldSelectScreen(IReadOnlyList<WorldSummary> worlds, int visibleSl
     {
         var leftPressed = input.IsLeftPressed;
         var rightPressed = input.IsRightPressed;
-        var confirmPressed = input.IsJumpPressed || input.IsActionPressed;
+        var confirmPressed = input.IsActionPressed;
 
         if (rightPressed && !_wasRightPressed)
         {
