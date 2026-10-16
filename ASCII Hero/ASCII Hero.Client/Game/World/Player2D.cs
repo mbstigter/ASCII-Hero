@@ -138,13 +138,13 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// <summary>
     /// Lock names of the keys currently held (one entry per key; duplicates allowed). Filled by
     /// picking up a <see cref="CollectableType.Key"/>, consumed one at a time by
-    /// <see cref="World2D.TryOpenDoor"/>. Kept across respawns.
+    /// <see cref="World2D.TryOpenGate"/>. Kept across respawns.
     /// </summary>
     public List<string> Keys { get; } = [];
 
     /// <summary>
     /// Health of the current life, from 0 to <see cref="GameDefaults.PlayerFullHealth"/> (shown as
-    /// the HUD bar). Each hazard hit removes that hazard's <see cref="Body2D.Damage"/> (see
+    /// the HUD bar). Each hazard hit removes that hazard's <see cref="IHazardBody.Damage"/> (see
     /// <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/>). Reaching 0 costs one
     /// <see cref="Lives"/> and starts a <see cref="PendingTransition.Death"/>; the respawn that follows
     /// (see <see cref="World2D.Respawn"/>) refills the bar.

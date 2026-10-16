@@ -38,8 +38,8 @@ public enum CollectableType
 
     /// <summary>
     /// Removed on pickup like <see cref="Diamond"/>/<see cref="Ring"/>, and adds its required
-    /// <see cref="Body2D.LockName"/> to <see cref="Player2D.Keys"/>. A key without a <c>Lock</c>
-    /// name is inert. Opens a door with the same lock name, see <see cref="World2D.TryOpenDoor"/>.
+    /// <see cref="Key2D.LockName"/> to <see cref="Player2D.Keys"/>. A key without a <c>Lock</c>
+    /// name is inert. Opens a gate with the same lock name, see <see cref="World2D.TryOpenGate"/>.
     /// </summary>
     Key,
 }

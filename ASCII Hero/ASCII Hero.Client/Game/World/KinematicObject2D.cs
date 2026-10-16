@@ -17,10 +17,31 @@ namespace ASCII_Hero.Client.Game.World;
 /// <see cref="Physics.CollisionSystem"/>'s reference-frame generalization), rather than needing a
 /// bespoke "carry the rider" mechanism.
 /// </summary>
-public class KinematicObject2D : Body2D, IPhysicsBody
+public class KinematicObject2D : Body2D, IPhysicsBody, ILinkTarget
 {
     private bool _patrolMovingTowardMaxX = true;
     private bool _patrolMovingTowardMaxY = true;
+
+    /// <summary>
+    /// Whether this body is currently moving. Stopped by default only when it is linked to a
+    /// <see cref="Switch2D"/> (see <see cref="LinkName"/>), which then starts/stops it; an
+    /// unlinked body always runs. While stopped it holds its position with zero velocity, so a
+    /// rider isn't carried.
+    /// </summary>
+    public bool IsRunning { get; private set; } = true;
+
+    /// <summary>Name shared with the controlling lever's own <c>Link</c> key, from the placement's <c>Link</c> key. Null if not linked.</summary>
+    public string? LinkName { get; set; }
+
+    /// <summary>Starts (true) or stops (false) this body's movement, called by its linked switch.</summary>
+    public void SetState(bool on)
+    {
+        IsRunning = on;
+        if (!on)
+        {
+            Velocity = Vector2D.Zero;
+        }
+    }
 
     /// <summary>Current velocity, in world cells per second. Constant unless patrolling or changed externally.</summary>
     public Vector2D Velocity { get; set; }
@@ -124,6 +145,11 @@ public class KinematicObject2D : Body2D, IPhysicsBody
     /// </summary>
     public void Move(double deltaSeconds)
     {
+        if (!IsRunning)
+        {
+            return;
+        }
+
         var velocity = Velocity;
 
         if (PatrolMinX is { } minX && PatrolMaxX is { } maxX)

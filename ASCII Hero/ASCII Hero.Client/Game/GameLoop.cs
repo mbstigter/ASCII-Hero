@@ -484,11 +484,11 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         return true;
     }
 
-    /// <summary>Handles the once-per-press action key (opens doors).</summary>
+    /// <summary>Handles the once-per-press action key (operates switches, opens key gates).</summary>
     private void HandleActionKeys()
     {
         var actionKeyDown = _input.IsActionPressed;
-        if (actionKeyDown && !_wasActionKeyDown && _world.TryOpenDoor())
+        if (actionKeyDown && !_wasActionKeyDown && (_world.TryOperateSwitch() || _world.TryOpenGate()))
         {
             _world.ApplyPendingRemovals();
         }

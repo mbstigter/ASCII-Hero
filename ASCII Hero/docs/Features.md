@@ -67,7 +67,7 @@ This page is a tour of what the engine lets you build. For exact syntax, see
 - `Ring` counts a ring and adds 5 to the score; every 25 rings (per world) give an extra life. Does not heal.
 - `Checkpoint` sets the player's respawn point.
 - `LevelEnd` finishes the level.
-- `Key` adds a key to the player's inventory. It needs a `Lock` name and opens the door with
+opens the gate with
   the same `Lock` (see below).
 
 Add `EffectClip` to play an animation on pickup. Add `EffectPersists = true` to leave the effect
@@ -182,7 +182,7 @@ plus optional color layers.
 - Hazards have no chase behavior yet.
 - Kinematic objects move at constant velocity or bounce between bounds. Arbitrary movement
   paths are not supported yet.
-- Doors open only through keys and the action key; there are no levers or switches yet.
+- Buttons and levers are operated only by the player; enemies cannot flip them yet.
 - Respawn has no invulnerability window.
 
 See [Design.md](Design.md#planned--future-work) for the full list.

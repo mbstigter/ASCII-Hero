@@ -151,19 +151,21 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `IMediumAffected` (mirroring `IGravityAffected`) receive these forces; `CurrentMedium`
   itself is still resolved/exposed for every body regardless, for future systems (e.g.
   a swim pose) to read.
-- **`ResolveCurrentMedium`'s scan only accepts plain medium volumes**
-  (`PhysicsSystem.IsMediumVolume`): passable, static-for-collision terrain placed by a
-  level designer to represent an occupiable ambient space (`WaterSurface`/`BodyOfWater`).
-  Hazards (`IHazardBody`), collectables (`ICollectableBody`), `EffectInstance2D` and
-  `IsClimbable`/`IsHangable` terrain are never a medium, even though they can also be
-  static and passable (hazards and collectables are passable by default). Hazards and
-  collectables act through contact, `EffectInstance2D.IsPassable` is unconditionally true
-  purely so a cosmetic effect never blocks movement (e.g. a killed `ToxicPlant`'s
-  "crumble" husk), and a ladder/pipe/bar is structural terrain to grip/hang from, not a
-  substance to be immersed in, regardless of the material it is given (e.g. for its
-  render color). Any of these leaking its own (often fairly dense) material into the
-  medium resolution would cause unintended buoyancy (e.g. a suspiciously high jump)
-  unrelated to its actual role.
+- **`ResolveCurrentMedium`'s scan only accepts placements that opt in**
+  (`PhysicsSystem.IsMediumVolume`): static, passable terrain with `Body2D.IsMediumCandidate`
+  set, which a level designer does per placement with `Medium = true` (`WaterSurface`/
+  `BodyOfWater`) to represent an occupiable ambient space. It is an opt-in flag rather
+  than an exclusion list of body types, so no other passable body (hazard, collectable,
+  effect, open gate, switch, ladder) can leak its own material into the medium
+  resolution and cause unintended buoyancy or swimming. `IsClimbable`/`IsHangable`
+  terrain is still never a medium.
+- **Gates and switches share one two-state mechanism** (`TwoStateObject2D`): a
+  `Gate2D` is a door/hatch whose `IsPassable` follows its state; a `Switch2D` is a
+  passable button/lever. A switch drives exactly one `ILinkTarget` by a shared `Link`
+  name (one-to-one, validated at load); `Latching` (per placement, default false)
+  decides whether it toggles or only turns on. A gate is key-operated (`Lock`, stays
+  open) or switch-operated (`Link`), never both. Enemies operating switches are not
+  implemented.
 - **A body's own actively-generated force/impulse (motor force, jump-off) is separately
   dampened by ambient medium viscosity, distinct from the passive buoyancy/drag above**
   (`PhysicsSystem.ResolveMediumForceScale`): maps `Material.Viscosity` alone (never
@@ -328,9 +330,10 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `Diamond`/`Ring` are removed on pickup and increment
   `Player2D.Score` (and `Rings` for `Ring`);
   `Key` is removed on pickup and adds its required `Lock` name to
-  `Player2D.Keys` (inert without one); a door is any other placement with a
-  matching `Lock`, opened by the action key (`E`/`Enter`) when the player is
-  within one cell of it, consuming one key. `Checkpoint`/`LevelEnd` are also removed on
+  `Player2D.Keys` (inert without one; the lock name lives on `Key2D`, not on
+  `Body2D`); a `Gate2D` with a matching `Lock` is opened by the action key
+  (`E`/`Enter`) when the player is within one cell of it, consuming one key, and
+  then stays open.
   pickup like every other collectable; a collectable's own
   `Collectable2D.EffectPersists` (mirroring `IKillableBody.EffectPersists`
   on hazards/hazards) controls whether its pickup effect remains in its

@@ -990,7 +990,7 @@ instead of the effect fading away like an ordinary pickup:
   `EffectPersists = true` for the same reason as `Checkpoint`.
 - `Key` — adds a key to the player's inventory and is removed. Requires a
   `Lock = <name>` key naming the lock it opens; a key without `Lock` is inert
-  (like a missing `Type`). See "Doors and keys" below.
+  (like a missing `Type`). See "Gates, keys and switches" below.
 
 ```ini
 [Ring]
@@ -1009,13 +1009,36 @@ EffectClip = reached
 EffectPersists = true
 ```
 
-**Doors and keys.** A key (`Kind = Collectable`, `Type = Key`) and a door share
-a lock name through the required `Lock` key. A door is any other solid placement
-(e.g. `Kind = StaticObject`) with the same `Lock`. Names match case-insensitively
-and one key opens one door. The player opens a door by standing next to it (within
-one cell) and pressing the action key (`E` or `Enter`); the door is then removed
-and its `Sound` plays. Without a matching key the door is simply a solid wall.
-A world can use any number of differently named locks. Keys are kept on respawn.
+**Gates, keys and switches.** A *gate* (`Kind = Gate`) is a door, hatch or similar
+passage: solid while closed, passable while open. It has two clips of its sprite
+asset - `Clip` (closed) and `OnClip` (open) - and swaps between them. The clip
+names are free (conventionally `closed`/`open` for gates and `off`/`on` for
+switches); `Clip` defaults to
+`default` when omitted. `Repeat`, `ForegroundColor` etc. work as for any sprite
+placement. A gate is opened in one of two ways, never both (a gate with both
+`Lock` and `Link` is a load error):
+
+- **By key**: `Lock = <name>`. A key (`Kind = Collectable`, `Type = Key`) with the
+  same `Lock` is picked up first. Names match case-insensitively and one key opens
+  one gate. The player opens it by standing next to it (within one cell) and
+  pressing the action key (`E` or `Enter`); the gate then stays open, the key is
+  consumed and the gate's `Sound` plays. Keys are kept on respawn.
+- **By switch**: `Link = <name>`, see below.
+
+A *switch* (`Kind = Switch`) is a button or lever: a passable object with an off
+clip (`Clip`) and an on clip (`OnClip`). The player operates it by standing next
+to it (within one cell) and pressing the action key. It drives exactly one target
+that has the same `Link` name (a `Gate`, or a `KinematicObject`, which stops while
+off and moves while on). Links are one-to-one: a switch without a matching target,
+a target without a switch, or two switches with the same `Link` are load errors.
+The switch's `Sound` plays when it is operated.
+
+| Key            | Meaning |
+|----------------|---------|
+| `Link`         | Name shared by a switch and its target. |
+| `OnClip`       | Clip shown while on/open. Without it the state still changes but the sprite stays. |
+| `InitialState` | `On` to start on/open (the target is synchronised on load). Default off/closed. |
+| `Latching`     | Switches only. `true`: operating turns it on and it stays on. `false` (default): each operation toggles it. |
 
 ```ini
 [RedKey]
@@ -1027,10 +1050,32 @@ Sound = KeyPickup
 
 [RedDoor]
 Asset = Door
-Kind = StaticObject
+Clip = closed
+OnClip = open
+Kind = Gate
 Lock = Red
 Sound = DoorOpen  ; Played when the door opens
+
+[Lever]
+Asset = Lever
+Clip = off
+OnClip = on
+Kind = Switch
+Latching = false
+Link = Bridge
+Sound = SwitchClick
+
+[BridgeGate]
+Asset = Hatch
+Clip = closed
+OnClip = open
+Kind = Gate
+Link = Bridge
 ```
+
+**Medium.** A passable static placement is only treated as an ambient medium
+(water and the like) when it sets `Medium = true`. Without it a passable placement
+(ladder, open gate, switch, hazard) never affects buoyancy, drag or swimming.
 
 **Sound keys on object placements.**
 `SoundLibrary.ini` (§4.3.1). Both keys are optional - omit them for a silent

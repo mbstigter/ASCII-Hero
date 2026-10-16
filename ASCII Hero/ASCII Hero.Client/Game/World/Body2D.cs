@@ -236,34 +236,20 @@ public abstract class Body2D
     public bool IsPassable { get; set; }
 
     /// <summary>
+    /// Whether this static, passable body is a level-authored ambient-medium volume (water and the
+    /// like) that <see cref="Physics.PhysicsSystem"/> may resolve into <see cref="CurrentMedium"/>.
+    /// Opt-in per placement via the <c>Medium</c> key, so no other kind of passable body (hazard,
+    /// collectable, open gate, switch, ladder) can accidentally act as a medium.
+    /// </summary>
+    public bool IsMediumCandidate { get; set; }
+
+    /// <summary>
     /// Optional <c>SoundLibrary.ini</c> name, from the placement's <c>Sound</c> key. Its meaning
     /// depends on the kind of body: for a collectable it plays when the player picks it up; for a
     /// hazard it plays when the player is hurt by touching it (a squash plays
-    /// <see cref="KillSoundName"/> instead). Null means silent - there is no default sound.
+    /// <see cref="IKillableBody.KillSoundName"/> instead). Null means silent - there is no default sound.
     /// </summary>
     public string? SoundName { get; set; }
-
-    /// <summary>
-    /// Optional <c>SoundLibrary.ini</c> name, from the placement's <c>KillSound</c> key: played
-    /// when the player squashes this (killable) hazard by landing on it, instead of
-    /// <see cref="SoundName"/>. Not used by any other kind of body. Null means silent.
-    /// </summary>
-    public string? KillSoundName { get; set; }
-
-    /// <summary>
-    /// Health removed from the player per hit when this body is a hazard, from the placement's
-    /// <c>Damage</c> key; 1.0 is a whole health bar. Not used by any other kind of body.
-    /// </summary>
-    public double Damage { get; set; } = GameDefaults.DefaultHazardDamage;
-
-    /// <summary>
-    /// Optional lock name, from the placement's <c>Lock</c> key. On a <c>Kind = Collectable</c>
-    /// with <c>Type = Key</c> it names the lock that key opens (required - a key without it is
-    /// inert). On any other body it makes the body a door: solid until the player, holding a key
-    /// with the same name, presses the action key next to it (see <see cref="World2D.TryOpenDoor"/>).
-    /// Names match case-insensitively. Null on every ordinary body.
-    /// </summary>
-    public string? LockName { get; set; }
 
     /// <summary>
     /// Whether the player can climb this static body (e.g. a ladder) - straight up/down movement,

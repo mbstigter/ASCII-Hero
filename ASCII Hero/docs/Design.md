@@ -88,8 +88,10 @@ not like a pixel-art game with ASCII characters placed on top.
   second, then the player respawns (see docs/Decisions.md). There is still no
   invulnerability window after respawning; revisit if respawning next to a
   hazard feels unfair.
-- **Keys and doors are matched by a required `Lock` name** on both the key
-  (`CollectableType.Key`) and the door (any solid placement). A key without
-  `Lock` is inert, like a collectable without `Type`. The HUD shows only a
+- **Keys and gates are matched by a required `Lock` name** on both the key
+  (`CollectableType.Key`) and the gate (`Kind = Gate`). A key without
+  `Lock` is inert, like a collectable without `Type`. Gates can alternatively be
+  driven by a button or lever through a shared `Link` name (one switch, one
+  target); both mechanisms are never combined on one gate. The HUD shows only a
   single on/off key icon (lit while at least one key is held), not a list,
   since a world may use many locks. Keys survive respawn.

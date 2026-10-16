@@ -158,6 +158,17 @@ The live game state and the entity types that make it up.
 	all of these are ordinary capability interfaces any future body (e.g. a
 	climbing/hanging hazard) could implement the same way.
   - `StaticObject2D` - solid, static terrain (platforms, walls, decoration).
+  - `TwoStateObject2D` - a `StaticObject2D` with an off/on state that swaps between
+    two clips of its sprite (`Clip` / `OnClip`) via `SetState`; subclasses react in
+    `OnStateChanged`. Two subclasses:
+    `Gate2D` (door/hatch: solid while closed, passable while open; opened by a key
+    `Lock` via `World2D.TryOpenGate`, or driven by a switch through `Link`) and
+    `Switch2D` (button/lever: toggles, or only turns on if `Latching`, and pushes the
+    state to its one `Target`; operated via `World2D.TryOperateSwitch`).
+  - `ILinkTarget` - capability of an object a switch can drive (`LinkName`,
+    `SetState`), implemented by `Gate2D` and `KinematicObject2D` (which stops while
+    off). `World2D.ResolveLinks` enforces one-to-one `Link` matching at load time.
+  - `Key2D` - a `Collectable2D` that carries the key's `LockName`.
   - `StaticHazard2D` - a non-moving hazard (e.g. spikes) that can optionally
 	be "killable" and can trigger a cosmetic effect on contact.
   - `KinematicHazard2D` - a `KinematicObject2D` that is also a hazard (e.g.

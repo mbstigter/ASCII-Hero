@@ -321,7 +321,7 @@ public class CollisionSystem
                 if (movingBody is IKillerBody && hazard is IKillableBody { IsKillable: true } killable && IsApproachingFromTop(movingBody, hazard))
                 {
                     SpawnEffectIfConfigured(hazard, world, killable.EffectPersists);
-                    world.PlaySound(hazard.KillSoundName);
+                    world.PlaySound(killable.KillSoundName);
                     world.QueueRemoval(hazard);
                     continue;
                 }
@@ -352,7 +352,7 @@ public class CollisionSystem
 
                     if (body is Player2D player && player.Health > 0)
                     {
-                        player.Health = Math.Max(0, player.Health - hazard.Damage);
+                        player.Health = Math.Max(0, player.Health - ((IHazardBody)hazard).Damage);
                         if (player.Health <= 0)
                         {
                             player.Lives = Math.Max(0, player.Lives - 1);
@@ -457,8 +457,8 @@ public class CollisionSystem
 
                     case CollectableType.Key:
                         // Only the player can carry a key, and a key needs its Lock name (see
-                        // Body2D.LockName) - without either it is left in place, inert.
-                        if (collectable.LockName is not { Length: > 0 } keyLockName || movingBody is not Player2D keyPlayer)
+                        // Key2D.LockName) - without either it is left in place, inert.
+                        if (collectable is not Key2D { LockName: { Length: > 0 } keyLockName } || movingBody is not Player2D keyPlayer)
                         {
                             break;
                         }

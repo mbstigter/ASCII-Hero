@@ -1,3 +1,5 @@
+using ASCII_Hero.Client.Game.Constants;
+
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>
@@ -24,4 +26,10 @@ public class KinematicHazard2D : KinematicObject2D, IHazardBody, IEffectTrigger,
 
     /// <summary>Whether this instance's effect (if configured) persists as a permanent husk after a kill contact.</summary>
     public bool EffectPersists { get; set; }
+
+    /// <inheritdoc />
+    public double Damage { get; set; } = GameDefaults.DefaultHazardDamage;
+
+    /// <inheritdoc />
+    public string? KillSoundName { get; set; }
 }

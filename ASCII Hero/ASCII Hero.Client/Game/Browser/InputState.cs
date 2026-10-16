@@ -37,7 +37,8 @@ public class InputState
     /// screen, regardless of which pose/mode is active. See docs/Decisions.md.</summary>
     public bool IsEscapePressed => IsPressed("Escape");
 
-    /// <summary>The "action" input (opens a door the player holds the key for). "Player 1" (arrow
+    /// <summary>The "action" input (opens a gate the player holds the key for, or operates a nearby
+    /// button/lever). "Player 1" (arrow
     /// keys) uses <c>Enter</c>; "Player 2" (WASD) uses <c>E</c>. Distinct from jump and directional
     /// input.</summary>
     public bool IsActionPressed => IsPressed("Enter") || IsPressed("KeyE");

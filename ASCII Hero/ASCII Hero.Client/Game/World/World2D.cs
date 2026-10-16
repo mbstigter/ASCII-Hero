@@ -216,43 +216,112 @@ public class World2D
     /// </summary>
     public PendingTransition PendingTransition { get; set; }
 
+    /// <summary>The player's collision rectangles grown by one cell on every side - "next to" for action key interactions.</summary>
+    private List<Physics.Rect> PlayerReach() => Player.CollisionRects
+        .Select(rect => new Physics.Rect(rect.X - 1, rect.Y - 1, rect.Width + 2, rect.Height + 2))
+        .ToList();
+
     /// <summary>
-    /// Opens one door next to the player, if the player holds a key with the door's
-    /// <see cref="Body2D.LockName"/>: the door is removed (queued), that key is consumed and the
-    /// door's <c>Sound</c> plays. "Next to" means within one cell of the player's collision shape.
-    /// Returns whether a door was opened. Called by <see cref="GameLoop"/> on an action key press.
+    /// Opens one closed key-operated gate next to the player, if the player holds a key with the
+    /// gate's <see cref="Gate2D.LockName"/>: the gate opens (and stays open), that key is consumed
+    /// and the gate's <c>Sound</c> plays. "Next to" means within one cell of the player's collision
+    /// shape. Returns whether a gate was opened. Called by <see cref="GameLoop"/> on an action key press.
     /// </summary>
-    public bool TryOpenDoor()
+    public bool TryOpenGate()
     {
         if (Player.Keys.Count == 0)
         {
             return false;
         }
 
-        var reach = Player.CollisionRects
-            .Select(rect => new Physics.Rect(rect.X - 1, rect.Y - 1, rect.Width + 2, rect.Height + 2))
-            .ToList();
+        var reach = PlayerReach();
 
-        foreach (var door in Objects)
+        foreach (var gate in Objects.OfType<Gate2D>())
         {
-            if (door.LockName is null || door is Collectable2D)
+            if (gate.IsOn || gate.LockName is null)
             {
                 continue;
             }
 
-            var keyIndex = Player.Keys.FindIndex(key => string.Equals(key, door.LockName, StringComparison.OrdinalIgnoreCase));
-            if (keyIndex < 0 || !door.CollisionRects.Any(doorRect => reach.Any(doorRect.Overlaps)))
+            var keyIndex = Player.Keys.FindIndex(key => string.Equals(key, gate.LockName, StringComparison.OrdinalIgnoreCase));
+            if (keyIndex < 0 || !gate.CollisionRects.Any(gateRect => reach.Any(gateRect.Overlaps)))
             {
                 continue;
             }
 
             Player.Keys.RemoveAt(keyIndex);
-            QueueRemoval(door);
-            PlaySound(door.SoundName);
+            gate.SetState(true);
+            PlaySound(gate.SoundName);
             return true;
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Operates one switch next to the player (see <see cref="Switch2D.Operate"/>) and plays its
+    /// <c>Sound</c>. A switch whose state doesn't change (an already-pressed button) does nothing.
+    /// Returns whether a switch was operated. Called by <see cref="GameLoop"/> on an action key press.
+    /// </summary>
+    public bool TryOperateSwitch()
+    {
+        var reach = PlayerReach();
+
+        foreach (var switchObject in Objects.OfType<Switch2D>())
+        {
+            if (!switchObject.CollisionRects.Any(switchRect => reach.Any(switchRect.Overlaps)))
+            {
+                continue;
+            }
+
+            if (switchObject.Operate())
+            {
+                PlaySound(switchObject.SoundName);
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Pairs every <see cref="Switch2D"/> with the <see cref="ILinkTarget"/> sharing its link name
+    /// and applies its initial state to it. One-to-one: an unmatched, duplicated or target-less
+    /// link is a level authoring error and fails loudly.
+    /// </summary>
+    private static void ResolveLinks(World2D world, string worldName)
+    {
+        var targets = world.Objects.OfType<ILinkTarget>().Where(target => target.LinkName is not null).ToList();
+
+        foreach (var linkedTarget in targets.GroupBy(target => target.LinkName!, StringComparer.OrdinalIgnoreCase).Where(group => group.Count() > 1))
+        {
+            throw new FormatException($"More than one object in world '{worldName}' has Link '{linkedTarget.Key}'; links are one-to-one.");
+        }
+
+        var switches = world.Objects.OfType<Switch2D>().ToList();
+        foreach (var duplicateSwitch in switches.Where(s => s.LinkName is not null).GroupBy(s => s.LinkName!, StringComparer.OrdinalIgnoreCase).Where(group => group.Count() > 1))
+        {
+            throw new FormatException($"More than one switch in world '{worldName}' has Link '{duplicateSwitch.Key}'; links are one-to-one.");
+        }
+
+        foreach (var switchObject in switches)
+        {
+            if (switchObject.LinkName is null)
+            {
+                throw new FormatException($"A switch in world '{worldName}' is missing its 'Link' key.");
+            }
+
+            var target = targets.FirstOrDefault(candidate => string.Equals(candidate.LinkName, switchObject.LinkName, StringComparison.OrdinalIgnoreCase))
+                ?? throw new FormatException($"Switch with Link '{switchObject.LinkName}' in world '{worldName}' has no matching target.");
+
+            switchObject.Target = target;
+            target.SetState(switchObject.IsOn);
+        }
+
+        foreach (var orphan in targets.Where(target => !switches.Any(s => string.Equals(s.LinkName, target.LinkName, StringComparison.OrdinalIgnoreCase))))
+        {
+            throw new FormatException($"Object with Link '{orphan.LinkName}' in world '{worldName}' has no matching switch.");
+        }
     }
 
     /// <summary>
@@ -415,6 +484,10 @@ public class World2D
             }
 
             clipNames.Add(clipName);
+            if (objectSection.TryGetValue("OnClip", out var scanOnClipName) && !string.IsNullOrWhiteSpace(scanOnClipName))
+            {
+                clipNames.Add(scanOnClipName);
+            }
             if (effectClipName is not null)
             {
                 clipNames.Add(effectClipName);
@@ -613,6 +686,14 @@ public class World2D
 
                 var killable = objectSection.TryGetValue("Killable", out var killableText) && bool.TryParse(killableText, out var parsedKillable) && parsedKillable;
                 var effectPersists = objectSection.TryGetValue("EffectPersists", out var effectPersistsText) && bool.TryParse(effectPersistsText, out var parsedEffectPersists) && parsedEffectPersists;
+                var lockName = objectSection.TryGetValue("Lock", out var lockNameText) && !string.IsNullOrWhiteSpace(lockNameText) ? lockNameText : null;
+                var linkName = objectSection.TryGetValue("Link", out var linkNameText) && !string.IsNullOrWhiteSpace(linkNameText) ? linkNameText : null;
+                var onClipName = objectSection.TryGetValue("OnClip", out var onClipText) && !string.IsNullOrWhiteSpace(onClipText) ? onClipText : null;
+                var initialOn = objectSection.TryGetValue("InitialState", out var initialStateText) && string.Equals(initialStateText, "On", StringComparison.OrdinalIgnoreCase);
+                var killSoundName = objectSection.TryGetValue("KillSound", out var killSoundNameText) ? killSoundNameText : null;
+                var hazardDamage = objectSection.TryGetValue("Damage", out var damageText) && IniValueParser.TryParseDouble(damageText, out var parsedDamage) && parsedDamage >= 0
+                    ? parsedDamage
+                    : GameDefaults.DefaultHazardDamage;
 
                 // Patrol (Kind = DynamicHazard only, see below) - PatrolMinX/PatrolMaxX let a
                 // placement author a custom back-and-forth range; when Patrol is enabled without
@@ -698,12 +779,13 @@ public class World2D
                 // any combination of them. Passable defaults to true for hazards/collectables
                 // (never blocking today, matching prior hardcoded behavior) and false otherwise
                 // (an ordinary wall/platform still blocks unless explicitly overridden).
-                var defaultPassable = kind is "StaticHazard" or "KinematicHazard" or "Collectable";
+                var defaultPassable = kind is "StaticHazard" or "KinematicHazard" or "Collectable" or "Switch";
                 var passable = objectSection.TryGetValue("Passable", out var passableText) && bool.TryParse(passableText, out var parsedPassable)
                     ? parsedPassable
                     : defaultPassable;
                 var climbable = objectSection.TryGetValue("Climbable", out var climbableText) && bool.TryParse(climbableText, out var parsedClimbable) && parsedClimbable;
                 var hangable = objectSection.TryGetValue("Hangable", out var hangableText) && bool.TryParse(hangableText, out var parsedHangable) && parsedHangable;
+                var mediumCandidate = objectSection.TryGetValue("Medium", out var mediumText) && bool.TryParse(mediumText, out var parsedMedium) && parsedMedium;
 
                 // X defaults to the entire world width (this body's left edge sweeping from the
                 // world's left edge to its right edge) when Patrol is enabled without any explicit
@@ -785,6 +867,26 @@ public class World2D
                         spawnedBody = platform;
                         break;
 
+                    case "Gate":
+                        if (lockName is not null && linkName is not null)
+                        {
+                            throw new FormatException($"Gate section '{sectionName}' of world '{worldName}' has both 'Lock' and 'Link'; a gate is opened by either a key or a switch, not both.");
+                        }
+
+                        var gate = new Gate2D { LockName = lockName, LinkName = linkName };
+                        gate.SpawnTwoState(sprite, clipName, onClipName, initialOn, position, repeatCount);
+                        world.Objects.Add(gate);
+                        spawnedBody = gate;
+                        break;
+
+                    case "Switch":
+                        var latching = objectSection.TryGetValue("Latching", out var latchingText) && bool.TryParse(latchingText, out var parsedLatching) && parsedLatching;
+                        var switchObject = new Switch2D { Latching = latching, LinkName = linkName };
+                        switchObject.SpawnTwoState(sprite, clipName, onClipName, initialOn, position, repeatCount);
+                        world.Objects.Add(switchObject);
+                        spawnedBody = switchObject;
+                        break;
+
                     case "DynamicObject":
                         var dynamicObject = new DynamicObject2D();
                         dynamicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, repeatCount);
@@ -805,6 +907,7 @@ public class World2D
                                 patrolInitialDirectionTowardMaxX, patrolInitialDirectionTowardMaxY);
                         }
                         world.Objects.Add(kinematicObject);
+                        kinematicObject.LinkName = linkName;
                         movingBody = kinematicObject;
                         spawnedBody = kinematicObject;
                         break;
@@ -815,6 +918,8 @@ public class World2D
                         kinematicHazard.EffectClipName = effectClipName;
                         kinematicHazard.IsKillable = killable;
                         kinematicHazard.EffectPersists = effectPersists;
+                        kinematicHazard.KillSoundName = killSoundName;
+                        kinematicHazard.Damage = hazardDamage;
                         if (patrol)
                         {
                             kinematicHazard.SetPatrol(
@@ -833,6 +938,8 @@ public class World2D
                         dynamicHazard.EffectClipName = effectClipName;
                         dynamicHazard.IsKillable = killable;
                         dynamicHazard.EffectPersists = effectPersists;
+                        dynamicHazard.KillSoundName = killSoundName;
+                        dynamicHazard.Damage = hazardDamage;
                         ConfigureDynamicPatrol(dynamicHazard);
                         world.Objects.Add(dynamicHazard);
                         movingBody = dynamicHazard;
@@ -845,6 +952,8 @@ public class World2D
                         staticHazard.EffectClipName = effectClipName;
                         staticHazard.IsKillable = killable;
                         staticHazard.EffectPersists = effectPersists;
+                        staticHazard.KillSoundName = killSoundName;
+                        staticHazard.Damage = hazardDamage;
                         world.Objects.Add(staticHazard);
                         spawnedBody = staticHazard;
                         break;
@@ -857,8 +966,13 @@ public class World2D
                         var collectableType = objectSection.TryGetValue("Type", out var collectableTypeText) && Enum.TryParse<CollectableType>(collectableTypeText, ignoreCase: true, out var parsedCollectableType)
                             ? parsedCollectableType
                             : (CollectableType?)null;
-                        var collectable = new Collectable2D();
+                        var collectable = collectableType == CollectableType.Key ? new Key2D() : new Collectable2D();
                         collectable.Spawn(sprite, clipName, frameIndex, position, collectableType, repeatCount);
+                        if (collectable is Key2D key)
+                        {
+                            key.LockName = lockName;
+                        }
+
                         collectable.EffectClipName = effectClipName;
                         collectable.EffectPersists = effectPersists;
                         world.Objects.Add(collectable);
@@ -869,15 +983,15 @@ public class World2D
                         throw new FormatException($"Unknown object Kind '{kind}' in section '{sectionName}' of world '{worldName}'.");
                 }
 
-                spawnedBody.IsPassable = passable;
+                if (spawnedBody is not Gate2D)
+                {
+                    spawnedBody.IsPassable = passable;
+                }
+
                 spawnedBody.SoundName = objectSection.TryGetValue("Sound", out var soundNameText) ? soundNameText : null;
-                spawnedBody.KillSoundName = objectSection.TryGetValue("KillSound", out var killSoundNameText) ? killSoundNameText : null;
-                spawnedBody.Damage = objectSection.TryGetValue("Damage", out var damageText) && IniValueParser.TryParseDouble(damageText, out var parsedDamage) && parsedDamage >= 0
-                    ? parsedDamage
-                    : GameDefaults.DefaultHazardDamage;
-                spawnedBody.LockName = objectSection.TryGetValue("Lock", out var lockNameText) && !string.IsNullOrWhiteSpace(lockNameText) ? lockNameText : null;
                 spawnedBody.IsClimbable = climbable;
                 spawnedBody.IsHangable = hangable;
+                spawnedBody.IsMediumCandidate = mediumCandidate;
                 spawnedBody.ForeColorOverride = foreColorOverride;
                 spawnedBody.BackColorOverride = backColorOverride;
 
@@ -915,6 +1029,8 @@ public class World2D
                 }
             }
         }
+
+        ResolveLinks(world, worldName);
 
         // Player participates in the generic Objects list alongside every other body.
         world.Objects.Add(world.Player);

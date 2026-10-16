@@ -575,7 +575,7 @@ public class PhysicsSystem
     private static bool IsMediumVolume(Body2D candidate) =>
         candidate.IsStatic
         && candidate.IsPassable
-        && candidate is not (IHazardBody or ICollectableBody or World.EffectInstance2D)
+        && candidate.IsMediumCandidate
         && !candidate.IsClimbable
         && !candidate.IsHangable;
 
