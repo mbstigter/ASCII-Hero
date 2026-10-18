@@ -1,17 +1,17 @@
                 
-   YY          A
-AAAAAAALLAAAAA A
+  U YY         A
+AAAAVVALLAAAAA A
                A
-           I   A
-           I   A
-      YY   I   A
+          I U  A
+          I U  A
+   U  YY  I U  A
 AAAAAAAAAAAAAAAA
 //end
                 
-   YY          A
-AAAAAAALLAAAAA A
+  U ZZ         A
+AAAAVVALLAAAAA A
                A
-           I   A
-           I   A
-      YY   I   A
+          I U  A
+          I U  A
+   U  ZZ  I U  A
 AAAAAAAAAAAAAAAA

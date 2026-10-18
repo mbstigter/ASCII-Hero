@@ -1,7 +1,7 @@
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>
-/// A button or lever: a passable, non-collected object with an off/on state that drives one
+/// A button or lever: a passable, non-collected object with an off/on state that drives every
 /// <see cref="ILinkTarget"/> sharing its <see cref="LinkName"/> (resolved once after load by
 /// <see cref="World2D"/>). The player operates it with the action key when next to it, see
 /// <see cref="World2D.TryOperateSwitch"/>; <see cref="Operate"/> is the single entry point, so
@@ -15,12 +15,12 @@ public class Switch2D : TwoStateObject2D
     /// <summary>Name shared with the target's own <c>Link</c> key (matched case-insensitively). A switch without one is inert.</summary>
     public string? LinkName { get; set; }
 
-    /// <summary>The target this switch drives, resolved by <see cref="World2D"/> after load. Null if unlinked.</summary>
-    public ILinkTarget? Target { get; set; }
+    /// <summary>The targets this switch drives, resolved by <see cref="World2D"/> after load. Empty if unlinked.</summary>
+    public List<ILinkTarget> Targets { get; } = [];
 
     /// <summary>
     /// Operates the switch: toggles it, or only turns it on if <see cref="Latching"/>. Pushes the
-    /// new state to <see cref="Target"/>. Returns whether the state changed.
+    /// new state to every one of <see cref="Targets"/>.
     /// </summary>
     public bool Operate()
     {
@@ -31,7 +31,10 @@ public class Switch2D : TwoStateObject2D
         }
 
         SetState(newState);
-        Target?.SetState(newState);
+        foreach (var target in Targets)
+        {
+            target.SetState(newState);
+        }
         return true;
     }
 }

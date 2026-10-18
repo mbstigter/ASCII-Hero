@@ -2,8 +2,9 @@ namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>
 /// Capability for a body that a <see cref="Switch2D"/> can drive through a shared name: a
-/// <see cref="Gate2D"/> (on = open) or a <see cref="KinematicObject2D"/> (on = moving). Linking
-/// is one-to-one for now: exactly one switch and one target share a given <see cref="LinkName"/>.
+/// <see cref="Gate2D"/> (on = open), <see cref="Device2D"/> (on = running), <see cref="FlowZone2D"/>
+/// (on = flowing) or a <see cref="KinematicObject2D"/> (on = moving). Linking
+/// is one-to-many: exactly one switch and any number of targets share a given <see cref="LinkName"/>.
 /// </summary>
 public interface ILinkTarget
 {

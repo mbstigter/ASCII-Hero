@@ -601,7 +601,7 @@ the selector box) rather than ordinary Blazor HTML/CSS.
   (edge-triggered - holding the key down does not repeat); the row only
   scrolls once the selection would otherwise land outside the visible
   slots, at which point it shifts by one thumbnail so the selection stays
-  centered again. Confirming (the action key) starts `GameLoop` with
+  Confirming (Enter, Space, E or Left Control) starts `GameLoop` with
   the selected world.
 
 Since this is a Blazor WebAssembly app with no server-side directory listing,
@@ -1027,10 +1027,12 @@ placement. A gate is opened in one of two ways, never both (a gate with both
 
 A *switch* (`Kind = Switch`) is a button or lever: a passable object with an off
 clip (`Clip`) and an on clip (`OnClip`). The player operates it by standing next
-to it (within one cell) and pressing the action key. It drives exactly one target
-that has the same `Link` name (a `Gate`, or a `KinematicObject`, which stops while
-off and moves while on). Links are one-to-one: a switch without a matching target,
-a target without a switch, or two switches with the same `Link` are load errors.
+to it (within one cell) and pressing the action key. It drives every target that has
+the same `Link` name (a `Gate`, a `Device`, a `FlowZone`, or a `KinematicObject`, which
+stops while off and moves while on). A `Device` is a machine-like object (fan, lamp,
+pump) that only swaps between its off and on clips. Links are one switch to many
+targets: a switch without a matching target, a target without a switch, or two switches
+with the same `Link` are load errors.
 The switch's `Sound` plays when it is operated.
 
 | Key            | Meaning |
@@ -1076,6 +1078,33 @@ Link = Bridge
 **Medium.** A passable static placement is only treated as an ambient medium
 (water and the like) when it sets `Medium = true`. Without it a passable placement
 (ladder, open gate, switch, hazard) never affects buoyancy, drag or swimming.
+A medium may use any material, including `Air` (e.g. for a wind tunnel).
+
+**Flow zones.** A *flow zone* (`Kind = FlowZone`) is a medium volume whose medium
+moves - a river, a wind tunnel. It is passable by default and still needs
+`Medium = true`. Bodies in it are dragged along through the medium's own viscosity,
+so the same strength pushes much harder in water than in air. Overlapping flow
+zones should be avoided; the level designer is responsible for that.
+
+| Key             | Meaning |
+|-----------------|---------|
+| `FlowDirection` | Required. `Left`, `Right`, `Up` or `Down`. |
+| `FlowStrength`  | Required. How fast the medium moves, in cells per second. |
+| `Link`          | Optional. A switch with the same `Link` turns the flow on and off. |
+| `InitialState`  | `On` to flow from the start. Default off. |
+| `OnClip`        | Optional clip shown while flowing (as for a gate or switch). |
+
+```ini
+[River]
+Material = Water
+Width = 40
+Height = 3
+Kind = FlowZone
+Medium = true
+FlowDirection = Right
+FlowStrength = 6
+InitialState = On
+```
 
 **Sound keys on object placements.**
 `SoundLibrary.ini` (§4.3.1). Both keys are optional - omit them for a silent

@@ -33,7 +33,7 @@ public class InputState
     /// keys.</summary>
     public bool IsJumpPressed => IsPressed("Space") || IsPressed("ControlLeft");
 
-    /// <summary>Escape - asks to exit the current world (confirm with the action key, cancel with Escape
+    /// <summary>Escape - asks to exit the current world (confirm with a confirm key, cancel with Escape
     /// again). See docs/Decisions.md.</summary>
     public bool IsEscapePressed => IsPressed("Escape");
 
@@ -42,6 +42,11 @@ public class InputState
     /// keys) uses <c>Enter</c>; "Player 2" (WASD) uses <c>E</c>. Distinct from jump and directional
     /// input.</summary>
     public bool IsActionPressed => IsPressed("Enter") || IsPressed("KeyE");
+
+    /// <summary>Selecting/confirming in menus, the end screens and the exit confirmation: any of the
+    /// action keys (Enter, E) or jump keys (Space, Left Control), so whichever hand position the player
+    /// is in works.</summary>
+    public bool IsConfirmPressed => IsActionPressed || IsJumpPressed;
 
     /// <summary>Dev/testing shortcut - toggles the FPS debug overlay (see
     /// <see cref="GameLoop.OnFrame"/>). "F" is otherwise unused by any gameplay input.</summary>

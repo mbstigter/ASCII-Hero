@@ -451,9 +451,9 @@ public class PhysicsSystem
 
     /// <summary>
     /// Resolves the medium a body at <paramref name="body"/>'s current collision rectangles is
-    /// immersed in this frame, together with how much of the body's own vertical extent is
-    /// actually submerged in that winning material - a value in <c>[0, 1]</c>, used to scale
-    /// buoyancy/drag proportionally to submersion depth (see <see cref="StepMovingBodyWithForces"/>)
+    /// immersed in this frame, together with how much of the body's own area overlaps that
+    /// winning material - a value in <c>[0, 1]</c>, used to scale
+    /// buoyancy/drag proportionally to how far the body is inside the medium (see <see cref="StepMovingBodyWithForces"/>)
     /// rather than applying full-body buoyancy the instant any single cell overlaps a medium
     /// volume at all. Without this, a body merely grazing a water surface received exactly the
     /// same upward force as one fully submerged, wildly overshooting the true equilibrium point
@@ -462,22 +462,24 @@ public class PhysicsSystem
     /// (fully submerged) this reduces to exactly the previous full-strength behavior, so
     /// already-submerged locomotion (walking/swimming underwater) is unaffected.
     ///
-    /// The winning material is still chosen exactly as before (highest-<see cref="Assets.Material.Density"/>
-    /// overlapping volume wins on a tie, deterministic regardless of placement order). The
-    /// submerged fraction is then computed only from candidates resolving to that same winning
-    /// material: each such candidate's actual overlapped vertical extent against the body (via
-    /// <see cref="Physics.Rect.VerticalOverlap"/>, over every rect pair - so a body's whole
-    /// silhouette, not just its topmost/bottommost point, contributes) is merged into a single
-    /// covered-interval union (so several stacked/adjacent placements of the same medium don't
-    /// double-count their overlap), then divided by the body's own overall bounding-box height.
+    /// The winning material is chosen as before (the densest overlapping volume wins, the first
+    /// one placed on a tie), except that a placed volume of the same density as the Air fallback
+    /// also displaces it, so an Air-material volume (e.g. a wind tunnel) can act as a medium.
+    /// The overlap fraction is then computed only from candidates resolving to that same winning
+    /// material: each such candidate's overlapped area against the body (via
+    /// <see cref="Physics.Rect.OverlapArea"/>, over every rect pair - so a body's whole
+    /// silhouette contributes, in both axes) is summed (same-material volumes are assumed not to
+    /// overlap each other), then divided by the body's own total collision area.
+    /// When the winning volume is a <see cref="World.FlowZone2D"/>, its current flow is returned
+    /// too, scaled by that volume's own overlapped share of the body.
     /// When no placed medium volume overlaps at all, the body is resolved as fully immersed
     /// (fraction 1.0) in the default "Air" fallback rather than fraction 0.0 - Air is the ambient
     /// substance filling all otherwise-unoccupied space, not a bounded level-authored volume with
     /// edges a body can be only partially submerged past, so its own (low but nonzero) Viscosity
     /// drag keeps applying continuously everywhere outside a denser placed volume, exactly as it
-    /// always did before submerged-fraction scaling was introduced.
+    /// always did before overlap-fraction scaling was introduced.
     /// </summary>
-    private static (Assets.Material Medium, double SubmergedFraction) ResolveCurrentMedium(World2D world, IPhysicsBody body)
+    private static (Assets.Material Medium, double OverlapFraction, Vector2D Flow) ResolveCurrentMedium(World2D world, IPhysicsBody body)
     {
         var resolved = world.Materials.Get("Air");
         Body2D? resolvedCandidate = null;
@@ -488,8 +490,11 @@ public class PhysicsSystem
                 continue;
             }
 
+            // Against the Air fallback a placed volume only has to match its density (so an
+            // Air-material volume, e.g. a wind tunnel, can displace it); against an already
+            // winning placed volume it must be strictly denser.
             var candidateMaterial = world.Materials.Get(candidate.MaterialName);
-            if (candidateMaterial.Density <= resolved.Density)
+            if (resolvedCandidate is null ? candidateMaterial.Density < resolved.Density : candidateMaterial.Density <= resolved.Density)
             {
                 continue;
             }
@@ -509,30 +514,31 @@ public class PhysicsSystem
             // A body is therefore always fully immersed in it (fraction 1.0, not 0.0), so Air's
             // own Viscosity drag (see MaterialLibrary.ini) keeps applying continuously in open
             // air exactly as it always did, rather than silently vanishing outside any placed
-            // medium volume's footprint.
-            return (resolved, 1.0);
+            // medium volume's footprint. Still air has no flow.
+            return (resolved, 1.0, new Vector2D(0, 0));
         }
 
         // Second pass: now that the winning material is known, gather every qualifying
         // candidate resolving to that same material (not just the single one that happened to
-        // win the tie-break above) and merge their vertical overlap against the body into one
-        // covered-interval union, so the submerged fraction reflects the body's true total
-        // overlapped extent rather than just one arbitrarily-chosen candidate's.
-        var bodyTop = double.MaxValue;
-        var bodyBottom = double.MinValue;
+        // win the tie-break above) and add up the area each overlaps the body's rects, so the
+        // overlap fraction reflects the body's true total overlapped extent in both axes.
+        // Same-material volumes are assumed not to overlap each other (a level design rule), so
+        // the sum is simply clamped to 1. The winning volume's own flow is scaled by its own
+        // overlapped share of the body, so a body only partly inside a flowing zone is only
+        // partly carried by it.
+        var bodyArea = 0.0;
         foreach (var rect in body.CollisionRects)
         {
-            bodyTop = Math.Min(bodyTop, rect.Top);
-            bodyBottom = Math.Max(bodyBottom, rect.Bottom);
+            bodyArea += rect.Width * rect.Height;
         }
 
-        var bodyHeight = bodyBottom - bodyTop;
-        if (bodyHeight <= 0)
+        if (bodyArea <= 0)
         {
-            return (resolved, 1.0);
+            return (resolved, 1.0, FlowOf(resolvedCandidate));
         }
 
-        var coveredIntervals = new List<(double Top, double Bottom)>();
+        var overlappedArea = 0.0;
+        var winnerOverlappedArea = 0.0;
         foreach (var candidate in world.Objects)
         {
             if (!IsMediumVolume(candidate))
@@ -550,20 +556,25 @@ public class PhysicsSystem
             {
                 foreach (var candidateRect in candidate.CollisionRects)
                 {
-                    var overlapTop = Math.Max(Math.Max(bodyRect.Top, candidateRect.Top), bodyTop);
-                    var overlapBottom = Math.Min(Math.Min(bodyRect.Bottom, candidateRect.Bottom), bodyBottom);
-                    if (overlapBottom > overlapTop)
+                    var area = bodyRect.OverlapArea(candidateRect);
+                    overlappedArea += area;
+                    if (candidate == resolvedCandidate)
                     {
-                        coveredIntervals.Add((overlapTop, overlapBottom));
+                        winnerOverlappedArea += area;
                     }
                 }
             }
         }
 
-        var submergedHeight = MergeIntervalLength(coveredIntervals);
-        var submergedFraction = Math.Clamp(submergedHeight / bodyHeight, 0.0, 1.0);
-        return (resolved, submergedFraction);
+        var overlapFraction = Math.Clamp(overlappedArea / bodyArea, 0.0, 1.0);
+        var flowFraction = Math.Clamp(winnerOverlappedArea / bodyArea, 0.0, 1.0);
+        var flow = FlowOf(resolvedCandidate);
+        return (resolved, overlapFraction, new Vector2D(flow.X * flowFraction, flow.Y * flowFraction));
     }
+
+    /// <summary>The velocity of the medium filling <paramref name="volume"/>: its <see cref="World.FlowZone2D.Flow"/> if it is a flow zone, otherwise still (zero).</summary>
+    private static Vector2D FlowOf(Body2D volume) =>
+        volume is FlowZone2D flowZone ? flowZone.Flow : new Vector2D(0, 0);
 
     /// <summary>
     /// True if <paramref name="candidate"/> is a level-authored ambient-medium volume (e.g. a placed
@@ -579,44 +590,7 @@ public class PhysicsSystem
         && !candidate.IsClimbable
         && !candidate.IsHangable;
 
-    /// <summary>
-    /// Merges a set of possibly-overlapping <c>[Top, Bottom)</c> vertical intervals
-    /// the total length they cover, without double-counting overlapping regions - used by
-    /// <see cref="ResolveCurrentMedium"/> so several stacked/adjacent placements of the same
-    /// medium material don't inflate the submerged fraction beyond the body's own true covered
-    /// extent.
-    /// </summary>
-    private static double MergeIntervalLength(List<(double Top, double Bottom)> intervals)
-    {
-        if (intervals.Count == 0)
-        {
-            return 0.0;
-        }
-
-        intervals.Sort((a, b) => a.Top.CompareTo(b.Top));
-        var totalLength = 0.0;
-        var currentTop = intervals[0].Top;
-        var currentBottom = intervals[0].Bottom;
-        for (var i = 1; i < intervals.Count; i++)
-        {
-            var (top, bottom) = intervals[i];
-            if (top <= currentBottom)
-            {
-                currentBottom = Math.Max(currentBottom, bottom);
-            }
-            else
-            {
-                totalLength += currentBottom - currentTop;
-                currentTop = top;
-                currentBottom = bottom;
-            }
-        }
-
-        totalLength += currentBottom - currentTop;
-        return totalLength;
-    }
-
-    /// <summary>Same overlap test used by <see cref="CollisionSystem"/> - true if any of <paramref name="a"/>'s collision rects overlap any of <paramref name="b"/>'s.</summary>
+    /// <summary>Same overlap test
     private static bool Overlaps(IPhysicsBody a, Body2D b)
     {
         foreach (var rectA in a.CollisionRects)
@@ -726,9 +700,9 @@ public class PhysicsSystem
         // (none currently exist, but the cast stays defensive); such a body simply never receives
         // any medium-based scaling/force below.
         var mediumBody = body as Body2D;
-        var (medium, submergedFraction) = mediumBody is not null
+        var (medium, submergedFraction, flow) = mediumBody is not null
             ? ResolveCurrentMedium(world, body)
-            : (Assets.MaterialLibrary.Undefined, 0.0);
+            : (Assets.MaterialLibrary.Undefined, 0.0, new Vector2D(0, 0));
         if (mediumBody is not null)
         {
             mediumBody.CurrentMedium = medium;
@@ -798,9 +772,14 @@ public class PhysicsSystem
             // using each axis's own speed/area (not the combined velocity magnitude/a single
             // area) to keep the two axes independent, consistent with every other force here.
             // Continuous while immersed, independent of any solid contact, distinct from
-            // Coulomb friction (which only acts at contact time).
-            netForce.X -= medium.Viscosity * body.Size.Y * body.Velocity.X * Math.Abs(body.Velocity.X) * submergedFraction;
-            netForce.Y -= medium.Viscosity * body.Size.X * body.Velocity.Y * Math.Abs(body.Velocity.Y) * submergedFraction;
+            // Coulomb friction (which only acts at contact time). Measured against the medium's own
+            // velocity (flow, zero in still media - see FlowZone2D), so a flowing medium drags a
+            // body toward its own speed, and a body moving with the flow feels less drag than one
+            // moving against it.
+            var relativeVelocityX = body.Velocity.X - flow.X;
+            var relativeVelocityY = body.Velocity.Y - flow.Y;
+            netForce.X -= medium.Viscosity * body.Size.Y * relativeVelocityX * Math.Abs(relativeVelocityX) * submergedFraction;
+            netForce.Y -= medium.Viscosity * body.Size.X * relativeVelocityY * Math.Abs(relativeVelocityY) * submergedFraction;
         }
 
         var acceleration = new Vector2D(netForce.X / mass, netForce.Y / mass);

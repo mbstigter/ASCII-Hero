@@ -134,23 +134,35 @@ capture the "why" behind a decision without needing a lengthy narrative.
   at ordinary speeds, and one that sheds a fast impact's momentum far more
   aggressively than a slow drift's, which keeps a body from significantly
   overshooting/bouncing back out after a hard water entry. Both forces are additionally
-  scaled by the body's own **submerged fraction** - the fraction (0 to 1) of the body's
-  own vertical extent actually overlapped by the winning medium volume, computed by
-  merging every qualifying overlap into a covered-interval union so several
-  stacked/adjacent placements of the same medium don't double-count. A body only
-  grazing a medium's surface therefore receives proportionally less buoyancy/drag than
-  one fully submerged (fraction 1.0, identical to the previous full-strength
+  scaled by the body's own **overlap fraction** - the fraction (0 to 1) of the body's
+  own collision area actually overlapped by the winning medium volume (both axes), computed by
+  summing the overlapped area of every qualifying same-material volume (which are
+  assumed not to overlap each other - a level design rule, not enforced in code). A body only
+  grazing a medium's edge therefore receives proportionally less buoyancy/drag than
+  one fully immersed (fraction 1.0, identical to the previous full-strength
   behavior), which is what stops a surface-floating body from visibly bouncing as it
   crosses the binary overlap boundary each frame. When no placed medium volume
   overlaps at all, the body resolves to the default `Air` fallback at fraction 1.0
   (not 0.0) - `Air` is the ambient substance filling all otherwise-unoccupied space,
   not a bounded level-authored volume with edges to be partially submerged past, so
   its own low but nonzero `Viscosity` drag keeps applying continuously everywhere
-  outside a denser placed volume, exactly as before submerged-fraction scaling was
-  introduced. Only bodies implementing
+  outside a placed volume, exactly as before overlap-fraction scaling was
+  introduced. A placed volume of the same density as `Air` also displaces the
+  fallback (only a strictly less dense one is skipped), so an `Air`-material volume
+  can be a medium in its own right (e.g. a wind tunnel). Only bodies implementing
   `IMediumAffected` (mirroring `IGravityAffected`) receive these forces; `CurrentMedium`
   itself is still resolved/exposed for every body regardless, for future systems (e.g.
   a swim pose) to read.
+- **A flowing medium is a `FlowZone2D`, not a separate force source.** A `FlowZone`
+  placement is a `TwoStateObject2D` and `ILinkTarget` (like `Gate2D`) that is also a
+  medium volume (`Medium = true`), with a `FlowDirection` (Left/Right/Up/Down) and a
+  `FlowStrength` (the speed the medium moves at). While on (`InitialState`, or a switch
+  through `Link`) `ResolveCurrentMedium` returns the winning volume's flow, scaled by
+  that volume's own overlapped share of the body, and the drag terms use the body's velocity
+  *relative to the flow* - so flow acts only through the medium's viscosity (a fan's air is
+  gentle, a river's water strong), a body moving with the flow feels less drag than one against
+  it, and bodies that are not `IMediumAffected` ignore it. Overlapping flow zones are avoided
+  by design rule, not summed or enforced.
 - **`ResolveCurrentMedium`'s scan only accepts placements that opt in**
   (`PhysicsSystem.IsMediumVolume`): static, passable terrain with `Body2D.IsMediumCandidate`
   set, which a level designer does per placement with `Medium = true` (`WaterSurface`/
@@ -161,8 +173,9 @@ capture the "why" behind a decision without needing a lengthy narrative.
   terrain is still never a medium.
 - **Gates and switches share one two-state mechanism** (`TwoStateObject2D`): a
   `Gate2D` is a door/hatch whose `IsPassable` follows its state; a `Switch2D` is a
-  passable button/lever. A switch drives exactly one `ILinkTarget` by a shared `Link`
-  name (one-to-one, validated at load); `Latching` (per placement, default false)
+  passable button/lever; a `Device2D` is a machine-like object that only swaps clips (a
+  fan, lamp). A switch drives every `ILinkTarget` sharing its `Link` name (one switch to
+  many targets, validated at load); `Latching` (per placement, default false)
   decides whether it toggles or only turns on. A gate is key-operated (`Lock`, stays
   open) or switch-operated (`Link`), never both. Enemies operating switches are not
   implemented.
@@ -469,7 +482,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **Level selection is a strict `GameMode` state machine** backed by a
   `Global/Worlds.ini` catalog (world metadata/thumbnails loaded without
   loading the full playable world).
-- **`Esc` asks "Exit game?"** (amber ripple box, `GameMode.ConfirmExit`); the action key (Enter/E) confirms and returns to the world-select screen, a second `Esc` cancels. Menu and end-screen confirmations likewise use only the action key.
+any confirm key (`InputState.IsConfirmPressed`: Enter, E, Space or Left Control) confirms and returns to the world-select screen, a second `Esc` cancels. Menu and end-screen confirmations accept the same keys.
 
 ## Notably rejected/reverted approaches
 

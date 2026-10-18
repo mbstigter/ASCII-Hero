@@ -1,0 +1,35 @@
+                
+                
+ U  J   J    U  
+ AUUUUUUUUUUUUA 
+ A            A 
+UUIIIIIIIIIIIIUU
+UU            UU
+UUUUUUUUUUUUUUUU
+//end
+                
+                
+ U   J   J   U  
+ AUUUUUUUUUUUUA 
+ A            A 
+UUIIIIIIIIIIIIUU
+UU            UU
+UUUUUUUUUUUUUUUU
+//end
+                
+                
+ U    J   J  U  
+ AUUUUUUUUUUUUA 
+ A            A 
+UUIIIIIIIIIIIIUU
+UU            UU
+UUUUUUUUUUUUUUUU
+//end
+                
+                
+ U     J   J U  
+ AUUUUUUUUUUUUA 
+ A            A 
+UUIIIIIIIIIIIIUU
+UU            UU
+UUUUUUUUUUUUUUUU

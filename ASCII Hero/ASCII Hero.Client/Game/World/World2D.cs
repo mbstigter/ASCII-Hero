@@ -286,22 +286,17 @@ public class World2D
 
     /// <summary>
     /// Pairs every <see cref="Switch2D"/> with the <see cref="ILinkTarget"/> sharing its link name
-    /// and applies its initial state to it. One-to-one: an unmatched, duplicated or target-less
+    /// and applies its initial state to it. One-to-many: an unmatched, duplicated-switch or target-less
     /// link is a level authoring error and fails loudly.
     /// </summary>
     private static void ResolveLinks(World2D world, string worldName)
     {
         var targets = world.Objects.OfType<ILinkTarget>().Where(target => target.LinkName is not null).ToList();
 
-        foreach (var linkedTarget in targets.GroupBy(target => target.LinkName!, StringComparer.OrdinalIgnoreCase).Where(group => group.Count() > 1))
-        {
-            throw new FormatException($"More than one object in world '{worldName}' has Link '{linkedTarget.Key}'; links are one-to-one.");
-        }
-
         var switches = world.Objects.OfType<Switch2D>().ToList();
         foreach (var duplicateSwitch in switches.Where(s => s.LinkName is not null).GroupBy(s => s.LinkName!, StringComparer.OrdinalIgnoreCase).Where(group => group.Count() > 1))
         {
-            throw new FormatException($"More than one switch in world '{worldName}' has Link '{duplicateSwitch.Key}'; links are one-to-one.");
+            throw new FormatException($"More than one switch in world '{worldName}' has Link '{duplicateSwitch.Key}'; each link has exactly one switch.");
         }
 
         foreach (var switchObject in switches)
@@ -311,11 +306,17 @@ public class World2D
                 throw new FormatException($"A switch in world '{worldName}' is missing its 'Link' key.");
             }
 
-            var target = targets.FirstOrDefault(candidate => string.Equals(candidate.LinkName, switchObject.LinkName, StringComparison.OrdinalIgnoreCase))
-                ?? throw new FormatException($"Switch with Link '{switchObject.LinkName}' in world '{worldName}' has no matching target.");
+            var matches = targets.Where(candidate => string.Equals(candidate.LinkName, switchObject.LinkName, StringComparison.OrdinalIgnoreCase)).ToList();
+            if (matches.Count == 0)
+            {
+                throw new FormatException($"Switch with Link '{switchObject.LinkName}' in world '{worldName}' has no matching target.");
+            }
 
-            switchObject.Target = target;
-            target.SetState(switchObject.IsOn);
+            foreach (var target in matches)
+            {
+                switchObject.Targets.Add(target);
+                target.SetState(switchObject.IsOn);
+            }
         }
 
         foreach (var orphan in targets.Where(target => !switches.Any(s => string.Equals(s.LinkName, target.LinkName, StringComparison.OrdinalIgnoreCase))))
@@ -779,7 +780,7 @@ public class World2D
                 // any combination of them. Passable defaults to true for hazards/collectables
                 // (never blocking today, matching prior hardcoded behavior) and false otherwise
                 // (an ordinary wall/platform still blocks unless explicitly overridden).
-                var defaultPassable = kind is "StaticHazard" or "KinematicHazard" or "Collectable" or "Switch";
+                var defaultPassable = kind is "StaticHazard" or "KinematicHazard" or "Collectable" or "Switch" or "FlowZone";
                 var passable = objectSection.TryGetValue("Passable", out var passableText) && bool.TryParse(passableText, out var parsedPassable)
                     ? parsedPassable
                     : defaultPassable;
@@ -885,6 +886,32 @@ public class World2D
                         switchObject.SpawnTwoState(sprite, clipName, onClipName, initialOn, position, repeatCount);
                         world.Objects.Add(switchObject);
                         spawnedBody = switchObject;
+                        break;
+
+                    case "Device":
+                        var device = new Device2D { LinkName = linkName };
+                        device.SpawnTwoState(sprite, clipName, onClipName, initialOn, position, repeatCount);
+                        world.Objects.Add(device);
+                        spawnedBody = device;
+                        break;
+
+                    case "FlowZone":
+                        // Y increases downward (see docs/Architecture.md's Coordinate System), so "Up" is -Y.
+                        var flowDirection = (objectSection.TryGetValue("FlowDirection", out var flowDirectionText) ? flowDirectionText.Trim().ToLowerInvariant() : null) switch
+                        {
+                            "left" => new Vector2D(-1, 0),
+                            "right" => new Vector2D(1, 0),
+                            "up" => new Vector2D(0, -1),
+                            "down" => new Vector2D(0, 1),
+                            _ => throw new FormatException($"FlowZone section '{sectionName}' of world '{worldName}' needs a 'FlowDirection' of Left, Right, Up or Down.")
+                        };
+                        var flowStrength = objectSection.TryGetValue("FlowStrength", out var flowStrengthText) && IniValueParser.TryParseDouble(flowStrengthText, out var parsedFlowStrength)
+                            ? parsedFlowStrength
+                            : throw new FormatException($"FlowZone section '{sectionName}' of world '{worldName}' needs a numeric 'FlowStrength'.");
+                        var flowZone = new FlowZone2D { LinkName = linkName, FlowDirection = flowDirection, FlowStrength = flowStrength };
+                        flowZone.SpawnTwoState(sprite, clipName, onClipName, initialOn, position, repeatCount);
+                        world.Objects.Add(flowZone);
+                        spawnedBody = flowZone;
                         break;
 
                     case "DynamicObject":

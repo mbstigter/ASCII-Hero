@@ -24,17 +24,11 @@ public readonly struct Rect(double x, double y, double width, double height)
         Top < other.Bottom &&
         Bottom > other.Top;
 
-    /// <summary>
-    /// The overlapped vertical extent (in world cells) between this rectangle and
-    /// <paramref name="other"/>, or 0 if they don't overlap vertically at all (regardless of
-    /// horizontal overlap) - used by <see cref="Physics.PhysicsSystem"/>'s submerged-fraction
-    /// calculation (see its own doc comment) to determine how much of a body is actually below a
-    /// medium volume's surface, rather than treating any overlap at all as "fully immersed."
-    /// </summary>
-    public double VerticalOverlap(Rect other)
+    /// <summary>The overlapped area (in world cells squared) between this rectangle and <paramref name="other"/>, or 0 if they don't overlap.</summary>
+    public double OverlapArea(Rect other)
     {
-        var overlapTop = Math.Max(Top, other.Top);
-        var overlapBottom = Math.Min(Bottom, other.Bottom);
-        return Math.Max(0, overlapBottom - overlapTop);
+        var overlapWidth = Math.Min(Right, other.Right) - Math.Max(Left, other.Left);
+        var overlapHeight = Math.Min(Bottom, other.Bottom) - Math.Max(Top, other.Top);
+        return overlapWidth > 0 && overlapHeight > 0 ? overlapWidth * overlapHeight : 0;
     }
 }

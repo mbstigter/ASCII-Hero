@@ -160,14 +160,17 @@ The live game state and the entity types that make it up.
   - `StaticObject2D` - solid, static terrain (platforms, walls, decoration).
   - `TwoStateObject2D` - a `StaticObject2D` with an off/on state that swaps between
     two clips of its sprite (`Clip` / `OnClip`) via `SetState`; subclasses react in
-    `OnStateChanged`. Two subclasses:
+    `OnStateChanged`. Four subclasses:
     `Gate2D` (door/hatch: solid while closed, passable while open; opened by a key
-    `Lock` via `World2D.TryOpenGate`, or driven by a switch through `Link`) and
+    `Lock` via `World2D.TryOpenGate`, or driven by a switch through `Link`),
     `Switch2D` (button/lever: toggles, or only turns on if `Latching`, and pushes the
-    state to its one `Target`; operated via `World2D.TryOperateSwitch`).
+    state to all its `Targets`; operated via `World2D.TryOperateSwitch`),
+    `Device2D` (a machine-like object - fan, lamp - that only swaps its off/on clip) and
+    `FlowZone2D` (a passable medium volume - water, air - whose medium flows in a
+    `FlowDirection` at a `FlowStrength` while on; read by `PhysicsSystem.ResolveCurrentMedium`).
   - `ILinkTarget` - capability of an object a switch can drive (`LinkName`,
-    `SetState`), implemented by `Gate2D` and `KinematicObject2D` (which stops while
-    off). `World2D.ResolveLinks` enforces one-to-one `Link` matching at load time.
+    `SetState`), implemented by `Gate2D`, `Device2D`, `FlowZone2D` and `KinematicObject2D` (which stops while
+    off). `World2D.ResolveLinks` enforces one-switch-to-many-targets `Link` matching at load time.
   - `Key2D` - a `Collectable2D` that carries the key's `LockName`.
   - `StaticHazard2D` - a non-moving hazard (e.g. spikes) that can optionally
 	be "killable" and can trigger a cosmetic effect on contact.
@@ -310,11 +313,13 @@ The live game state and the entity types that make it up.
   the extension point for any further force source. Each frame it also
   resolves every body's `CurrentMedium` (`ResolveCurrentMedium` - `Air` by
   default, overridden to the highest-density overlapping static/passable
-  volume's material, e.g. a `Water` body) and, for any `IMediumAffected`
+  volume's material, e.g. a `Water` body, or an equal-density volume such as an
+  `Air` wind tunnel) and, for any `IMediumAffected`
   body, adds a buoyancy force (Archimedes' principle - the medium's density
   times the body's own resolved volume, opposing gravity) and a quadratic
-  (velocity-squared) drag force (the medium's `Viscosity` times velocity times
-  its own magnitude, per axis, further scaled by the body's own frontal area
+  (velocity-squared) drag force (the medium's `Viscosity` times the body's
+  velocity relative to the medium's flow (a `FlowZone2D`'s current flow, else zero)
+  times its own magnitude, per axis, further scaled by the body's own frontal area
   facing that axis - `Size.Y` for horizontal drag, `Size.X` for vertical drag,
   the 2D analog of cross-sectional area - so a bigger body feels
   proportionally more drag than a smaller one of the same material) into the

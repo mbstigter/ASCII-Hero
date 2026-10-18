@@ -98,7 +98,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
     private double _pendingTransitionElapsedSeconds;
 
-    /// <summary>Set once no action key is held on an end screen, so a key still held from gameplay doesn't dismiss it instantly.</summary>
+    /// <summary>Set once no confirm key is held on an end screen, so a key still held from gameplay doesn't dismiss it instantly.</summary>
     private bool _endScreenKeysReleased;
 
     /// <summary>Message of the active <see cref="GameMode.LevelComplete"/>/<see cref="GameMode.GameOver"/> screen; one text row (with a space either side) inside the final ripple box, on a solid background so it stays readable over the world.</summary>
@@ -585,11 +585,11 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     // End screen frame (level complete / game over)
     // ---------------------------------------------------------------------------------------
 
-    /// <summary>Shows the frozen last frame with a ripple-animated message box until an action key press, then returns to world selection.</summary>
+    /// <summary>Shows the frozen last frame with a ripple-animated message box until a confirm key press, then returns to world selection.</summary>
     private async Task OnEndScreenFrameAsync(double deltaSeconds)
     {
         _endScreenElapsedSeconds += deltaSeconds;
-        var confirmPressed = _input.IsActionPressed;
+        var confirmPressed = _input.IsConfirmPressed;
         if (!confirmPressed)
         {
             _endScreenKeysReleased = true;
@@ -624,7 +624,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
         _wasEscapeKeyDown = escapeDown;
 
-        var confirmPressed = _input.IsActionPressed;
+        var confirmPressed = _input.IsConfirmPressed;
         if (!confirmPressed)
         {
             _endScreenKeysReleased = true;
