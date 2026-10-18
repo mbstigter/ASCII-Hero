@@ -122,9 +122,17 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// <summary>Per step, the box shrinks by this many cells on each axis (1 per side).</summary>
     private const int EndScreenStepCells = 2;
 
-    private const string EndScreenGameOverColor = "#ff0000";
-    private const string ConfirmExitColor = "#ffb000";
     private const string EndScreenTextBackColor = "#000000";
+
+    // Per-screen message box color and woosh sound (played as the ripple opens; see Global/SoundLibrary.ini).
+    private const string LevelCompleteColor = RenderConstants.DefaultForeColor;
+    private const string LevelCompleteWooshSoundName = "LevelCompleteWoosh";
+
+    private const string GameOverColor = "#ff0000";
+    private const string GameOverWooshSoundName = "GameOverWoosh";
+
+    private const string ConfirmExitColor = "#ffb000";
+    private const string ConfirmExitWooshSoundName = "ConfirmExitWoosh";
 
     // ---------------------------------------------------------------------------------------
     // HUD (top-left): frame, text row, health bar and key icon
@@ -431,6 +439,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             _mode = GameMode.ConfirmExit;
             _endScreenKeysReleased = false;
             _endScreenElapsedSeconds = 0;
+            soundPlayer.Play(ConfirmExitWooshSoundName);
             return;
         }
         _wasEscapeKeyDown = escapeDown;
@@ -493,6 +502,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         _mode = transition == PendingTransition.LevelEnd ? GameMode.LevelComplete : GameMode.GameOver;
         _endScreenKeysReleased = false;
         _endScreenElapsedSeconds = 0;
+        soundPlayer.Play(_mode == GameMode.LevelComplete ? LevelCompleteWooshSoundName : GameOverWooshSoundName);
         return true;
     }
 
@@ -652,7 +662,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         var isLevelComplete = _mode == GameMode.LevelComplete;
         var isConfirmExit = _mode == GameMode.ConfirmExit;
         var text = isConfirmExit ? "Exit game?" : isLevelComplete ? "Level Complete!" : "Game Over!";
-        var color = isConfirmExit ? ConfirmExitColor : isLevelComplete ? RenderConstants.DefaultForeColor : EndScreenGameOverColor;
+        var color = isConfirmExit ? ConfirmExitColor : isLevelComplete ? LevelCompleteColor : GameOverColor;
 
         var finalWidth = text.Length + 4;
         var finalHeight = 3;
