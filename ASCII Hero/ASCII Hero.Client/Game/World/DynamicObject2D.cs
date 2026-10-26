@@ -109,6 +109,16 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     public double PatrolMaxForceY { get; set; } = GameDefaults.DefaultPatrolMaxForceY;
 
     /// <summary>
+    /// Whether the horizontal patrol range follows the extent of the static or kinematic solid
+    /// this body currently stands on (ini <c>PatrolStayOnPlatform</c> key), so it patrols exactly
+    /// that platform - moving with it if it moves - and never walks off. While not standing on
+    /// such a solid (spawning, falling) the last known range stays in effect: initially the ini
+    /// range (or the default full world width).
+    /// several pieces is patrolled one piece at a time.
+    /// </summary>
+    public bool PatrolStayOnPlatform { get; set; }
+
+    /// <summary>
     /// Current pose (see <see cref="Player2D.Stance"/> for the closest player-side member).
     /// Only one pose exists today ("Move", with idle/left/right facing clips - see
     /// <see cref="UpdatePose"/>), but kept as a settable member rather than a hardcoded literal so
@@ -164,6 +174,9 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     /// <param name="maxForceY">
     /// Vertical force cap in multiples of g (see <see cref="PatrolMaxForceY"/>); 0 means no vertical thrust.
     /// </param>
+    /// <param name="stayOnPlatform">
+    /// Whether the X range follows the solid this body stands on (see <see cref="PatrolStayOnPlatform"/>).
+    /// </param>
     /// <param name="initialDirectionRight">
     /// Which way to start heading on the X axis. When null, it starts heading toward
     /// whichever bound is farther from the spawn position, so a body spawned near one end still
@@ -183,8 +196,10 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
         double forceMultiplierX = GameDefaults.PatrolForceMultiplier,
         double forceMultiplierY = GameDefaults.PatrolForceMultiplier,
         bool? initialDirectionRight = null, bool? initialDirectionDown = null,
-        double maxForceX = GameDefaults.DefaultPatrolMaxForceX, double maxForceY = GameDefaults.DefaultPatrolMaxForceY)
+        double maxForceX = GameDefaults.DefaultPatrolMaxForceX, double maxForceY = GameDefaults.DefaultPatrolMaxForceY,
+        bool stayOnPlatform = false)
     {
+        PatrolStayOnPlatform = stayOnPlatform;
         PatrolMaxForceX = maxForceX;
         PatrolMaxForceY = maxForceY;
 
@@ -257,6 +272,11 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
         double forceX = 0.0;
         double forceY = 0.0;
 
+        if (PatrolStayOnPlatform)
+        {
+            FollowSupportExtentX();
+        }
+
         if (PatrolMinX.HasValue && PatrolMaxX.HasValue)
         {
             var axisTargetX = ResolveAxisTargetVelocity(Position.X, PatrolMinX.Value, PatrolMaxX.Value, PatrolCruiseSpeedX, ref _patrolMovingRight);
@@ -304,7 +324,25 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     }
 
     /// <summary>
-    /// The one per-axis patrol rule, shared by X and Y: given a position, a range and a cruise
+    /// Sets the horizontal patrol range to the extent of the static or kinematic solid this body
+    /// currently rests on (see <see cref="PatrolStayOnPlatform"/>), keeping the current range when
+    /// there is none. A platform no wider than this body gives a zero-width range, i.e. a hold.
+    /// </summary>
+    private void FollowSupportExtentX()
+    {
+        foreach (var solid in GetContactingBodies(Physics.ContactType.SurfaceBottom))
+        {
+            if (solid is StaticObject2D or KinematicObject2D)
+            {
+                PatrolMinX = solid.Position.X;
+                PatrolMaxX = Math.Max(solid.Position.X, solid.Position.X + solid.Size.X - Size.X);
+                return;
+            }
+        }
+    }
+
+    /// <summary>
+    /// The one per-axis patrol rule,
     /// speed, returns the target velocity on that axis. Heads toward the current bound at the
     /// cruise speed and flips heading on reaching or passing it (so a body bumped outside its range
     /// heads back in). A range no wider than the turn thresholds (e.g. min == max) has no

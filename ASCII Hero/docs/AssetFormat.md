@@ -915,6 +915,15 @@ column (respectively height) the hazard was placed at, returning to it after a
 bump - which only works if the cap allows force there, so a flier sets
 `PatrolMaxForceY` rather than `GravityAffected = false`.
 
+**Patrolling a platform:** `PatrolStayOnPlatform = true` (default `false`) makes
+the horizontal range follow the static or kinematic solid the body is standing
+on, so it patrols that platform edge to edge - and keeps doing so while the
+platform moves - without walking off. While it is not standing on such a solid
+(spawning, falling) the last range stays in effect: initially `PatrolMinX` /
+`PatrolMaxX` if given, otherwise the full world width. It follows a single
+solid, so a platform tiled from several pieces is patrolled one piece at a
+time.
+
 A `Kind = KinematicObject` or `Kind = KinematicHazard` placement (e.g. a moving
 platform or saw blade) may likewise set
 `Patrol = true`, with the same independent-per-axis bounds as `DynamicHazard`

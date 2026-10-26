@@ -104,6 +104,17 @@ capture the "why" behind a decision without needing a lengthy narrative.
   extra carry/re-seat mechanism - makes a resting rider follow a moving
   platform on both axes, because the player's own movement is force-based
   rather than overwritten from input.
+- **A resting body's support is judged by its actual movement, not its
+  `Velocity`, unless the support is static.** A finite-mass support (e.g. a
+  patrolling `DynamicObject2D`) has its own `Velocity` cancelled every step by
+  contact friction with whatever stands on it, so reading `Velocity` made
+  riders target ~0 and slip off. `Body2D` records its horizontal displacement
+  over the last physics step (`LastStepDisplacementX`, `ReferenceVelocityX`),
+  and both `GetSurfaceVelocityX` (the rider's motor/patrol reference) and
+  `CollisionSystem.ResolveContact`'s tangential friction use it for the
+  supporting body (identified by the contact normal, so pair resolution order
+  doesn't matter). Static/kinematic supports keep using their prescribed
+  `Velocity` unchanged.
 - **Contacts are tracked as explicit `ContactType` flags** per body
   (`Body2D.AddContact`/`HasContact`), snapshotted-and-cleared once per frame;
   `IPhysicsBody.IsGrounded` is derived from this (`HasContact(SurfaceBottom)`),

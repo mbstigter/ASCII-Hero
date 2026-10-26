@@ -866,7 +866,26 @@ public class CollisionSystem
         // velocity, then split between body/other by the same inverse-mass shares used for
         // position correction above.
         var tangent = new Vector2D(-contact.Normal.Y, contact.Normal.X);
-        var tangentialRelativeSpeed = relativeVelocity.X * tangent.X + relativeVelocity.Y * tangent.Y;
+        // Friction drags the pair toward a shared surface speed. The body underneath (the support)
+        // is judged by its actual movement, not its Velocity, which this very contact's friction
+        // keeps cancelling. Which side is the support follows from the contact normal (pointing
+        // up means other is below body), regardless of the order the pair was resolved in.
+        var bodyTangentSource = body.Velocity;
+        var otherTangentSource = otherVelocity;
+        if (other is not null)
+        {
+            if (contact.Normal.Y < 0)
+            {
+                otherTangentSource = new Vector2D(otherContactTarget.ReferenceVelocityX, otherVelocity.Y);
+            }
+            else if (contact.Normal.Y > 0)
+            {
+                bodyTangentSource = new Vector2D(((Body2D)body).ReferenceVelocityX, body.Velocity.Y);
+            }
+        }
+
+        var frictionRelativeVelocity = bodyTangentSource - otherTangentSource;
+        var tangentialRelativeSpeed = frictionRelativeVelocity.X * tangent.X + frictionRelativeVelocity.Y * tangent.Y;
         var normalImpulseMagnitudePerMass = Math.Abs(normalImpulse * bodyInverseMass);
         var newTangentialRelativeSpeed = ApplyCoulombFriction(tangentialRelativeSpeed, normalImpulseMagnitudePerMass, friction);
         var tangentialDelta = tangentialRelativeSpeed - newTangentialRelativeSpeed;

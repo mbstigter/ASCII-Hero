@@ -743,6 +743,9 @@ public class World2D
                 var patrolMaxForceYOverride = objectSection.TryGetValue("PatrolMaxForceY", out var maxForceYText) && IniValueParser.TryParseDouble(maxForceYText, out var parsedMaxForceY)
                     ? (double?)parsedMaxForceY
                     : null;
+                // PatrolStayOnPlatform makes a DynamicHazard's horizontal range follow the platform it
+                // stands on (see DynamicObject2D.PatrolStayOnPlatform) instead of fixed columns.
+                var patrolStayOnPlatform = objectSection.TryGetValue("PatrolStayOnPlatform", out var stayOnPlatformText) && bool.TryParse(stayOnPlatformText, out var parsedStayOnPlatform) && parsedStayOnPlatform;
                 // PatrolInitialDirectionY ("Up"/"Down") overrides which way a DynamicHazard starts
                 // heading on its vertical patrol, mirroring PatrolInitialDirectionX for the
                 // horizontal axis - see DynamicHazard2D.SetPatrol.
@@ -830,7 +833,8 @@ public class World2D
                         patrolInitialDirectionRight,
                         patrolInitialDirectionDownHazard,
                         patrolMaxForceXOverride ?? Constants.GameDefaults.DefaultPatrolMaxForceX,
-                        patrolMaxForceYOverride ?? Constants.GameDefaults.DefaultPatrolMaxForceY);
+                        patrolMaxForceYOverride ?? Constants.GameDefaults.DefaultPatrolMaxForceY,
+                        patrolStayOnPlatform);
                 }
 
                 IPhysicsBody? movingBody = null;

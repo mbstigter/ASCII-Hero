@@ -122,7 +122,8 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
   separate objects.
 - **Realistic contact response.** Bounce and friction come from both bodies' materials combined.
   Slick ice and grippy rubber behave differently.
-- **Moving platforms carry riders.** Friction drags whatever stands on a moving body.
+Friction drags whatever stands on a moving body,
+  including walking creatures such as a friendly turtle.
 - **Fluids and media.** Bodies in `Water`-like materials get buoyancy and quadratic drag.
   Swimming through a viscous medium is harder than walking on land.
 - **Tunable per placement:** `Restitution`, `GravityAffected`, and `InitialVelocityX`/`Y`.

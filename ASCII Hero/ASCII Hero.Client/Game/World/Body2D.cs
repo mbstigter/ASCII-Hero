@@ -155,7 +155,27 @@ public abstract class Body2D
 
         _previousContacts = snapshot;
         _contacts.Clear();
+
+        // Called once per physics step, so this is the actual displacement over one step,
+        // after collision response (unlike Velocity, which collision may have altered).
+        LastStepDisplacementX = _hasSnapshotPosition ? Position.X - _positionAtLastSnapshotX : 0.0;
+        _positionAtLastSnapshotX = Position.X;
+        _hasSnapshotPosition = true;
     }
+
+    private double _positionAtLastSnapshotX;
+    private bool _hasSnapshotPosition;
+
+    /// <summary>How far this body actually moved horizontally over the last physics step.</summary>
+    public double LastStepDisplacementX { get; private set; }
+
+    /// <summary>
+    /// The horizontal speed other bodies in contact with this one should be judged against (for
+    /// carry and surface friction): its actual movement over the last step, which - unlike a
+    /// finite-mass body's <see cref="IPhysicsBody.Velocity"/> - is not cancelled by the contact
+    /// response itself.
+    /// </summary>
+    public double ReferenceVelocityX => LastStepDisplacementX / PhysicsConstants.FixedPhysicsStepSeconds;
 
     /// <summary>
     /// Whether this body currently rests on something solid, be it a platform's top surface, the
@@ -549,8 +569,9 @@ public abstract class Body2D
     /// would otherwise misreport as "walking"/"patrolling" in that direction (see
     /// <see cref="ResolveHorizontalFacing"/>) or fight the platform's carry as if it were an
     /// unwanted push (see <see cref="DynamicHazard2D.UpdatePatrolDirection"/>). Picks the first
-    /// grounded contact that is itself an <see cref="IPhysicsBody"/> with a real velocity (e.g.
-    /// <see cref="KinematicObject2D"/>); ordinary stationary terrain has none, so this falls back
+    /// grounded contact that is itself an <see cref="IPhysicsBody"/> - a static one (e.g.
+    /// <see cref="KinematicObject2D"/>) reports its prescribed velocity, a finite-mass one its
+    /// actual movement (<see cref="ReferenceVelocityX"/>); ordinary stationary terrain has none, so this falls back
     /// to 0 exactly as it would without a moving platform involved at all.
     /// </summary>
     public double GetSurfaceVelocityX()
@@ -559,7 +580,10 @@ public abstract class Body2D
         {
             if (solid is IPhysicsBody solidBody)
             {
-                return solidBody.Velocity.X;
+                // Static solids (kinematic platforms) prescribe their motion, so Velocity is exact.
+                // Finite-mass supports have Velocity altered by contact friction with this rider,
+                // so their actual displacement over the last step is the real carry speed.
+                return solid.IsStatic ? solidBody.Velocity.X : solid.ReferenceVelocityX;
             }
         }
 

@@ -241,7 +241,9 @@ The live game state and the entity types that make it up.
 	climbing saturates the Y cap, descending needs little. Gains are per axis
 	(`PatrolForceMultiplierX`/`Y`). An axis with no range holds its spawn
 	position (column for X, height for Y) via a clamped spring target speed;
-	caps only limit force and never toggle an axis.
+	caps only limit force and never toggle an axis. With `PatrolStayOnPlatform`
+	the X range is refreshed each frame from the static/kinematic solid in the
+	body's `SurfaceBottom` contacts (last range kept while airborne).
   - `IPosedBody` - resolves and applies its own sprite pose (stance +
 	facing) once per frame via `UpdatePose()`, called by `PhysicsSystem` after
 	velocity/position are integrated for the frame (mirroring how a body owns
@@ -460,7 +462,12 @@ The live game state and the entity types that make it up.
   `IHangerBody.IsTouchingHangable` rather than routed through `ContactType`),
   via `Body2D.AddContact`/`HasContact`/`GetContactingBodies`.
   `Resolve` snapshots and clears every body's contacts (via
-  `Body2D.SnapshotContactsForNextFrame`) at the very start of each frame -
+  `Body2D.SnapshotContactsForNextFrame`) at the very start of each frame, and
+  records each body's horizontal displacement since the previous snapshot
+  (`Body2D.LastStepDisplacementX`/`ReferenceVelocityX`) - the real speed of a
+  finite-mass support, which riders (`GetSurfaceVelocityX`) and
+  `ResolveContact`'s friction are judged against (static supports use their
+  prescribed `Velocity`) -
   including a `WorldBoundsSentinel` placeholder body so a body resting
   against the world's own floor/wall/ceiling (not a placed platform) records
   an ordinary `SurfaceBottom` contact the same way as any other solid, with
