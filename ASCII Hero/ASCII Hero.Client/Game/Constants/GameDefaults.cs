@@ -174,6 +174,26 @@ public static class GameDefaults
     /// </summary>
     public const double PatrolTurnThreshold = 0.25;
 
+    /// <summary>
+    /// Default horizontal patrol force cap, in multiples of the body's weight: unlimited, since legs
+    /// (or wings) can always push sideways. Overridable via the <c>PatrolMaxForceX</c> ini key.
+    /// </summary>
+    public const double DefaultPatrolMaxForceX = double.PositiveInfinity;
+
+    /// <summary>
+    /// Default vertical patrol force cap, in multiples of the body's weight: zero, i.e. no vertical
+    /// thrust, so a walker simply falls and rests on the floor. A flier sets <c>PatrolMaxForceY</c>
+    /// above 0 (1 can just hover, above 1 it can also climb).
+    /// </summary>
+    public const double DefaultPatrolMaxForceY = 0.0;
+
+    /// <summary>
+    /// Gain (cells/second of target speed per cell of offset) of the spring that pulls a patrolling
+    /// body back to its spawn position on an axis with no explicit range (a zero-width range), capped
+    /// at that axis's cruise speed. Not overridable via any ini file.
+    /// </summary>
+    public const double PatrolLevelSpringGain = 2.0;
+
     // --- Camera ---
 
     /// <summary>

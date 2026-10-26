@@ -708,30 +708,40 @@ public class World2D
                 var patrolMaxXOverride = objectSection.TryGetValue("PatrolMaxX", out var patrolMaxXText) && IniValueParser.TryParseDouble(patrolMaxXText, out var parsedPatrolMaxX)
                     ? (double?)parsedPatrolMaxX
                     : null;
-                // PatrolForceMultiplier lets a placement tune how strongly (and so how quickly it reaches
-                // its cruising speed, mass-scaled like gravity) this hazard patrols, defaulting to
-                // DynamicHazard2D's own default when unset. PatrolCruiseSpeedX sets the actual
+                // PatrolForceMultiplierX/Y tune how strongly (and so how quickly it reaches its
+                // cruising speed, mass-scaled like gravity) this hazard patrols on each axis,
+                // defaulting to GameDefaults.PatrolForceMultiplier when unset. PatrolCruiseSpeedX/Y set the actual
                 // steady-state patrol speed the force converges to and holds, also defaulting to
-                // DynamicHazard2D's own default when unset. PatrolInitialDirectionX ("Left"/"Right") -
+                // GameDefaults.PatrolCruiseSpeed when unset. PatrolInitialDirectionX ("Left"/"Right") -
                 // named to match KinematicObject's own per-axis PatrolInitialDirectionX/Y below,
                 // since a future vertically-patrolling hazard would need the same X/Y distinction -
                 // overrides which way it starts heading, instead of the default inference toward
                 // whichever bound is farther.
-                var patrolForceOverride = objectSection.TryGetValue("PatrolForceMultiplier", out var patrolForceText) && IniValueParser.TryParseDouble(patrolForceText, out var parsedPatrolForce)
-                    ? (double?)parsedPatrolForce
+                var patrolForceXOverride = objectSection.TryGetValue("PatrolForceMultiplierX", out var patrolForceXText) && IniValueParser.TryParseDouble(patrolForceXText, out var parsedPatrolForceX)
+                    ? (double?)parsedPatrolForceX
+                    : null;
+                var patrolForceYOverride = objectSection.TryGetValue("PatrolForceMultiplierY", out var patrolForceYText) && IniValueParser.TryParseDouble(patrolForceYText, out var parsedPatrolForceY)
+                    ? (double?)parsedPatrolForceY
                     : null;
                 var patrolCruiseSpeedOverride = objectSection.TryGetValue("PatrolCruiseSpeedX", out var patrolCruiseSpeedText) && IniValueParser.TryParseDouble(patrolCruiseSpeedText, out var parsedPatrolCruiseSpeed)
                     ? (double?)parsedPatrolCruiseSpeed
                     : null;
                 // PatrolCruiseSpeedY lets a DynamicHazard's vertical patrol cruise at a different
-                // speed than its horizontal one (PatrolCruiseSpeedX); falls back to PatrolCruiseSpeedX
-                // itself (then DynamicHazard2D's own default) so a level author patrolling only one
-                // axis, or wanting the same pace on both, doesn't need to repeat the value.
+                // speed than its horizontal one (PatrolCruiseSpeedX); each axis falls back to
+                // the global default independently.
                 var patrolCruiseSpeedYOverride = objectSection.TryGetValue("PatrolCruiseSpeedY", out var patrolCruiseSpeedYText) && IniValueParser.TryParseDouble(patrolCruiseSpeedYText, out var parsedPatrolCruiseSpeedY)
                     ? (double?)parsedPatrolCruiseSpeedY
                     : null;
                 var patrolInitialDirectionRight = objectSection.TryGetValue("PatrolInitialDirectionX", out var patrolDirectionText)
                     ? (bool?)string.Equals(patrolDirectionText, "Right", StringComparison.OrdinalIgnoreCase)
+                    : null;
+                // PatrolMaxForceX/Y cap the patrol force per axis in multiples of g (see
+                // DynamicObject2D.PatrolMaxForceX/Y); unset uses GameDefaults.DefaultPatrolMaxForceX/Y.
+                var patrolMaxForceXOverride = objectSection.TryGetValue("PatrolMaxForceX", out var maxForceXText) && IniValueParser.TryParseDouble(maxForceXText, out var parsedMaxForceX)
+                    ? (double?)parsedMaxForceX
+                    : null;
+                var patrolMaxForceYOverride = objectSection.TryGetValue("PatrolMaxForceY", out var maxForceYText) && IniValueParser.TryParseDouble(maxForceYText, out var parsedMaxForceY)
+                    ? (double?)parsedMaxForceY
                     : null;
                 // PatrolInitialDirectionY ("Up"/"Down") overrides which way a DynamicHazard starts
                 // heading on its vertical patrol, mirroring PatrolInitialDirectionX for the
@@ -814,10 +824,13 @@ public class World2D
                         bodyPatrolMinX, bodyPatrolMaxX,
                         patrolCruiseSpeedOverride ?? Constants.GameDefaults.PatrolCruiseSpeed,
                         patrolMinYOverride, patrolMaxYOverride,
-                        patrolCruiseSpeedYOverride ?? patrolCruiseSpeedOverride ?? Constants.GameDefaults.PatrolCruiseSpeed,
-                        patrolForceOverride ?? Constants.GameDefaults.PatrolForceMultiplier,
+                        patrolCruiseSpeedYOverride ?? Constants.GameDefaults.PatrolCruiseSpeed,
+                        patrolForceXOverride ?? Constants.GameDefaults.PatrolForceMultiplier,
+                        patrolForceYOverride ?? Constants.GameDefaults.PatrolForceMultiplier,
                         patrolInitialDirectionRight,
-                        patrolInitialDirectionDownHazard);
+                        patrolInitialDirectionDownHazard,
+                        patrolMaxForceXOverride ?? Constants.GameDefaults.DefaultPatrolMaxForceX,
+                        patrolMaxForceYOverride ?? Constants.GameDefaults.DefaultPatrolMaxForceY);
                 }
 
                 IPhysicsBody? movingBody = null;

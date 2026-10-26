@@ -719,14 +719,11 @@ public class PhysicsSystem
         // unaffected body's CurrentMedium is still resolved above but never meant to influence it.
         if (body is IPatrolBody patrolBody)
         {
-            patrolBody.UpdatePatrolDirection(world.Gravity);
-            var patrolForce = patrolBody.PatrolForce;
-            if (mediumBody is not null && body is IMediumAffected { MediumAffected: true })
-            {
-                var patrolMediumScale = ResolveMediumForceScale(medium);
-                patrolForce = new Vector2D(patrolForce.X * patrolMediumScale, patrolForce.Y * patrolMediumScale);
-            }
-            netForce += patrolForce;
+            var patrolMediumScale = mediumBody is not null && body is IMediumAffected { MediumAffected: true }
+                ? ResolveMediumForceScale(medium)
+                : 1.0;
+            patrolBody.UpdatePatrolDirection(world.Gravity, patrolMediumScale);
+            netForce += patrolBody.PatrolForce;
         }
 
         // The player's ground-level walk/crawl (and climb/hang side-step) locomotion contributes

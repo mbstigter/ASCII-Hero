@@ -79,8 +79,9 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
 - **Bounded patrol ranges** with `PatrolMinX`/`PatrolMaxX` and `PatrolMinY`/`PatrolMaxY`.
   X and Y can be combined for diagonal patrols. If you set no range, the hazard patrols the
   full world width.
-- **Tunable feel** with `PatrolForceMultiplier` and cruise speed keys.
-- **Flying enemies** by setting `GravityAffected = false`.
+- **Tunable feel** with `PatrolForceMultiplierX`/`Y`, cruise speed keys and
+  `PatrolMaxForceX`/`Y` force caps.
+- **Flying enemies** by giving a hazard vertical force with `PatrolMaxForceY`; gravity stays on.
 - **Automatic facing.** Hazards turn to face their direction of travel and play their
   `move_left`/`move_right` clips.
 - **Stompable enemies.** A killable hazard can play a `KillSound` when the player squashes it by

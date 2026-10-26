@@ -233,12 +233,15 @@ The live game state and the entity types that make it up.
 	accumulator alongside gravity (see `DynamicHazard2D`'s `Patrol` placement key,
 	docs/AssetFormat.md §3.4). A body configured with both axes patrols
 	diagonally - each axis bounces between its own bounds on its own schedule.
-	Vertical patrol applies one further rule when `IGravityAffected` is true:
-	gravity is cancelled while heading up (so the same proportional force that
-	already works horizontally can actually reach its climb target instead of
-	asymptoting below it), but left alone while heading down (so gravity's own
-	pull carries most of the descent, i.e. a controlled glide rather than a
-	symmetric climb/descend force).
+	Patrol turns around once a bound is reached or passed, so a bumped body
+	heads back. Vertical patrol has no gravity special case: gravity is an
+	ordinary force in the net sum, and `PatrolMaxForceX` (default unlimited) /
+	`PatrolMaxForceY` (default 0; the "wing power")
+	(in multiples of g) cap the patrol force per axis -
+	climbing saturates the Y cap, descending needs little. Gains are per axis
+	(`PatrolForceMultiplierX`/`Y`). An axis with no range holds its spawn
+	position (column for X, height for Y) via a clamped spring target speed;
+	caps only limit force and never toggle an axis.
   - `IPosedBody` - resolves and applies its own sprite pose (stance +
 	facing) once per frame via `UpdatePose()`, called by `PhysicsSystem` after
 	velocity/position are integrated for the frame (mirroring how a body owns

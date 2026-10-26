@@ -71,9 +71,9 @@ not like a pixel-art game with ASCII characters placed on top.
   `DynamicHazard2D.UpdatePatrolDirection()` calls `SetPose` each frame so a
   `Snake` visually turns to face (and animate through) its `move_left`/
   `move_right` clips as it changes direction. Grounded and flying varieties
-  both already exist (a flying hazard simply opts out of gravity via the
-  existing `GravityAffected = false` placement key, used together with
-  `Patrol` - e.g. `Butterfly`). Chase behavior is not implemented - still to
+  both already exist (a flying hazard gets vertical wing power from the
+  `PatrolMaxForceY` placement key, used together with `Patrol` and with gravity
+  still on - e.g. `Butterfly`). Chase behavior is not implemented - still to
   design/implement:
   - Chase-the-player movement.
 - **`KinematicObject` behavior.** Beyond constant-velocity motion, still to

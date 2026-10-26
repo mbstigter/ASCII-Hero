@@ -733,7 +733,7 @@ their own dedicated code mapped to its own section (e.g. `2 = SnakeTwo` alongsid
 Throughout the rest of this section, "an object type" (or "a section") means
 one `[SectionName]` block in a world's `{WorldName}_objects.ini` (e.g.
 Every key
-described below (`Material`, `Friction`, `Density`, `Restitution`, `PatrolForceMultiplier`,
+`Restitution`, `PatrolForceMultiplierX`,
 `WalkSpeed`, etc.) is set once per section and therefore applies to every
 cell in `{WorldName}_objects.txt` that uses that section's code - placing the
 same code at five different spots spawns five bodies that all share that one
@@ -859,13 +859,14 @@ PatrolMaxX = 35
 ```
 
 Further optional keys tune the patrol force itself rather than its range:
-`PatrolForceMultiplier` (a number, default `60`) scales how strongly - i.e. how
-"strong" this hazard is, its "muscle power" - it accelerates toward its
-cruising speed on either axis (mass-scaled like gravity, converging on that
-target speed rather than accelerating forever - see docs/Decisions.md);
+`PatrolForceMultiplierX` and `PatrolForceMultiplierY` (numbers, default `60`)
+scale how strongly - i.e. how "strong" this hazard is, its "muscle power" - it
+accelerates toward its cruising speed on each axis (mass-scaled like gravity,
+converging on that target speed rather than accelerating forever - see
+docs/Decisions.md);
 `PatrolCruiseSpeedX` (cells/second, default `6`) is the target horizontal
 speed, i.e. how fast this hazard patrols along X once it gets there;
-`PatrolCruiseSpeedY` (cells/second, defaults to `PatrolCruiseSpeedX` if unset)
+`PatrolCruiseSpeedY` (cells/second, default `6`, independent of X)
 is the equivalent target speed for vertical patrol, letting a diagonally- or
 vertically-patrolling hazard cruise at a different pace on each axis;
 `PatrolInitialDirectionX` (`Left` or `Right`) overrides which way it starts
@@ -880,7 +881,7 @@ Asset = Goblin
 Clip = idle
 Kind = DynamicHazard
 Patrol = true
-PatrolForceMultiplier = 90
+PatrolForceMultiplierX = 90
 PatrolCruiseSpeedX = 10
 PatrolInitialDirectionX = Right
 ```
@@ -898,21 +899,21 @@ PatrolCruiseSpeedY = 5
 PatrolInitialDirectionY = Up
 ```
 
-**Vertical patrol and gravity:** when `GravityAffected = true`, climbing
-(heading toward `PatrolMinY`, i.e. up) and descending (heading toward
-`PatrolMaxY`, i.e. down) are deliberately asymmetric, so a vertically- or
-diagonally-patrolling hazard reads as genuinely fighting gravity to climb
-rather than just being another platform-style mover rotated 90 degrees:
-while heading up, this hazard's own patrol force additionally cancels out
-gravity's pull so it can actually reach its target climb speed instead of
-asymptoting below it; while heading down, no such adjustment is made, so
-gravity's own pull carries most of the descent and the patrol force merely
-corrects once actual velocity overshoots the target speed (a controlled
-glide rather than the hazard fighting its own fall). Set
-`GravityAffected = false` instead for a hovering-insect-style hazard that
-patrols vertically with a fully symmetric climb/descend force and is never
-affected by gravity at all - the same choice already offered for horizontal-
-only patrol.
+**Vertical patrol, gravity and wings:** gravity is an ordinary force; there is
+no special case for climbing or descending. `PatrolMaxForceX` and
+`PatrolMaxForceY` (numbers, in multiples of the body's own weight) cap the
+force the patrol can apply on each axis - unlike the gain keys above (how
+responsive), these say how strong. `PatrolMaxForceY` is the vertical "wing
+power": a value of `1` can just hover; above `1` it can also climb. Climbing
+saturates the wings to beat gravity, while descending needs little force since
+gravity helps. A weak `PatrolMaxForceX` lets flow or drag push the body around.
+Patrol turns around once a bound is reached or passed, so a body that gets
+bumped heads back. `PatrolMaxForceX` defaults to unlimited and `PatrolMaxForceY`
+defaults to `0` (no vertical thrust, so a walker just falls); caps only limit
+force and never enable or disable an axis. An axis with no range holds the
+column (respectively height) the hazard was placed at, returning to it after a
+bump - which only works if the cap allows force there, so a flier sets
+`PatrolMaxForceY` rather than `GravityAffected = false`.
 
 A `Kind = KinematicObject` or `Kind = KinematicHazard` placement (e.g. a moving
 platform or saw blade) may likewise set
@@ -1136,7 +1137,7 @@ full health bar one hit removes (default 1, a whole bar, so the player loses a
 life at once). For example `Damage = 0.2` takes a fifth of the bar and
 `Damage = 0.5` half of it. A hit costing the last of the bar costs one life.
 The `Player` section may additionally override its own "muscle power" and
-target ground speeds, the same concepts `DynamicHazard`'s `PatrolForceMultiplier`/
+`DynamicHazard`'s `PatrolForceMultiplierX`/
 `PatrolCruiseSpeedX` expose for a patrolling hazard - deliberately the same
 key/property name (`ForceMultiplier`) for both, since they are the exact same
 "force gain converging toward a target speed" concept either way:

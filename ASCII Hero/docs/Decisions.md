@@ -306,9 +306,14 @@ capture the "why" behind a decision without needing a lengthy narrative.
   KinematicObject2D`, `DynamicHazard2D : DynamicObject2D`). Patrol and pose
   behavior live on the object, so a harmless body can patrol too.
 - **`DynamicObject2D` (and so `DynamicHazard2D`) patrols via its own mass-scaled force** (`IPatrolBody`),
-  independently on the X and/or Y axis, with vertical patrol
-  gravity-asymmetric (cancelled while climbing so the proportional force can
-  reach its target, left alone while descending for a controlled glide).
+  independently on the X and/or Y axis. Gravity is an ordinary force with no
+  patrol special case; each axis has its own gain (`PatrolForceMultiplierX`/`Y`),
+  cruise speed and force cap (`PatrolMaxForceX`, default unlimited, and
+  `PatrolMaxForceY`, default 0 = no vertical thrust). Caps only limit force,
+  never switch an axis on or off. An axis with no range holds its spawn
+  position via a spring target speed, so fliers use `PatrolMaxForceY` instead of
+  `GravityAffected = false`. Facing intent is the sign of the X target velocity
+  (dead-zoned), so a body settled on its hold position shows its idle pose.
   This is a distinct scheme from `KinematicObject2D`'s own constant-velocity,
   non-force patrol (chosen to leave room for non-linear future paths without
   redesigning the body).
