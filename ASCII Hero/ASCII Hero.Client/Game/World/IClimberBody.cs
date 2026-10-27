@@ -17,9 +17,9 @@ public interface IClimberBody : IPhysicsBody
     /// regardless of whether it is actually climbing right now. Set each frame by
     /// <see cref="Physics.CollisionSystem"/> from the body's current overlap (the same
     /// "recomputed fresh every frame, never persisted" pattern used for
-    /// <see cref="IPhysicsBody.IsGrounded"/>), consumed the same frame by
-    /// <see cref="Physics.PhysicsSystem"/> - actually, consumed the *following* frame, since
-    /// physics runs before collision each tick - to decide whether an up/down press should
+    /// <see cref="IPhysicsBody.IsGrounded"/>), and consumed by <see cref="Physics.PhysicsSystem"/>
+    /// on the following frame (physics runs before collision each tick) to decide whether an
+    /// up/down press should
     /// engage <see cref="IsClimbing"/>. Kept separate from <see cref="IsClimbing"/> so merely
     /// walking past/through a passable ladder (no climb key held) never locks movement.
     /// </summary>

@@ -87,13 +87,16 @@ core's own force/collision/medium math.
   `World2D.Materials` (a `MaterialLibrary` that merges
   `Global/MaterialLibrary.ini` with an optional level-local override,
   mirroring `ColorPalette`'s Global+Level pattern); `Mass` is always
-  computed from the resolved `Density` and the body's current footprint
-  (`Density * Size.X * Size.Y`) rather than being independently overridable.
+  computed once at spawn from the resolved `Density` and the body's spawn
+  footprint (`Density * Size.X * Size.Y`) and stays fixed when the pose
+  changes, rather than being independently overridable.
   A level placement's ini section can override the resolved material name via
   `Material`, or just the resulting `Restitution` via `Restitution`, without
   needing a distinct sprite asset. `CollisionSystem` combines two contacting
-  bodies' `Restitution`/`Friction` via a simple average (`Combine`, see
-  docs/Decisions.md) rather than one side dominating outright.
+  bodies' `Friction` as the geometric mean and `Restitution` as a
+  `Hardness`-weighted average favoring the softer body
+  (`CombineFriction`/`CombineRestitution`, see docs/Decisions.md), with no
+  bounce below a small resting impact speed.
 - Every moving body — the player included — integrates via a per-frame,
   mass-scaled force accumulator (`PhysicsSystem.StepMovingBodyWithForces`):
   forces (gravity as `mass * world.Gravity`, plus a body's own
@@ -129,10 +132,8 @@ core's own force/collision/medium math.
   solid-contact time — buoyancy/drag act continuously while immersed,
   independent of any contact.
 - A body's own actively-generated force/impulse (walk/patrol motor force,
-  jump-off velocity kicks) is separately damped by the current medium's raw
-  `Viscosity` (`PhysicsSystem.ResolveMediumForceScale`), distinct from the
-  passive buoyancy/drag above — a stride or push-off through a viscous
-  medium is inherently less effective than the same effort on land.
+  jump-off velocity kicks) is never scaled by the medium; a medium resists
+  it only through the passive buoyancy/drag above.
 - Collision resolution between two finite-mass moving bodies
   (`CollisionSystem.ResolveAgainstMover`, sharing its math with solid-vs-mover
   resolution via `ResolveAgainstOtherBody`/`ResolveContact`) splits position

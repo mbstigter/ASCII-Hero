@@ -40,11 +40,17 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **A body's `Density`/`Friction`/`Restitution` are resolved from a
   named material** (`MaterialLibrary`, merging Global+World-local ini,
   mirroring `ColorPalette`), with per-placement overrides; `Mass` is always
-  computed as `Density * width * height` and has no separate override - a
+  computed as `Density * width * height` of the spawn footprint, fixed for the
+  body's lifetime (a pose change alters collision shape, never mass), and has
+  no separate override - a
   creature needing a distinct mass should get its own dedicated material
   instead. Two contacting
-  bodies' restitution/friction combine via a simple average
-  (`CollisionSystem.Combine`), not one side dominating.
+  bodies' friction combines as the geometric mean `sqrt(a*b)` (not capped at
+  1) and restitution as a softness-weighted average (each side weighted by
+  `1 / Hardness`, so the softer, more-deforming body dominates the bounce;
+  `CollisionSystem.CombineFriction`/`CombineRestitution`). Impacts slower
+  than `PhysicsConstants.RestingBounceSpeedThreshold` never bounce, so
+  resting bodies settle instead of micro-bouncing.
 - **The solids/movers narrow phase re-runs several times per frame**
   (`SolverIterations = 4`) so simultaneous contacts (a corner, a body
   sandwiched between two others) reconcile instead of fighting each other
@@ -119,9 +125,6 @@ capture the "why" behind a decision without needing a lengthy narrative.
   (`Body2D.AddContact`/`HasContact`), snapshotted-and-cleared once per frame;
   `IPhysicsBody.IsGrounded` is derived from this (`HasContact(SurfaceBottom)`),
   not a separately stored, ordering-bug-prone flag.
-- **A one-way platform** (`Body2D.IsOneWayPlatform`) only blocks a genuine
-  downward-moving top-landing; any other approach angle passes through
-  untouched.
 - **Facing/patrol targets are resolved relative to the surface the body
   rests on** (`Body2D.GetSurfaceVelocityX`), not raw absolute velocity - this
   prevents a platform's own speed from visually flipping a rider's facing,
@@ -133,7 +136,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **Medium drag/buoyancy is a distinct concept from surface friction, implemented as
   continuous force-accumulator terms** (`PhysicsSystem.StepMovingBodyWithForces`/
   `ResolveCurrentMedium`): a body's ambient medium (`Body2D.CurrentMedium`, defaulting
-  to `Air`) is resolved fresh every frame from whichever static, passable `Body2D`
+  to `Air`) is resolved once per physics step from whichever static, passable `Body2D`
   overlaps it - the highest-`Density` overlapping volume wins on a tie, deterministic
   regardless of placement order. Buoyancy is Archimedes' principle (medium density
   times the body's own volume, opposing gravity); drag is a quadratic
@@ -190,30 +193,23 @@ capture the "why" behind a decision without needing a lengthy narrative.
   decides whether it toggles or only turns on. A gate is key-operated (`Lock`, stays
   open) or switch-operated (`Link`), never both. Enemies operating switches are not
   implemented.
-- **A body's own actively-generated force/impulse (motor force, jump-off) is separately
-  dampened by ambient medium viscosity, distinct from the passive buoyancy/drag above**
-  (`PhysicsSystem.ResolveMediumForceScale`): maps `Material.Viscosity` alone (never
-  `Density`, which already fully does its own job via buoyancy - reusing it here too
-  would double-count the same property for two unrelated effects) to a multiplier in
-  `[MinMediumForceScale, 1.0]`, applied to `Player2D`'s `UpdateWalkForce` motor force and
-  all three jump-off impulses (`WalkJumpSpeed`/`ClimbJumpSpeed`/`HangJumpSpeed`), and to
-  `DynamicHazard2D`'s `PatrolForce` (any `IMediumAffected` body that is also
-  `IWalkForceBody`/`IPatrolBody`). Uses each medium's raw `Viscosity` directly (not
-  relative to any other medium's value) for pure, literal physical accuracy - even
-  `Air`'s own small authored baseline (0.02, `Global/MaterialLibrary.ini`) applies a
-  slight, deliberate penalty on land, same as it already does for the existing passive
-  drag term, rather than treating whichever medium happens to be ambient as an
-  artificial zero-point. A denser fluid's higher `Viscosity` (e.g. `Water`'s 0.15 vs.
-  `Air`'s 0.02) falls off reciprocally toward the floor, so a
-  push-off/stride genuinely struggles more the more viscous the medium - fixing an
-  issue where a water jump, once buoyancy had already cancelled most of gravity, still
-  launched off a fixed ground-level impulse and so leapt unrealistically high. The floor
-  keeps a body from ever being fully unable to move under its own power, however viscous
-  the medium. `StepMovingBodyWithForces` resolves `CurrentMedium` up front (before
-  patrol/walk force summation) so `PatrolForce` scaling uses the current frame's medium;
-  `UpdateWalkForce`/the jump-off sites read `Player2D.CurrentMedium` as of the *previous*
-  frame's resolution (the only value available at that point in `Step`) - an accepted
-  one-frame lag, inconsequential since medium rarely changes frame-to-frame.
+- **A body's own force/impulse (motor force, jump-off) is never scaled by the ambient
+  medium.** A medium resists self-propelled motion only through its passive buoyancy and
+  quadratic drag above, which already grow with speed and frontal area. Force gains
+  (`WalkForceMultiplier`, `PatrolForceMultiplier`) and jump-off speeds are calibrated
+  for that model directly; there is no separate viscosity-based multiplier.
+- **World edges are a symmetric, contact-free safety net, not level geometry.** All four
+  edges clamp a body back inside and reflect only the velocity heading into the edge, using
+  the body's own restitution (with the resting-bounce threshold). They have no material,
+  apply no friction and record no contacts, so a body touching only an edge is not grounded.
+  Levels must provide their own floors, walls and ceilings.
+- **Added mass is not modelled (possible later improvement).**
+  through a fluid must also accelerate some of the surrounding fluid, so it behaves as
+  if heavier while submerged (roughly half the displaced fluid mass for a round body).
+  Without it, bouncy bodies keep bouncing longer underwater than they would in reality.
+  If added, it belongs in `StepMovingBodyWithForces` as
+  `effectiveMass = mass + submergedFraction * coefficient * medium.Density * volume`,
+  used only to convert net force to acceleration (gravity and buoyancy still use the real mass).
 - **Physics/Collision run on a fixed timestep accumulator, not a variable/capped
   per-frame step** (`GameLoop.OnPlayingFrameAsync`'s `_physicsAccumulatorSeconds`,
   a "cap the step size and
@@ -405,9 +401,9 @@ capture the "why" behind a decision without needing a lengthy narrative.
   (Crawl<->Walk on the ground; Clamber<->Hang while hanging, inverted to
   match arm position rather than screen direction), and each locomotion mode
   has its own jump-off speed (`WalkJumpSpeed`/`ClimbJumpSpeed`/`HangJumpSpeed`),
-  graded by how much of the body's own leverage/grip backs the push-off -
-  currently `WalkJumpSpeed` highest, with `ClimbJumpSpeed`/`HangJumpSpeed` tuned
-  independently and not required to stay in strict order relative to each other.
+  graded by how much of the body's own leverage backs the push-off:
+  `WalkJumpSpeed` (both feet on solid ground) > `ClimbJumpSpeed` (legs pushing off
+  a rung) > `HangJumpSpeed` (arms only).
 - **A short debounce** (`IHangerBody.SuppressHangUntilClear`, and the
   climbing equivalent) prevents an immediate re-grab of the same
   ladder/pipe the same frame a jump/swing-off begins.

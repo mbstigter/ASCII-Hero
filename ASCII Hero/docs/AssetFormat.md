@@ -859,7 +859,7 @@ PatrolMaxX = 35
 ```
 
 Further optional keys tune the patrol force itself rather than its range:
-`PatrolForceMultiplierX` and `PatrolForceMultiplierY` (numbers, default `60`)
+`PatrolForceMultiplierX` and `PatrolForceMultiplierY` (numbers, default `33`)
 scale how strongly - i.e. how "strong" this hazard is, its "muscle power" - it
 accelerates toward its cruising speed on each axis (mass-scaled like gravity,
 converging on that target speed rather than accelerating forever - see
@@ -881,7 +881,7 @@ Asset = Goblin
 Clip = idle
 Kind = DynamicHazard
 Patrol = true
-PatrolForceMultiplierX = 90
+PatrolForceMultiplierX = 50
 PatrolCruiseSpeedX = 10
 PatrolInitialDirectionX = Right
 ```
@@ -1166,7 +1166,7 @@ and independent of one another:
 Asset = Hero
 Clip = idle
 Kind = Player
-WalkForceMultiplier = 55 ; Default = GameDefaults.WalkForceMultiplier (40)
+WalkForceMultiplier = 30 ; Default = GameDefaults.WalkForceMultiplier (22)
 WalkSpeed = 16 ; Default = GameDefaults.WalkSpeed (12)
 CrawlSpeed = 8 ; Default = GameDefaults.CrawlSpeed (6)
 ```
@@ -1218,8 +1218,9 @@ ForegroundColor = Y
   outright, independent of `Material`/`Friction`/`Restitution` (e.g. a body
   whose effective density differs from its shared material's for just this
   one type, or changes per-instance/at runtime — think water that's been
-  heated). Feeds into this body's mass (`Density * width * height`, a simple
-  2D-volume proxy — see docs/Decisions.md) the same way the material's own
+  heated). Feeds into this body's mass (`Density * width * height` of its
+  starting shape, a simple 2D-volume proxy that stays the same when the
+  body changes pose — see docs/Decisions.md) the same way the material's own
   density normally would. There is no separate `Mass` override key — a
   creature whose real-world mass shouldn't just fall out of its footprint
   size (e.g. a snake much lighter than a human despite a similar bounding
@@ -1348,8 +1349,18 @@ Character = ~
 
 Fields:
 - **Density** — relative mass per world-cell "volume"; drives mass and buoyancy.
-- **Friction** — `0` = frictionless, `1` = very grippy.
+- **Friction** — grip coefficient; `0` = frictionless, `1` = very grippy
+  (values above `1` are allowed for extra-grippy surfaces). Two touching
+  materials use the square root of their two values multiplied together.
 - **Restitution** — bounciness; `0` = no bounce, `1` = perfectly elastic.
+  Describes how much energy this material gives back when it is the one
+  squashed on impact; very gentle impacts never bounce.
+- **Hardness** (optional, defaults to `1`) — impact stiffness on a smooth
+  scale: about `0.1` = very soft (foam, mud), `1` = medium (rubber, flesh),
+  `10` = very hard (stone, steel). When two materials collide, the softer
+  one's Restitution counts more (each side weighted by `1 / Hardness`), so a
+  rubber ball bounces well on concrete and a little less on wood. A placement
+  may override it with its own `Hardness` key.
 - **Viscosity** (optional, defaults to `0`) — quadratic-drag coefficient applied
   continuously to any body immersed in this material as its ambient medium (see
   §3's `IMediumAffected` discussion in docs/Structure.md and docs/Decisions.md);

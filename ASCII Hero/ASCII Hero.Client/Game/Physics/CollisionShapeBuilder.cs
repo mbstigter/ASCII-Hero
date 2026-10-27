@@ -51,7 +51,7 @@ public static class CollisionShapeBuilder
     /// would silently double that contact's position correction and velocity impulse every
     /// iteration - invisible for a resting body, but capable of adding real extra velocity (e.g.
     /// an unwanted jump-height boost) to a fast-moving contact. After deduplication, a
-    /// non-curved sprite pays no meaningful extra cost over the original single-pass algorithm.
+    /// non-curved sprite yields the same rectangles as the row-run pass alone.
     /// </para>
     /// </remarks>
     public static IReadOnlyList<Rect> DeriveRectangles(char[,] grid, char emptyChar)
@@ -60,13 +60,8 @@ public static class CollisionShapeBuilder
         var columnRunRectangles = DeriveRunRectangles(grid, emptyChar, transposed: true);
 
         // For a blocky rectangular sprite the two passes produce byte-identical rectangles, which
-        // must be deduplicated here rather than left for callers to discover on their own:
-        // CollisionSystem.ResolveAgainstOtherBody resolves each of a body's own rectangles
-        // independently, one at a time, per solver iteration - an undetected duplicate rectangle
-        // would silently get detected and resolved twice per iteration, doubling that contact's
-        // position correction and velocity impulse. This is invisible for a body at rest (there is
-        // nothing left to double once velocity is already zero), which is why it only surfaced as
-        // an extra jump-height boost on a fast-moving contact.
+        // must be deduplicated here - see this method's remarks for why a duplicate would double
+        // a contact's correction and impulse.
         var rectangles = new List<Rect>(rowRunRectangles.Count + columnRunRectangles.Count);
         rectangles.AddRange(rowRunRectangles);
         foreach (var candidate in columnRunRectangles)
@@ -91,7 +86,7 @@ public static class CollisionShapeBuilder
     /// </summary>
     /// <param name="transposed">
     /// <see langword="false"/> for the row-run pass (primary axis = rows, runs are horizontal,
-    /// merged vertically across rows - i.e. the original, row-only algorithm). <see
+    /// merged vertically across rows). <see
     /// langword="true"/> for the column-run pass (primary axis = columns, runs are vertical,
     /// merged horizontally across columns) - exactly the transpose of the row-run pass, reusing
     /// the same logic by swapping which grid axis is walked first and how the final <see

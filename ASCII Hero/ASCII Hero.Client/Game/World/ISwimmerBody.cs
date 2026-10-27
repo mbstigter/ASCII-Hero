@@ -11,8 +11,8 @@ namespace ASCII_Hero.Client.Game.World;
 /// Unlike <see cref="IClimberBody"/>/<see cref="IHangerBody"/>, this has no separate
 /// "IsTouching*" flag set by <see cref="Physics.CollisionSystem"/> from proximity to a specific
 /// climbable/hangable surface: detection here is medium-based, not reach-based, and
-/// <see cref="Body2D.CurrentMedium"/> is already resolved fresh every frame for every body by
-/// <see cref="Physics.PhysicsSystem"/> regardless, so it alone is the "touching" signal swim
+/// <see cref="Body2D.CurrentMedium"/> is already resolved once per physics step for every moving
+/// body by <see cref="Physics.PhysicsSystem"/> regardless, so it alone is the "touching" signal swim
 /// needs. Engaging still requires a deliberate directional key press (mirroring how climbing
 /// requires a deliberate Up/Down press, unlike hanging's automatic grab) - see
 /// <see cref="Physics.PhysicsSystem.Step"/>. Grounded/climbing/hanging all take priority over

@@ -4,7 +4,7 @@ namespace ASCII_Hero.Client.Game.Assets;
 /// One material's physical properties, as read from a <c>MaterialLibrary.ini</c> section.
 /// </summary>
 /// <param name="Density">Relative mass per world-cell "volume"; drives <see cref="World.Body2D.Mass"/>.</param>
-/// <param name="Friction">0 = frictionless, 1 = very grippy.</param>
+/// <param name="Friction">Coulomb grip coefficient: 0 = frictionless, 1 = very grippy; values above 1 are allowed.</param>
 /// <param name="Restitution">Bounciness; 0 = no bounce, 1 = perfectly elastic.</param>
 /// <param name="ForegroundColor">
 /// Optional single-character color code (see <c>Global/ColorPalette.ini</c>) used as this material's
@@ -28,6 +28,12 @@ namespace ASCII_Hero.Client.Game.Assets;
 /// <see cref="Friction"/>, which only acts at solid-contact time; this acts continuously while
 /// immersed, independent of any contact.
 /// </param>
+/// <param name="Hardness">
+/// Relative impact stiffness (smooth scale, roughly 0.1 = very soft like foam/mud, 1 = medium like
+/// rubber/wood/flesh, 10 = very hard like stone/steel). When two materials collide, the softer one
+/// deforms more and so its <see cref="Restitution"/> dominates the combined bounce - see
+/// <see cref="Physics.CollisionSystem"/>'s <c>CombineRestitution</c>. Defaults to 1.
+/// </param>
 public readonly record struct Material(
     double Density,
     double Friction,
@@ -35,7 +41,8 @@ public readonly record struct Material(
     double Viscosity = 0.0,
     char? ForegroundColor = null,
     char? BackgroundColor = null,
-    char? Character = null);
+    char? Character = null,
+    double Hardness = 1.0);
 
 /// <summary>
 /// The shared material library (Global/MaterialLibrary.ini merged with an optional world-local
@@ -83,12 +90,15 @@ public class MaterialLibrary
             var friction = IniValueParser.ParseDouble(section.GetValueOrDefault("Friction"));
             var restitution = IniValueParser.ParseDouble(section.GetValueOrDefault("Restitution"));
             var viscosity = IniValueParser.ParseDouble(section.GetValueOrDefault("Viscosity"));
+            var hardness = section.TryGetValue("Hardness", out var hardnessText) && IniValueParser.TryParseDouble(hardnessText, out var parsedHardness) && parsedHardness > 0
+                ? parsedHardness
+                : 1.0;
             var foregroundColor = IniValueParser.ParseColorCode(section.GetValueOrDefault("ForegroundColor"));
             var backgroundColor = IniValueParser.ParseColorCode(section.GetValueOrDefault("BackgroundColor"));
             var character = section.TryGetValue("Character", out var characterText) && !string.IsNullOrEmpty(characterText)
                 ? characterText[0]
                 : (char?)null;
-            materials[sectionName] = new Material(density, friction, restitution, viscosity, foregroundColor, backgroundColor, character);
+            materials[sectionName] = new Material(density, friction, restitution, viscosity, foregroundColor, backgroundColor, character, hardness);
         }
     }
 }

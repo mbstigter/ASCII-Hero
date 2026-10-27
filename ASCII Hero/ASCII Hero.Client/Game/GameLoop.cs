@@ -265,6 +265,13 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             return;
         }
 
+        // The JS frame loop starts inside canvasBridge.InitializeAsync, before StartAsync has
+        // finished (sound setup, world-select screen); skip frames until startup completes.
+        if (_worldSelect is null)
+        {
+            return;
+        }
+
         _isProcessingFrame = true;
         try
         {
@@ -655,7 +662,8 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// <summary>
     /// Draws the end screen message in a centered box: a short trail
     /// onto the final box (just big enough for the message), then the message appears inside it.
-    /// Green for level complete, red for game over. Only adds glyphs on top of the world.
+    /// Colored per screen (see <see cref="LevelCompleteColor"/>, <see cref="GameOverColor"/> and
+    /// <see cref="ConfirmExitColor"/>). Only adds glyphs on top of the world.
     /// </summary>
     private void AddEndScreenMessage(List<Glyph> glyphs)
     {

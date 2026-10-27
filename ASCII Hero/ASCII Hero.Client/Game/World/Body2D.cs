@@ -27,8 +27,8 @@ public abstract class Body2D
     /// frame by <see cref="Physics.CollisionSystem"/> as contacts are resolved - never mutated by
     /// any other system, and never carried forward as "still true until told otherwise": a stale
     /// entry from a contact that stopped applying is removed the same frame, not left to linger.
-    /// See docs/Decisions.md for why this replaces the old ambiguous overlap-depth-only axis
-    /// inference and the mutable <see cref="IPhysicsBody.IsGrounded"/> field it used to feed.
+    /// See docs/Decisions.md for why contacts are recorded per side rather than inferred from
+    /// overlap depth alone, and why <see cref="IPhysicsBody.IsGrounded"/> is derived from them.
     /// </summary>
     private readonly Dictionary<Physics.ContactType, List<Body2D>> _contacts = [];
 
@@ -36,9 +36,8 @@ public abstract class Body2D
     /// A read-only snapshot of <see cref="_contacts"/> as it stood at the end of the *previous*
     /// frame, taken by <see cref="SnapshotContactsForNextFrame"/> right before this frame's
     /// contacts are cleared and rebuilt. Used purely to disambiguate direction/approach (e.g. "was
-    /// this body already resting on top of that solid last frame" for one-way platforms, or "was a
-    /// moving platform already remembered as what this body rests on" for vertical/horizontal
-    /// carry) - never consulted to decide *this* frame's own contact state, which is always
+    /// a moving platform already remembered as what this body rests on" for vertical/horizontal
+    /// carry)
     /// resolved fresh.
     /// </summary>
     private IReadOnlyDictionary<Physics.ContactType, List<Body2D>> _previousContacts =
@@ -182,8 +181,7 @@ public abstract class Body2D
     /// world's own floor, or the top of another moving body. Derived fresh from this frame's
     /// resolved contacts (<c>HasContact(ContactType.SurfaceBottom)</c>) rather than a stored,
     /// mutable flag - there is nothing to reset each frame and no risk of stale state from a
-    /// missed reset/set ordering, which is exactly the class of bug the old stored flag caused
-    /// (see docs/Decisions.md). Any future hysteresis/game-feel exception (e.g. coyote-time jump
+    /// missed reset/set ordering (see docs/Decisions.md). Any future hysteresis/game-feel exception (e.g. coyote-time jump
     /// forgiveness) must be its own separately named field - never reusing this property's name
     /// or storage.
     /// </summary>
@@ -239,8 +237,8 @@ public abstract class Body2D
     /// vertical <see cref="IPhysicsBody.Velocity"/>.Y is downstream of the same mass-scaled
     /// motor force convergence as horizontal movement, so it asymptotically approaches (but
     /// essentially never exactly reaches) its zero target while idle on a ladder - reading it
-    /// directly for facing (see <see cref="ResolveVerticalFacing(double)"/>) left the climb pose
-    /// stuck on Up/Down and never resolving to Idle. Set directly from up/down key state by
+    /// directly for facing (see <see cref="ResolveVerticalFacing(double)"/>) would leave the climb
+    /// pose stuck on Up/Down and never resolve to Idle.
     /// <see cref="Physics.PhysicsSystem.Step"/>, exactly like <see cref="MoveIntentX"/>.
     /// </summary>
     public double MoveIntentY { get; set; }
@@ -291,18 +289,6 @@ public abstract class Body2D
     /// </summary>
     public bool IsHangable { get; set; }
 
-    /// <summary>
-    /// Whether this body only blocks approach from above - a body resting on top of it lands and
-    /// stays grounded normally, but a body approaching from below (jumping up through it, or
-    /// already underneath) passes straight through instead of colliding. Disambiguated using last
-    /// frame's contacts (see <see cref="HadContactLastFrame"/>): a <see cref="Physics.ContactType.SurfaceBottom"/>
-    /// contact against this body is only created/kept if the other body was already resting on
-    /// top of it as of last frame, never freshly created for a body newly arriving from below.
-    /// Has no effect unless <see cref="IsStatic"/> is also true (moving one-way platforms are not
-    /// currently supported).
-    /// </summary>
-    public bool IsOneWayPlatform { get; set; }
-
     /// <summary>The sprite asset this object was spawned from.</summary>
     public SpriteAsset Sprite { get; private set; } = null!;
 
@@ -341,11 +327,23 @@ public abstract class Body2D
     /// ini section may instead set an explicit <c>Density</c> override to depart from its resolved
     /// material's density outright (e.g. a body whose effective density changes per-instance or at
     /// runtime, like water that's been heated) while still inheriting that material's other
-    /// properties.
+    /// properties. Assigning it also fixes <see cref="Mass"/> from the body's footprint at that
+    /// moment (normally its spawn pose), so later pose/frame changes never change its mass.
     /// </summary>
-    public double Density { get; set; }
+    public double Density
+    {
+        get => _density;
+        set
+        {
+            _density = value;
+            _mass = value * Size.X * Size.Y;
+        }
+    }
 
-    /// <summary>Sliding resistance (0 = frictionless, 1 = very grippy), resolved the same way as <see cref="Density"/>.</summary>
+    private double _density;
+    private double _mass;
+
+    /// <summary>Coulomb grip coefficient (0 = frictionless, 1 = very grippy, above 1 allowed), resolved the same way as <see cref="Density"/>.</summary>
     public double Friction { get; set; }
 
     /// <summary>
@@ -363,9 +361,11 @@ public abstract class Body2D
     /// one (see <see cref="Physics.PhysicsSystem"/>'s per-frame resolution). Unlike
     /// <see cref="IsGrounded"/>, this cannot be derived purely from already-stored contact state -
     /// resolving it requires scanning the world's passable volumes - so <see cref="Physics.PhysicsSystem"/>
-    /// recomputes and assigns it fresh once per frame for every <see cref="IMediumAffected"/> body,
+    /// recomputes and assigns it once per physics step for every non-kinematic moving body,
     /// immediately before integrating that body's forces, rather than it being a stored flag
-    /// mutated ad hoc over time.
+    /// mutated ad hoc over time. Code that reads it earlier in the same step (e.g. the player
+    /// movement logic at the start of <see cref="Physics.PhysicsSystem.Step"/>) sees the value
+    /// from the previous step.
     /// </summary>
     public Assets.Material CurrentMedium { get; set; } = Assets.MaterialLibrary.Undefined;
 
@@ -377,10 +377,20 @@ public abstract class Body2D
     public double Restitution { get; set; }
 
     /// <summary>
+    /// Relative impact stiffness (see <see cref="Assets.Material.Hardness"/>), resolved the same
+    /// way as <see cref="Restitution"/> unless a placement overrides it via the <c>Hardness</c>
+    /// ini key. Weights how much this body's own <see cref="Restitution"/> counts in a collision.
+    /// </summary>
+    public double Hardness { get; set; } = 1.0;
+
+    /// <summary>
     /// This body's mass, used by <see cref="Physics.CollisionSystem"/>'s impulse resolution and
-    /// (for non-player bodies) <see cref="Physics.PhysicsSystem"/>'s force integration. Computed
-    /// as <see cref="Density"/> times the body's current footprint area (<see cref="Size"/>'s
-    /// width times height) - the simplest reasonable 2D proxy for volume, per docs/Decisions.md.
+    /// <see cref="Physics.PhysicsSystem"/>'s force integration. Computed once, when
+    /// <see cref="Density"/> is assigned at spawn, as density times the footprint area at that
+    /// moment (<see cref="Size"/>'s width times height) - the simplest reasonable 2D proxy for
+    /// volume, per docs/Decisions.md. It is deliberately NOT recomputed when the pose/frame
+    /// changes the footprint afterwards: crouching or curling up doesn't change a body's real mass,
+    /// only its collision shape.
     /// A creature whose real-world mass shouldn't just fall out of its footprint size (e.g. a
     /// snake being much lighter than a human despite a similar bounding box) should instead use a
     /// dedicated, appropriately-calibrated material (see <c>Global/MaterialLibrary.ini</c>)
@@ -388,7 +398,7 @@ public abstract class Body2D
     /// effectively immovable regardless of this value (gated by <see cref="IsStatic"/>, not by
     /// mass), so a static placement's mass is never actually used in collision math.
     /// </summary>
-    public double Mass => Density * Size.X * Size.Y;
+    public double Mass => _mass;
 
     /// <summary>The clip currently being displayed/collided against (e.g. "idle").</summary>
     public SpriteClip Clip { get; private set; } = null!;
@@ -413,7 +423,7 @@ public abstract class Body2D
         }
     }
 
-    /// <summary>Overall bounding box of the body in world space, spanning all collision rectangles.</summary>
+    /// <summary>Edges of the body's <see cref="Position"/>/<see cref="Size"/> box in world space (not derived from the individual collision rectangles).</summary>
     public double Left => Position.X;
     public double Right => Position.X + Size.X;
     public double Top => Position.Y;
@@ -568,7 +578,7 @@ public abstract class Body2D
     /// platform has an absolute <see cref="Velocity"/>.X matching the platform's own speed, which
     /// would otherwise misreport as "walking"/"patrolling" in that direction (see
     /// <see cref="ResolveHorizontalFacing"/>) or fight the platform's carry as if it were an
-    /// unwanted push (see <see cref="DynamicHazard2D.UpdatePatrolDirection"/>). Picks the first
+    /// unwanted push (see <see cref="DynamicObject2D.UpdatePatrolDirection"/>). Picks the first
     /// grounded contact that is itself an <see cref="IPhysicsBody"/> - a static one (e.g.
     /// <see cref="KinematicObject2D"/>) reports its prescribed velocity, a finite-mass one its
     /// actual movement (<see cref="ReferenceVelocityX"/>); ordinary stationary terrain has none, so this falls back

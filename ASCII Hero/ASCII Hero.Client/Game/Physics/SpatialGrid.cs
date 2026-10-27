@@ -8,7 +8,7 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// against every item in the level. This is the broad phase proper - it only ever reasons about
 /// whole bounding boxes and grid buckets, never about a body's actual collision shape/rectangles
 /// or rendered characters (that finer-grained work is the narrow phase, done afterward by
-/// <see cref="CollisionSystem"/>'s Resolve*/TryFindDeepestOverlap/HasCharacterOverlap methods
+/// <see cref="CollisionSystem"/>'s Resolve*/TryFindContact/HasCharacterOverlap methods
 /// against just the small candidate set this grid narrows things down to).
 /// <see cref="CollisionSystem"/> keeps one instance of this per broad-phase category (solids,
 /// moving bodies) rather than duplicating the bucket-and-query logic for each.
@@ -27,9 +27,10 @@ public class SpatialGrid<T>
     }
 
     /// <summary>
-    /// Rebuilds every bucket from scratch for <paramref name="items"/> - cheap enough to just redo
-    /// every frame (rather than incrementally maintained) since the set of items an frame can
-    /// change (spawned/removed/moved) between calls.
+    /// Clears every existing bucket and re-buckets <paramref name="items"/> - cheap enough to just
+    /// redo every frame (rather than incrementally maintained) since the set of items can change
+    /// (spawned/removed/moved) between calls. Bucket entries for cells that were ever occupied are
+    /// kept (emptied, not removed) so their lists can be reused.
     /// </summary>
     public void Rebuild(IReadOnlyList<T> items, Func<T, Vector2D> getPosition, Func<T, Vector2D> getSize)
     {
@@ -57,6 +58,12 @@ public class SpatialGrid<T>
     /// The distinct set of items sharing at least one bucket with an AABB at
     /// <paramref name="position"/>/<paramref name="size"/> - the broad-phase candidate set for the
     /// narrow phase to actually test, instead of every item this grid was built from.
+    /// The returned collection is this grid's shared, reused buffer: it is only valid until the
+    /// next <see cref="GetCandidates"/> or <see cref="Rebuild"/> call on the same grid, so callers
+    /// must finish enumerating it (or copy it) before querying again, and must not query the same
+    /// grid from inside that enumeration. Enumeration order follows bucket visit order and the
+    /// order items were added during <see cref="Rebuild"/>; collision resolution is order-sensitive,
+    /// so changing how candidates are collected or ordered can change gameplay outcomes.
     /// </summary>
     public IEnumerable<T> GetCandidates(Vector2D position, Vector2D size)
     {

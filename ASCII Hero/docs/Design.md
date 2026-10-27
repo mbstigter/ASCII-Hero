@@ -68,7 +68,7 @@ not like a pixel-art game with ASCII characters placed on top.
   `PatrolMinX`/`PatrolMaxX` bounds (e.g. the `Enemies` world's `SnakeTwo`
   confined to the platform it starts on, while `SnakeOne` still sweeps the
   full world). Facing/animation while patrolling is also implemented -
-  `DynamicHazard2D.UpdatePatrolDirection()` calls `SetPose` each frame so a
+  `DynamicObject2D.UpdatePose()` (called each physics step) calls `SetPose` so a
   `Snake` visually turns to face (and animate through) its `move_left`/
   `move_right` clips as it changes direction. Grounded and flying varieties
   both already exist (a flying hazard gets vertical wing power from the

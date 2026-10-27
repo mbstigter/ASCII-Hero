@@ -5,10 +5,9 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// kind of special surface it touched (<see cref="Climbable"/>/<see cref="Hangable"/>). Recorded on both
 /// sides of a resolved contact by <see cref="CollisionSystem"/> - e.g. a body resting on top of a
 /// solid gets <see cref="SurfaceBottom"/> recorded on itself (something is below it) while the
-/// solid gets <see cref="SurfaceTop"/> recorded on itself (something is above it). Ported in spirit
-/// from the older ConsoleGame2D prototype's own <c>ContactType</c>, which tracked contacts the same
-/// way rather than re-deriving "which side" from raw overlap geometry every frame - see
-/// docs/Decisions.md for why this replaces the old ambiguous overlap-depth-only axis inference.
+/// solid gets <see cref="SurfaceTop"/> recorded on itself (something is above it). Contacts are
+/// recorded per side as they are resolved rather than re-derived from raw overlap geometry every
+/// frame - see docs/Decisions.md for why overlap depth alone is ambiguous.
 /// </summary>
 [Flags]
 public enum ContactType

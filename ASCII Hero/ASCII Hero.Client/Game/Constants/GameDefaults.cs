@@ -106,17 +106,17 @@ public static class GameDefaults
     // whatever vertical velocity already exists - see the jump-off sites in
     // Physics.PhysicsSystem.Step) rather than a force integrated over time. Graded by how much of
     // the body's own momentum/leverage backs the push-off: solid ground under both feet gives the
-    // strongest launch, a ladder rung under just hands/feet is weaker, and swinging free from a
-    // single-handed pipe/rope grip is weakest.
+    // strongest launch, a ladder rung pushed off with the legs is weaker, and pulling up from a
+    // pipe/rope with the arms alone is weakest.
 
     /// <summary>Instantaneous vertical velocity kick for jumping off solid ground. Not overridable via any ini file.</summary>
-    public const double WalkJumpSpeed = 40.0;
+    public const double WalkJumpSpeed = 22.0;
 
     /// <summary>Instantaneous vertical velocity kick for jumping off a ladder. Not overridable via any ini file.</summary>
-    public const double ClimbJumpSpeed = 18.0;
+    public const double ClimbJumpSpeed = 14.0;
 
     /// <summary>Instantaneous vertical velocity kick for jumping off while hanging. Not overridable via any ini file.</summary>
-    public const double HangJumpSpeed = 22.0;
+    public const double HangJumpSpeed = 12.0;
 
     // --- Force multipliers ---
 
@@ -130,7 +130,7 @@ public static class GameDefaults
     /// <c>WalkForceMultiplier</c> ini key in a world's <c>objects.ini</c> - see
     /// <see cref="World.Player2D.WalkForceMultiplier"/>.
     /// </summary>
-    public const double WalkForceMultiplier = 40.0;
+    public const double WalkForceMultiplier = 22.0;
 
     /// <summary>
     /// Fraction of the ordinary (grounded) horizontal walk-force strength applied while airborne -
@@ -151,12 +151,13 @@ public static class GameDefaults
     /// <summary>
     /// Default "muscle power" - the mass-scaled force gain applied to converge a patrolling
     /// body's horizontal velocity toward <see cref="PatrolCruiseSpeed"/> (see
-    /// <see cref="World.DynamicHazard2D.UpdatePatrolDirection"/>) - same name/role as
+    /// <see cref="World.DynamicObject2D.UpdatePatrolDirection"/>) - same name/role as
     /// <see cref="WalkForceMultiplier"/> for the player. Overridable per-placement via the
-    /// <c>PatrolForceMultiplier</c> ini key in a world's <c>objects.ini</c> (see
-    /// <see cref="World.DynamicHazard2D.PatrolForceMultiplier"/>).
+    /// <c>PatrolForceMultiplierX</c>/<c>PatrolForceMultiplierY</c> ini keys in a world's
+    /// <c>objects.ini</c> (see <see cref="World.DynamicObject2D.PatrolForceMultiplierX"/> and
+    /// <see cref="World.DynamicObject2D.PatrolForceMultiplierY"/>).
     /// </summary>
-    public const double PatrolForceMultiplier = 60.0;
+    public const double PatrolForceMultiplier = 33.0;
 
     /// <summary>
     /// Default patrol cruising speed (in world cells/second) - chosen to feel comparable to
@@ -233,6 +234,6 @@ public static class GameDefaults
     /// <summary>Score added by picking up a ring.</summary>
     public const int RingScore = 5;
 
-    /// <summary>Default health a hazard hit removes
+    /// <summary>Default health a hazard hit removes.</summary>
     public const double DefaultHazardDamage = 1.0;
 }

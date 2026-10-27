@@ -113,8 +113,8 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     /// this body currently stands on (ini <c>PatrolStayOnPlatform</c> key), so it patrols exactly
     /// that platform - moving with it if it moves - and never walks off. While not standing on
     /// such a solid (spawning, falling) the last known range stays in effect: initially the ini
-    /// range (or the default full world width).
-    /// several pieces is patrolled one piece at a time.
+    /// range (or the default full world width). Only one supporting solid is followed at a time,
+    /// so a platform built from several pieces is patrolled one piece at a time.
     /// </summary>
     public bool PatrolStayOnPlatform { get; set; }
 
@@ -259,7 +259,7 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     /// so climbing saturates the vertical force cap while descending
     /// needs little force. An axis with no range holds its spawn position.
     /// </summary>
-    public void UpdatePatrolDirection(double gravity, double forceScale)
+    public void UpdatePatrolDirection(double gravity)
     {
         if (!IsPatrolling)
         {
@@ -291,7 +291,7 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
             // platform's surface instead of patrolling it at a steady cruise speed.
             var surfaceVelocityX = GetSurfaceVelocityX();
             var targetVelocityX = surfaceVelocityX + axisTargetX;
-            forceX = (targetVelocityX - Velocity.X) * mass * PatrolForceMultiplierX * forceScale;
+            forceX = (targetVelocityX - Velocity.X) * mass * PatrolForceMultiplierX;
             var maxForceX = PatrolMaxForceX * mass * gravity;
             forceX = Math.Clamp(forceX, -maxForceX, maxForceX);
 
@@ -311,7 +311,7 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
         if (PatrolMinY.HasValue && PatrolMaxY.HasValue)
         {
             var targetVelocityY = ResolveAxisTargetVelocity(Position.Y, PatrolMinY.Value, PatrolMaxY.Value, PatrolCruiseSpeedY, ref _patrolMovingDown);
-            forceY = (targetVelocityY - Velocity.Y) * mass * PatrolForceMultiplierY * forceScale;
+            forceY = (targetVelocityY - Velocity.Y) * mass * PatrolForceMultiplierY;
 
             // Force cap ("wing power"). Gravity is just another force in the net sum, so
             // climbing needs the force to beat it (saturating the cap) while descending
@@ -342,8 +342,8 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     }
 
     /// <summary>
-    /// The one per-axis patrol rule,
-    /// speed, returns the target velocity on that axis. Heads toward the current bound at the
+    /// The one per-axis patrol rule: given a position, the patrol range on that axis and a cruise
+    /// speed, returns the target velocity on that axis.
     /// cruise speed and flips heading on reaching or passing it (so a body bumped outside its range
     /// heads back in). A range no wider than the turn thresholds (e.g. min == max) has no
     /// bounds to bounce between, so the target is instead a spring toward its centre, capped at
@@ -367,9 +367,9 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     }
 
     /// <summary>
-    /// Resolves and applies this object's pose from its
-    /// patrol-direction intent
-    /// <see cref="UpdatePatrolDirection"/>) via the shared <see cref="Body2D.ResolveHorizontalFacing()"/>
+    /// Resolves and applies this object's pose from its patrol-direction intent
+    /// (<see cref="Body2D.MoveIntentX"/>, set by <see cref="UpdatePatrolDirection"/>) via the
+    /// shared <see cref="Body2D.ResolveHorizontalFacing()"/>
     /// rule <see cref="Player2D"/> also uses - a body with no matching pose (<c>Sprite.Poses</c>
     /// null, e.g. a dynamic asset that hasn't authored left/right clips) simply no-ops here
     /// (see <see cref="Body2D.SetPose"/>). Resolving against <see cref="Velocity"/> directly would

@@ -106,7 +106,7 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// <see cref="Physics.PhysicsSystem.UpdateWalkForce"/>). Defaults to
     /// <see cref="GameDefaults.WalkForceMultiplier"/>, but a placement may
     /// override it via the <c>WalkForceMultiplier</c> ini key (see <see cref="World2D.LoadAsync"/>) -
-    /// same name/role as <see cref="DynamicHazard2D.PatrolForceMultiplier"/> for a patrolling hazard,
+    /// same name/role as <see cref="DynamicObject2D.PatrolForceMultiplierX"/>/<see cref="DynamicObject2D.PatrolForceMultiplierY"/> for a patrolling object,
     /// since both represent the exact same "muscle power toward a target speed" concept. One
     /// single gain covers every sustained pose (Walk, Crawl, Climb, Hang) - they are all the same
     /// kind of ongoing, motor-driven locomotion, just converging toward a different target

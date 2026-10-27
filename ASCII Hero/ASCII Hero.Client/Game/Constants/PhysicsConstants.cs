@@ -72,23 +72,13 @@ public static class PhysicsConstants
     public const int SolverIterations = 4;
 
     /// <summary>
-    /// Tuning constant for <see cref="Physics.PhysicsSystem.ResolveMediumForceScale"/>'s
-    /// reciprocal falloff - larger values make a given <see cref="Assets.Material.Viscosity"/>
-    /// dampen self-generated force more aggressively. Applied to raw <c>Viscosity</c> directly
-    /// (see <see cref="Physics.PhysicsSystem.ResolveMediumForceScale"/>'s own doc comment for
-    /// why), so even <c>Air</c>'s own small authored baseline (0.02, see
-    /// <c>Global/MaterialLibrary.ini</c>) applies a slight land-side penalty; the jump/walk force
-    /// constants in <see cref="GameDefaults"/> are tuned to compensate so on-land feel stays close
-    /// to its pre-damping baseline. Not overridable via any ini file.
+    /// Impact speed (cells/second, along the contact normal) below which a collision is treated
+    /// as fully inelastic (no bounce) regardless of restitution - see
+    /// <see cref="Physics.CollisionSystem"/>'s <c>EffectiveRestitution</c>. Set just above the
+    /// speed default gravity adds in one fixed step (40 * 1/60 = ~0.67), so a resting body settles
+    /// instead of endlessly micro-bouncing on that per-step gain. Not overridable via any ini file.
     /// </summary>
-    public const double MediumForceScaleFalloff = 40.0;
-
-    /// <summary>
-    /// Floor for <see cref="Physics.PhysicsSystem.ResolveMediumForceScale"/>'s force scaling in
-    /// viscous mediums, so even the thickest configured medium never reduces self-generated force
-    /// all the way to zero. Not overridable via any ini file.
-    /// </summary>
-    public const double MinMediumForceScale = 0.15;
+    public const double RestingBounceSpeedThreshold = 1.0;
 
     /// <summary>
     /// Minimum <see cref="Assets.Material.Density"/> for a body's <see cref="World.Body2D.CurrentMedium"/>

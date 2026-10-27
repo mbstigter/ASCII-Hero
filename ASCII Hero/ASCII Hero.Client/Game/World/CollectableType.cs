@@ -16,7 +16,7 @@ public enum CollectableType
 
     /// <summary>
     /// Removed on pickup, adds one to the collecting <see cref="Player2D"/>'s <see cref="Player2D.Rings"/>
-    /// (and one point to its score). Every <see cref="World2D.RingsPerLife"/> rings reset the count
+    /// (and <see cref="Constants.GameDefaults.RingScore"/> points to its score). Every <see cref="World2D.RingsPerLife"/> rings reset the count
     /// to 0 and add a <see cref="Player2D.Lives"/>. Does not restore health.
     /// </summary>
     Ring,

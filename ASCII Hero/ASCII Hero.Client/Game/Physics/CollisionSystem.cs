@@ -21,22 +21,7 @@ public class CollisionSystem
     private readonly SpatialGrid<IPhysicsBody> _movingBodiesGrid = new(PhysicsConstants.GridCellSize);
 
     /// <summary>
-    /// A placeholder <see cref="Body2D"/> representing the world's own floor/walls/ceiling for
-    /// contact-recording purposes only (see <see cref="ResolveWorldBounds"/>) - never rendered,
-    /// never collided against directly, never placed in <see cref="World2D.Objects"/>. Lets a body
-    /// resting against the world's edge record an ordinary <see cref="ContactType.SurfaceBottom"/>
-    /// contact, and therefore derive <see cref="IPhysicsBody.IsGrounded"/>, the same way it would
-    /// resting on any other solid.
-    /// </summary>
-    private static readonly Body2D WorldBoundsSentinel = new WorldBoundsBody();
-
-    private sealed class WorldBoundsBody : Body2D
-    {
-        public WorldBoundsBody() => IsStatic = true;
-    }
-
-    /// <summary>
-    /// Hazard/body contact pairs still overlapping as of the frame just resolved. Used so an
+    /// Hazard/body contact pairs
     /// ordinary (non-kill) hazard contact's effect fires only on the first frame of a new contact
     /// - a "rising edge" - rather than every frame the two remain overlapping. A hazard never
     /// physically pushes a body back out, so a body can rest against/inside one for many
@@ -63,8 +48,6 @@ public class CollisionSystem
         {
             contactBody.SnapshotContactsForNextFrame();
         }
-
-        WorldBoundsSentinel.SnapshotContactsForNextFrame();
 
         foreach (var body in world.Objects)
         {
@@ -140,6 +123,9 @@ public class CollisionSystem
     // ---------------------------------------------------------------------------------------
     // Broad phase: nearby-candidate lookup only (see SpatialGrid<T>) - no rectangle/character
     // testing happens here; that is all narrow phase, further down this file.
+    // Both helpers return each grid's shared candidate buffer (lazily, for moving bodies), so a
+    // caller must not start a second query on the same grid while still enumerating the first.
+    // Candidate order feeds directly into the order-sensitive contact resolution below.
     // ---------------------------------------------------------------------------------------
 
     /// <summary>
@@ -264,11 +250,34 @@ public class CollisionSystem
         Math.Sqrt(velocity.X * velocity.X + velocity.Y * velocity.Y) <= PhysicsConstants.MaxSnapSpeed;
 
     /// <summary>
-    /// Combines two materials' restitution/friction values for a single collision response as a
-    /// plain average of both sides, so either side can meaningfully pull the result toward its
-    /// own value rather than one material always dominating outright.
+    /// Combines two materials' friction coefficients for a single contact as their geometric mean
+    /// (<c>sqrt(a * b)</c>) - the common physics-engine convention: a slippery surface (near 0)
+    /// keeps the pair slippery however grippy the other side is, and two equal materials keep
+    /// their own value. Not capped at 1, since real friction coefficients can exceed 1.
     /// </summary>
-    private static double Combine(double a, double b) => (a + b) / 2.0;
+    private static double CombineFriction(double a, double b) => Math.Sqrt(Math.Max(a, 0.0) * Math.Max(b, 0.0));
+
+    /// <summary>
+    /// Combines two bodies' restitution for a single contact, weighted by softness (1 / Hardness):
+    /// in an impact the softer body deforms more and so stores/returns most of the energy, which
+    /// means its own restitution dominates. A rubber ball bounces well on hard concrete and a bit
+    /// less on wood, which gives a little and absorbs some of the impact itself.
+    /// </summary>
+    private static double CombineRestitution(Body2D a, Body2D b)
+    {
+        var softnessA = 1.0 / (a.Hardness > 0 ? a.Hardness : 1.0);
+        var softnessB = 1.0 / (b.Hardness > 0 ? b.Hardness : 1.0);
+        return (softnessA * a.Restitution + softnessB * b.Restitution) / (softnessA + softnessB);
+    }
+
+    /// <summary>
+    /// Restitution actually applied for an impact at <paramref name="approachSpeed"/> (cells/s,
+    /// positive): below <see cref="PhysicsConstants.RestingBounceSpeedThreshold"/> the impact is
+    /// fully inelastic, so resting bodies settle instead of micro-bouncing forever on the speed
+    /// gravity adds each step.
+    /// </summary>
+    private static double EffectiveRestitution(double restitution, double approachSpeed) =>
+        approachSpeed < PhysicsConstants.RestingBounceSpeedThreshold ? 0.0 : restitution;
 
     // ---------------------------------------------------------------------------------------
     // Narrow phase: hazards/collectables
@@ -391,8 +400,8 @@ public class CollisionSystem
                 }
 
                 // Every variant below is removed on pickup and spawns its own effect (if
-                // configured), honoring EffectPersists the same way a killed hazard/hazard's
-                // effect can persist as a husk in KillableHazard's place - so any collectable
+                // configured), honoring EffectPersists the same way a killed hazard's
+                // effect can persist as a husk in the hazard's place - so any collectable
                 // variant can be turned into a permanent "used" marker via its placement's own
                 // EffectPersists key, not just Checkpoint/LevelEnd.
                 switch (typedCollectable.Type)
@@ -535,51 +544,47 @@ public class CollisionSystem
     // ---------------------------------------------------------------------------------------
 
     /// <summary>
-    /// Keeps a body's bounding box within the world's cell grid, reflecting velocity on whichever
-    /// axis it would otherwise cross an edge, scaled by the body's own restitution. The world's
-    /// floor is treated the same as a platform's top surface for grounding purposes, so any body
-    /// resting against it is considered grounded.
+    /// Fallback safety net that keeps a body's bounding box within the world's cell grid. All four
+    /// edges are treated identically: the body is clamped back inside and only the velocity
+    /// component heading into that edge is reflected, scaled by the body's own restitution (zero
+    /// below <see cref="PhysicsConstants.RestingBounceSpeedThreshold"/>, see
+    /// <see cref="EffectiveRestitution"/>). World edges have no material, apply no friction and
+    /// record no contacts, so a body touching only an edge is never grounded - levels are expected
+    /// to provide their own floors, walls and ceilings.
     /// </summary>
     private static void ResolveWorldBounds(World2D world, IPhysicsBody body)
     {
         var restitution = body.Restitution;
         var position = body.Position;
         var velocity = body.Velocity;
-        var width = body.Size.X;
-        var height = body.Size.Y;
 
-        var minX = 0.0;
-        var maxX = world.WidthCells - width;
-        var minY = 0.0;
-        var maxY = world.HeightCells - height;
-
-        if (position.X < minX)
-        {
-            position.X = minX;
-            velocity.X = -velocity.X * restitution;
-        }
-        else if (position.X > maxX)
-        {
-            position.X = maxX;
-            velocity.X = -velocity.X * restitution;
-        }
-
-        if (position.Y < minY)
-        {
-            position.Y = minY;
-            velocity.Y = -velocity.Y * restitution;
-        }
-        else if (position.Y > maxY)
-        {
-            position.Y = maxY;
-            velocity.Y = -velocity.Y * restitution;
-            // The world's own floor isn't a placed Body2D, so a shared sentinel instance stands
-            // in as the "other" body for this SurfaceBottom contact - see WorldBoundsSentinel.
-            body.AddContact(ContactType.SurfaceBottom, WorldBoundsSentinel);
-        }
+        (position.X, velocity.X) = ClampAxisToBounds(position.X, velocity.X, 0.0, world.WidthCells - body.Size.X, restitution);
+        (position.Y, velocity.Y) = ClampAxisToBounds(position.Y, velocity.Y, 0.0, world.HeightCells - body.Size.Y, restitution);
 
         body.Position = position;
         body.Velocity = velocity;
+    }
+
+    private static (double Position, double Velocity) ClampAxisToBounds(double position, double velocity, double min, double max, double restitution)
+    {
+        if (position < min)
+        {
+            position = min;
+            if (velocity < 0)
+            {
+                velocity = -velocity * EffectiveRestitution(restitution, -velocity);
+            }
+        }
+        else if (position > max)
+        {
+            position = max;
+            if (velocity > 0)
+            {
+                velocity = -velocity * EffectiveRestitution(restitution, velocity);
+            }
+        }
+
+        return (position, velocity);
     }
 
     /// <summary>
@@ -646,8 +651,8 @@ public class CollisionSystem
         Vector2D otherVelocity,
         double otherInverseMass)
     {
-        var restitution = Combine(body.Restitution, otherContactTarget.Restitution);
-        var friction = Combine(body.Friction, otherContactTarget.Friction);
+        var restitution = CombineRestitution((Body2D)body, otherContactTarget);
+        var friction = CombineFriction(body.Friction, otherContactTarget.Friction);
         var bodyRects = body.CollisionRects;
 
         // First pass: every one of the body's own rects that overlaps this iteration, all
@@ -658,21 +663,6 @@ public class CollisionSystem
             if (!TryFindContact([bodyRects[rectIndex]], otherContactTarget.CollisionRects, out var contact, (Body2D)body, otherContactTarget))
             {
                 continue;
-            }
-
-            // A one-way platform only blocks a body landing on its top surface while falling (or
-            // resting) onto it - jumping up through it from below, or approaching from either
-            // side, passes straight through untouched. Landing-from-above is contact.Normal ==
-            // (0, -1); whether the body is actually moving down into it, rather than still rising
-            // up through it from below, is told apart by relative vertical velocity.
-            if (otherContactTarget.IsOneWayPlatform)
-            {
-                var isLandingFromAbove = contact.Normal.X == 0 && contact.Normal.Y < 0;
-                var relativeVerticalVelocity = body.Velocity.Y - otherVelocity.Y;
-                if (!isLandingFromAbove || relativeVerticalVelocity < 0)
-                {
-                    continue;
-                }
             }
 
             contacts.Add(contact);
@@ -854,7 +844,7 @@ public class CollisionSystem
             return;
         }
 
-        var normalImpulse = -(1.0 + restitution) * normalRelativeSpeed / totalInverseMass;
+        var normalImpulse = -(1.0 + EffectiveRestitution(restitution, -normalRelativeSpeed)) * normalRelativeSpeed / totalInverseMass;
         body.Velocity += contact.Normal * (normalImpulse * bodyInverseMass);
         if (other is not null)
         {
@@ -943,7 +933,7 @@ public class CollisionSystem
     /// </summary>
     private static double ApplyCoulombFriction(double tangentialRelativeVelocity, double normalImpulseMagnitudePerMass, double friction)
     {
-        var maxFrictionDelta = Math.Clamp(friction, 0.0, 1.0) * normalImpulseMagnitudePerMass;
+        var maxFrictionDelta = Math.Max(friction, 0.0) * normalImpulseMagnitudePerMass;
         var delta = Math.Clamp(tangentialRelativeVelocity, -maxFrictionDelta, maxFrictionDelta);
         return tangentialRelativeVelocity - delta;
     }
@@ -962,7 +952,7 @@ public class CollisionSystem
     /// </summary>
     /// <param name="ownerA">
     /// The body <paramref name="aRects"/> belongs to, or null. When both owners are supplied, a
-    /// recta
+    /// rectangle pair is additionally checked for character overlap (see
     /// <see cref="HasCharacterOverlap"/>) - requiring the two bodies' actual rendered characters
     /// to overlap, not merely their merged collision rectangles - before it is accepted. Callers
     /// that don't care about that distinction (e.g. <see cref="SnapOntoHangable"/>) may omit both
@@ -1023,24 +1013,25 @@ public class CollisionSystem
 
     /// <summary>
     /// Confirms two bodies' rectangle overlap actually corresponds to their true rendered
-    /// silhouettes touching, by testing whether at least one world cell within the overlap region
-    /// has a non-empty character on both sides, rather than trusting the merged collision
-    /// rectangles alone. This only matters for shapes whose true silhouette doesn't exactly fill
-    /// its merged collision rectangle (e.g. a diagonal or notched sprite); for a solid rectangular
-    /// sprite every cell within its own collision rect is already known non-empty, so this always
-    /// agrees with the plain rectangle test.
+    /// silhouettes touching: true when some non-empty character cell of A and some non-empty
+    /// character cell of B overlap with positive area inside the overlap region. Each body's
+    /// cells are unit squares anchored at its own continuous (fractional) Position, so the test
+    /// is independent of where the bodies sit relative to the integer world lattice and of the
+    /// direction they approach from. For a solid rectangular sprite this always agrees with the
+    /// plain rectangle test.
     /// </summary>
     private static bool HasCharacterOverlap(Body2D ownerA, Body2D ownerB, Rect rectA, Rect rectB)
     {
+        const double areaEpsilon = 1e-9;
+
         var left = Math.Max(rectA.Left, rectB.Left);
         var right = Math.Min(rectA.Right, rectB.Right);
         var top = Math.Max(rectA.Top, rectB.Top);
         var bottom = Math.Min(rectA.Bottom, rectB.Bottom);
-
-        var gridLeft = (int)Math.Floor(left);
-        var gridRight = (int)Math.Ceiling(right);
-        var gridTop = (int)Math.Floor(top);
-        var gridBottom = (int)Math.Ceiling(bottom);
+        if (right - left <= areaEpsilon || bottom - top <= areaEpsilon)
+        {
+            return false;
+        }
 
         var aChars = ownerA.Frame.Chars;
         var bChars = ownerB.Frame.Chars;
@@ -1050,30 +1041,59 @@ public class CollisionSystem
         var aWidth = aChars.GetLength(1);
         var bHeight = bChars.GetLength(0);
         var bWidth = bChars.GetLength(1);
+        var aPos = ownerA.Position;
+        var bPos = ownerB.Position;
 
-        for (var gridY = gridTop; gridY < gridBottom; gridY++)
+        var aYStart = Math.Max(0, (int)Math.Floor(top - aPos.Y));
+        var aYEnd = Math.Min(aHeight, (int)Math.Ceiling(bottom - aPos.Y));
+        var aXStart = Math.Max(0, (int)Math.Floor(left - aPos.X));
+        var aXEnd = Math.Min(aWidth, (int)Math.Ceiling(right - aPos.X));
+
+        for (var ay = aYStart; ay < aYEnd; ay++)
         {
-            for (var gridX = gridLeft; gridX < gridRight; gridX++)
+            var cellTop = Math.Max(top, aPos.Y + ay);
+            var cellBottom = Math.Min(bottom, aPos.Y + ay + 1);
+            if (cellBottom - cellTop <= areaEpsilon)
             {
-                // gridX/gridY are integer world-cell coordinates, but Position is a continuous
-                // (fractional) world coordinate. The correct local grid index is
-                // floor(worldCell - Position), not worldCell - floor(Position): those differ by
-                // one whenever Position has a nonzero fractional part, which would otherwise
-                // shift every character lookup by a full row/column.
-                var localAX = (int)Math.Floor(gridX - ownerA.Position.X);
-                var localAY = (int)Math.Floor(gridY - ownerA.Position.Y);
-                var localBX = (int)Math.Floor(gridX - ownerB.Position.X);
-                var localBY = (int)Math.Floor(gridY - ownerB.Position.Y);
+                continue;
+            }
 
-                if (localAX < 0 || localAX >= aWidth || localAY < 0 || localAY >= aHeight ||
-                    localBX < 0 || localBX >= bWidth || localBY < 0 || localBY >= bHeight)
+            var bYStart = Math.Max(0, (int)Math.Floor(cellTop - bPos.Y));
+            var bYEnd = Math.Min(bHeight, (int)Math.Ceiling(cellBottom - bPos.Y));
+
+            for (var ax = aXStart; ax < aXEnd; ax++)
+            {
+                if (aChars[ay, ax] == aEmpty)
                 {
                     continue;
                 }
 
-                if (aChars[localAY, localAX] != aEmpty && bChars[localBY, localBX] != bEmpty)
+                var cellLeft = Math.Max(left, aPos.X + ax);
+                var cellRight = Math.Min(right, aPos.X + ax + 1);
+                if (cellRight - cellLeft <= areaEpsilon)
                 {
-                    return true;
+                    continue;
+                }
+
+                var bXStart = Math.Max(0, (int)Math.Floor(cellLeft - bPos.X));
+                var bXEnd = Math.Min(bWidth, (int)Math.Ceiling(cellRight - bPos.X));
+
+                for (var by = bYStart; by < bYEnd; by++)
+                {
+                    var overlapY = Math.Min(cellBottom, bPos.Y + by + 1) - Math.Max(cellTop, bPos.Y + by);
+                    if (overlapY <= areaEpsilon)
+                    {
+                        continue;
+                    }
+
+                    for (var bx = bXStart; bx < bXEnd; bx++)
+                    {
+                        var overlapX = Math.Min(cellRight, bPos.X + bx + 1) - Math.Max(cellLeft, bPos.X + bx);
+                        if (overlapX > areaEpsilon && bChars[by, bx] != bEmpty)
+                        {
+                            return true;
+                        }
+                    }
                 }
             }
         }

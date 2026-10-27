@@ -14,18 +14,6 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// </summary>
 public class PhysicsSystem
 {
-    /// <summary>
-    /// Tuning constant for <see cref="ResolveMediumForceScale"/>'s reciprocal falloff - larger
-    /// values make a given <see cref="Assets.Material.Viscosity"/> dampen self-generated force
-    /// more aggressively. Applied to raw <c>Viscosity</c> directly (see
-    /// <see cref="ResolveMediumForceScale"/>'s own doc comment for why), so even <c>Air</c>'s own
-    /// small authored baseline (0.02, see <c>Global/MaterialLibrary.ini</c>) applies a slight
-    /// land-side penalty; <see cref="GameDefaults.WalkJumpSpeed"/> (and other jump/walk force
-    /// constants in <see cref="GameDefaults"/>) are tuned to compensate so on-land feel stays
-    /// close to its pre-damping baseline, while <c>Water</c>'s much larger 0.15 still comes out
-    /// clearly, noticeably weaker. Moved to <see cref="PhysicsConstants.MediumForceScaleFalloff"/>.
-    /// </summary>
-
     private bool _wasUpKeyDown;
     private bool _wasDownKeyDown;
     private bool _wasJumpKeyDown;
@@ -50,14 +38,13 @@ public class PhysicsSystem
         // from the player's current overlap (and snap-speed check) against Body2D.IsClimbable/
         // IsHangable terrain, but that alone doesn't engage either state - merely brushing
         // past/through a passable ladder must never lock movement. Climbing requires a deliberate
-        // up/down press while touching one (mirroring the old ConsoleGame2D reference's explicit
-        // Climb() trigger) - including mid-jump, there is no grounded requirement, so a ladder can
+        // up/down press while touching one - including mid-jump, there is no grounded requirement, so a ladder can
         // be grabbed out of the air. Crawling can't climb directly (too low a pose to reach a
         // rung) - engaging climb requires Stance == "Walk" already, so a crawling player must
         // first explicitly stand up (the ordinary Crawl->Walk pose toggle below, its own
         // separate key press) before a later press can grab the ladder; there is no combined
         // "stand up and grab on" shortcut. Hanging engages automatically as soon as the surface is
-        // touched from underneath, same as that reference project. Both disengage the moment the
+        // touched from underneath. Both disengage the moment the
         // player is no longer touching the corresponding surface; climbing additionally yields to
         // solid ground (landing on a real floor always takes priority over still nominally
         // overlapping a passable ladder, and a Jump press while climbing lets go and launches -
@@ -92,9 +79,8 @@ public class PhysicsSystem
         else if (!player.IsHanging && !player.IsClimbing && player.IsTouchingHangable && !player.SuppressHangUntilClear)
         {
             player.IsHanging = true;
-            // Reaching a pipe/rope while already crawling grabs on in the compact clamber
-            // pose (IsClambering is derived from the same Stance), matching whichever stance
-            // the player was in the instant before grabbing on.
+            // No stance change here: IsClambering is derived from the existing Stance, so a
+            // player who grabs on while crawling hangs in the compact clamber pose.
         }
 
         // Once the player is no longer touching the hangable surface at all (having actually
@@ -106,8 +92,11 @@ public class PhysicsSystem
         }
 
         // Swim: medium-based, not reach-based (see ISwimmerBody's own doc comment) - there is no
-        // "touching" flag to consult, since Body2D.CurrentMedium is already resolved fresh every
-        // frame for every body regardless. Mirrors climbing's deliberate-press engagement (not
+        // "touching" flag to consult. Note that player.CurrentMedium is only updated later in
+        // this same Step (in StepMovingBodyWithForces, via the world.Objects loop at the end), so
+        // everything in this player block - swim engagement here, and the medium force scaling
+        // of jumps and walk force below - sees the medium resolved during the previous step.
+        // Mirrors climbing's deliberate-press engagement (not
         // hanging's automatic grab): a directional key must actually be held while submerged.
         // Grounded/climbing/hanging all take priority and preempt swim entirely - a solid floor
         // stays solid underwater, and a ladder/pipe's own capability check is independent of
@@ -186,7 +175,7 @@ public class PhysicsSystem
                 // _suppressClimbUntilClear the very next frame would immediately re-grab the same
                 // ladder before the jump is ever visible.
                 player.IsClimbing = false;
-                velocity.Y = -GameDefaults.ClimbJumpSpeed * ResolveMediumForceScale(player.CurrentMedium);
+                velocity.Y = -GameDefaults.ClimbJumpSpeed;
                 _suppressClimbUntilClear = true;
             }
         }
@@ -211,7 +200,7 @@ public class PhysicsSystem
                 // Same debounce as the explicit let-go below, so the player can't instantly
                 // re-grab the exact surface they just launched off.
                 player.IsHanging = false;
-                velocity.Y = -GameDefaults.HangJumpSpeed * ResolveMediumForceScale(player.CurrentMedium);
+                velocity.Y = -GameDefaults.HangJumpSpeed;
                 player.SuppressHangUntilClear = true;
             }
             else if (!player.IsClambering && downPressedThisFrame)
@@ -233,7 +222,7 @@ public class PhysicsSystem
         // velocity toward the target walk/crawl/climb/hang speed (see UpdateWalkForce and
         // IWalkForceBody), summed into the net force alongside gravity by
         // StepMovingBodyWithForces - consistent with every other body's force-based movement
-        // (see DynamicHazard2D.PatrolForce) rather than a bespoke direct velocity-assignment path.
+        // (see DynamicObject2D.UpdatePatrolDirection) rather than a bespoke direct velocity-assignment path.
         // While climbing a ladder, horizontal input still applies (at a slower, deliberate side
         // speed) so the player can step off sideways onto an adjacent floor or ladder rather than
         // only ever being able to leave via a jump; while hanging from a pipe/bar, lateral
@@ -357,18 +346,23 @@ public class PhysicsSystem
             // climbing/hanging.
             targetVelocityY = velocity.Y;
         }
+        // Commit any climb/hang jump-off impulse applied above before computing the motor: the
+        // motor's gap is measured against player.Velocity, so leaving the impulse only in the
+        // local copy would make the motor apply the same velocity change a second time.
+        player.Velocity = velocity;
         UpdateWalkForce(player, targetVelocityX, targetVelocityY);
 
         if (!player.IsClimbing && !player.IsHanging && input.IsJumpPressed && player.IsGrounded && player.Stance == "Walk" && !stoodUpThisFrame)
         {
-            // A true impulse: an instantaneous Delta-v applied once, on the frame the jump is
-            // pressed, not a target the player's velocity converges toward over subsequent
-            // frames - the same jump-off model as the ladder/hang variants above, just at the
+            // A true impulse: an instantaneous Delta-v applied once per take-off, not a target the
+            // player's velocity converges toward over subsequent frames. The condition tests the
+            // held Jump state (not a fresh press), so holding Jump launches again on each landing;
+            // the immediate IsGrounded clear below is what limits it to one impulse per take-off.
+            // Same jump-off model as the ladder/hang variants above, just at the
             // strongest magnitude since it launches off solid ground with both legs planted.
-            // Scaled by the current medium's viscosity (see ResolveMediumForceScale) so a
-            // push-off through a viscous medium (e.g. water) can't launch as high as the same
-            // push-off through air, even though buoyancy has already cancelled most of gravity.
-            velocity.Y = -GameDefaults.WalkJumpSpeed * ResolveMediumForceScale(player.CurrentMedium);
+            // The impulse is the same in every medium; a viscous medium (e.g. water) limits the
+            // resulting height only through its passive quadratic drag in StepMovingBodyWithForces.
+            velocity.Y = -GameDefaults.WalkJumpSpeed;
             // Clears IsGrounded immediately so the jump's own frame already shows airborne (jump
             // pose, re-jump gated out) instead of waiting for the next collision pass to notice
             // the player has left the surface.
@@ -399,45 +393,6 @@ public class PhysicsSystem
     }
 
     /// <summary>
-    /// Resolves the material a body at <paramref name="body"/>'s current collision rectangles is
-    /// immersed in this frame: <see cref="Assets.MaterialLibrary.Undefined"/>'s <c>Air</c>-like
-    /// default unless <paramref name="body"/> overlaps one or more static <see cref="Body2D.IsPassable"/>
-    /// volumes, in which case the highest-<see cref="Assets.Material.Density"/> overlapping
-    /// volume's own resolved material wins (see docs/Decisions.md's medium-resolution rules).
-    /// Deliberately a plain linear scan over <paramref name="world"/>'s passable statics, mirroring
-    /// <see cref="CollisionSystem"/>'s existing per-frame climbable/hangable overlap scans, rather
-    /// than adding a new broad-phase spatial structure just for this.
-    /// </summary>
-    /// <summary>
-    /// Maps a medium's <see cref="Assets.Material.Viscosity"/> to a multiplier in
-    /// <c>[MinMediumForceScale, 1.0]</c>, applied to a body's own actively-generated
-    /// force/impulse (walk/patrol motor force, jump-off impulses - see
-    /// <see cref="UpdateWalkForce"/>, <see cref="DynamicHazard2D.UpdatePatrolDirection"/>, and the
-    /// jump-off sites in <see cref="Step"/>) - never the passive buoyancy/drag forces already
-    /// computed in <see cref="StepMovingBodyWithForces"/>, which remain solely density/viscosity
-    /// driven as before. Deliberately keyed on <see cref="Assets.Material.Viscosity"/> alone, not
-    /// <see cref="Assets.Material.Density"/>: density already fully does its own job via
-    /// buoyancy (Archimedes' principle) - reusing it here too would double-count the same
-    /// property for two unrelated physical effects. Viscosity is the property that actually
-    /// resists a body's own stride/push-off against a surrounding fluid (the same property
-    /// already driving the existing quadratic drag term), so it is the physically appropriate
-    /// basis for damping self-generated force the way a swimmer's stroke or a push-off through
-    /// water is inherently less effective than the same effort on/through open air. Deliberately
-    /// uses the medium's raw <c>Viscosity</c> directly (not relative to any other medium's own
-    /// value) for pure, literal physical accuracy - even <c>Air</c>'s own small authored
-    /// <c>Viscosity</c> (see <c>Global/MaterialLibrary.ini</c>) applies a (very slight, by design)
-    /// penalty here, same as it already does for the existing passive drag term, rather than
-    /// treating whichever medium happens to be the ambient default as an artificial zero-point.
-    /// Falls off reciprocally toward <see cref="PhysicsConstants.MinMediumForceScale"/>, which is never crossed so
-    /// a body is never fully unable to move under its own power, however viscous the medium.
-    /// </summary>
-    internal static double ResolveMediumForceScale(Assets.Material medium)
-    {
-        var scale = 1.0 / (1.0 + medium.Viscosity * PhysicsConstants.MediumForceScaleFalloff);
-        return Math.Max(scale, PhysicsConstants.MinMediumForceScale);
-    }
-
-    /// <summary>
     /// Whether <paramref name="medium"/> is dense/viscous enough to swim in - the medium-based
     /// detection <see cref="World.ISwimmerBody"/> keys off (see <see cref="Step"/>'s swim
     /// engage/disengage logic), analogous to how <see cref="Body2D.IsClimbable"/>/
@@ -455,14 +410,13 @@ public class PhysicsSystem
     /// winning material - a value in <c>[0, 1]</c>, used to scale
     /// buoyancy/drag proportionally to how far the body is inside the medium (see <see cref="StepMovingBodyWithForces"/>)
     /// rather than applying full-body buoyancy the instant any single cell overlaps a medium
-    /// volume at all. Without this, a body merely grazing a water surface received exactly the
-    /// same upward force as one fully submerged, wildly overshooting the true equilibrium point
-    /// every frame near the surface and producing a visible bounce (observed both on a floating
-    /// ball and, once swimming existed, as player pose flicker at the waterline). At fraction 1.0
-    /// (fully submerged) this reduces to exactly the previous full-strength behavior, so
-    /// already-submerged locomotion (walking/swimming underwater) is unaffected.
+    /// volume at all. Applying full-body buoyancy on any overlap would give a body merely grazing
+    /// a water surface the same upward force as one fully submerged, overshooting the equilibrium
+    /// point every frame near the surface and producing a visible bounce (on a floating body, and
+    /// as player pose flicker at the waterline). At fraction 1.0 (fully submerged) this is
+    /// full-strength buoyancy/drag.
     ///
-    /// The winning material is chosen as before (the densest overlapping volume wins, the first
+    /// The winning material is the densest overlapping volume (the first
     /// one placed on a tie), except that a placed volume of the same density as the Air fallback
     /// also displaces it, so an Air-material volume (e.g. a wind tunnel) can act as a medium.
     /// The overlap fraction is then computed only from candidates resolving to that same winning
@@ -476,8 +430,7 @@ public class PhysicsSystem
     /// (fraction 1.0) in the default "Air" fallback rather than fraction 0.0 - Air is the ambient
     /// substance filling all otherwise-unoccupied space, not a bounded level-authored volume with
     /// edges a body can be only partially submerged past, so its own (low but nonzero) Viscosity
-    /// drag keeps applying continuously everywhere outside a denser placed volume, exactly as it
-    /// always did before overlap-fraction scaling was introduced.
+    /// drag keeps applying continuously everywhere outside a denser placed volume.
     /// </summary>
     private static (Assets.Material Medium, double OverlapFraction, Vector2D Flow) ResolveCurrentMedium(World2D world, IPhysicsBody body)
     {
@@ -611,7 +564,7 @@ public class PhysicsSystem
     /// Recomputes <see cref="Player2D.WalkForce"/> as a proportional "motor" force converging
     /// <paramref name="player"/>'s current velocity toward (<paramref name="targetVelocityX"/>,
     /// <paramref name="targetVelocityY"/>) - the walk/crawl/climb/hang speed the current input
-    /// calls for - mirrors <see cref="DynamicHazard2D.UpdatePatrolDirection"/>'s role for a
+    /// calls for - mirrors <see cref="DynamicObject2D.UpdatePatrolDirection"/>'s role for a
     /// patrolling hazard, but proportional to the remaining speed gap (scaled by
     /// <see cref="Player2D.WalkForceMultiplier"/>, reduced by <see cref="GameDefaults.AirControlMultiplier"/>
     /// while airborne) rather than a fixed-direction force, so the
@@ -642,25 +595,22 @@ public class PhysicsSystem
         // current Velocity.Y while airborne (see the call site in Step), so it contributes ~0
         // regardless and gravity/jump impulses remain entirely in charge of vertical motion.
         var horizontalMultiplier = player.IsGrounded ? player.WalkForceMultiplier : player.WalkForceMultiplier * GameDefaults.AirControlMultiplier;
-        // Also scaled by the current medium's viscosity (see ResolveMediumForceScale) - a stride
-        // through a viscous medium is inherently less effective than the same muscular effort on
-        // solid ground/open air, independent of the passive buoyancy/drag already applied
-        // elsewhere in StepMovingBodyWithForces.
-        var mediumScale = ResolveMediumForceScale(player.CurrentMedium);
+        // Not scaled by the medium: a viscous medium resists motion only through the passive
+        // drag in StepMovingBodyWithForces, which already grows with speed.
         player.WalkForce = new Vector2D(
-            (targetVelocityX - player.Velocity.X) * mass * horizontalMultiplier * mediumScale,
-            (targetVelocityY - player.Velocity.Y) * mass * player.WalkForceMultiplier * mediumScale);
+            (targetVelocityX - player.Velocity.X) * mass * horizontalMultiplier,
+            (targetVelocityY - player.Velocity.Y) * mass * player.WalkForceMultiplier);
     }
 
     /// <summary>
-    /// Force-based counterpart to <see cref="StepMovingBody"/>, used for every non-player moving
-    /// body (see the dispatch loop in <see cref="Step"/>): rather than adding a fixed velocity
-    /// delta for gravity directly, this accumulates forces acting on the body this frame (gravity
+    /// Force-based integration step used for every non-player moving body (see the dispatch loop
+    /// in <see cref="Step"/>): rather than adding a fixed velocity delta for gravity directly, this
+    /// accumulates forces acting on the body this frame (gravity
     /// as a mass-scaled force - <c>F = mass * gravity</c>, matching how a real falling object's
     /// weight scales with its mass - plus, for an <see cref="IPatrolBody"/>, its own patrol force)
     /// into a net force, converts that to an acceleration via <c>a = F / mass</c>, and integrates
-    /// that into velocity. For a single gravity-only force this reduces to the exact same
-    /// <c>velocity.Y += gravity * dt</c> as before (mass cancels out of
+    /// that into velocity. For a single gravity-only force this reduces to
+    /// <c>velocity.Y += gravity * dt</c> (mass cancels out of
     /// <c>F / mass = mass * gravity / mass = gravity</c>) - the accumulator's value is that any
     /// further force source (wind, thrust, a spring, etc.) can be summed in here alongside gravity
     /// before the single acceleration/integration step, rather
@@ -674,7 +624,7 @@ public class PhysicsSystem
     /// frame a body rests on something, the existing grounded-contact response in
     /// <see cref="CollisionSystem"/> already achieves the same net effect pragmatically - each
     /// frame a resting body's downward velocity is zeroed/reduced by its resolved restitution
-    /// right at the point of contact (see <c>ResolveRectAgainstSolid</c>/<c>ResolveBodyPair</c>),
+    /// right at the point of contact (see <c>CollisionSystem.ResolveAgainstSolid</c>/<c>CollisionSystem.ResolveAgainstOtherBody</c>),
     /// which is what actually stops gravity from accumulating unbounded downward velocity while
     /// grounded. <see cref="IPhysicsBody.IsGrounded"/> is that same contact signal surfaced for
     /// other systems (animation, jump gating) to read, not an input this method itself needs.
@@ -693,12 +643,8 @@ public class PhysicsSystem
         // IsGrounded's "derived, not stored" philosophy, just needing an explicit recompute call
         // since it depends on spatial overlap rather than already-tracked contact state) and
         // exposed via Body2D.CurrentMedium for other systems (e.g. a future swim pose) to read.
-        // Resolved up front (before the patrol/walk force below) so this
-        // same frame's medium - not a stale value from before this body's own contacts/position
-        // were last updated - is available for ResolveMediumForceScale to dampen this frame's own
-        // patrol/walk motor force by, below. body as Body2D is null for a non-Body2D IPhysicsBody
-        // (none currently exist, but the cast stays defensive); such a body simply never receives
-        // any medium-based scaling/force below.
+        // body as Body2D is null for a non-Body2D IPhysicsBody (none currently exist, but the
+        // cast stays defensive); such a body simply never receives any medium force below.
         var mediumBody = body as Body2D;
         var (medium, submergedFraction, flow) = mediumBody is not null
             ? ResolveCurrentMedium(world, body)
@@ -709,29 +655,18 @@ public class PhysicsSystem
         }
 
         // Patrolling bodies (see IPatrolBody) contribute their own horizontal force here,
-        // recomputed each frame from their current position relative to their patrol bounds -
-        // this is the "future force source" extension point this comment used to describe before
-        // one actually existed; any further force source (wind, thrust, etc.) would sum in here
+        // recomputed each frame from their current position relative to their patrol bounds;
+        // any further force source (wind, thrust, etc.) would sum in here
         // the same way, alongside gravity, before the single acceleration/integration step below.
-        // Scaled by ResolveMediumForceScale (see its own doc comment) so a patrolling body's own
-        // "muscle power" is dampened the same way the player's walk/jump forces are while immersed
-        // in a viscous medium - only meaningful for a body that is also IMediumAffected, since an
-        // unaffected body's CurrentMedium is still resolved above but never meant to influence it.
         if (body is IPatrolBody patrolBody)
         {
-            var patrolMediumScale = mediumBody is not null && body is IMediumAffected { MediumAffected: true }
-                ? ResolveMediumForceScale(medium)
-                : 1.0;
-            patrolBody.UpdatePatrolDirection(world.Gravity, patrolMediumScale);
+            patrolBody.UpdatePatrolDirection(world.Gravity);
             netForce += patrolBody.PatrolForce;
         }
 
         // The player's ground-level walk/crawl (and climb/hang side-step) locomotion contributes
         // its own horizontal motor force here - see IWalkForceBody and UpdateWalkForce, called
-        // earlier this frame by Step before this integration runs. UpdateWalkForce already applies
-        // its own medium scaling using the player's CurrentMedium as of the *previous* frame's
-        // resolution (the only value available at the point in Step it runs); the small one-frame
-        // lag this implies is inconsequential given the medium rarely changes frame-to-frame.
+        // earlier this frame by Step before this integration runs.
         if (body is IWalkForceBody walkForceBody)
         {
             netForce += walkForceBody.WalkForce;

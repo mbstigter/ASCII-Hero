@@ -27,11 +27,9 @@ public interface IPatrolBody : IPhysicsBody
     /// (called once per frame by <see cref="Physics.PhysicsSystem"/> before <see cref="PatrolForce"/>
     /// is read), flipping at either end of that axis's own bounds. <paramref name="gravity"/> is the
     /// world's own gravity acceleration, which the per-axis force caps (in multiples of g) are
-    /// expressed against. <paramref name="forceScale"/> is the ambient-medium damping of self-generated force
-    /// (see <see cref="Physics.PhysicsSystem"/>), applied to the patrol force before those caps so a cap
-    /// means the actual force the body can deliver.
+    /// expressed against.
     /// </summary>
-    void UpdatePatrolDirection(double gravity, double forceScale);
+    void UpdatePatrolDirection(double gravity);
 
     /// <summary>The force this body's patrol currently contributes, mass-scaled like gravity.</summary>
     Vector2D PatrolForce { get; }

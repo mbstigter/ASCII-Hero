@@ -136,7 +136,8 @@ The live game state and the entity types that make it up.
   `Density`/`Friction`/`Restitution` from its material (a placement's ini
   section may override the resolved material name via `Material`, or just
   the resulting `Restitution` via `Restitution`), computes `Mass` from
-  the resolved `Density` and the body's footprint, and assembles the
+  the resolved `Density` and the body's spawn footprint (fixed afterwards,
+  independent of pose changes), and assembles the
   finished world. Also owns deferred removal (`QueueRemoval`/`ApplyPendingRemovals`),
   so nothing mutates the `Objects` list mid-iteration.
 - **`Body2D`** - the base class for anything living in the world at a
@@ -297,8 +298,10 @@ The live game state and the entity types that make it up.
 	`PhysicsSystem.IsSwimmableMedium`); carries only `IsSwimming` (actually
 	engaged, driven by a deliberate directional press while submerged) - no
 	separate "touching" flag like `IClimberBody`/`IHangerBody`, since
-	`CurrentMedium` is already resolved fresh every frame for every body
-	regardless, so it alone is the medium-based detection signal swim needs.
+	`CurrentMedium` is already resolved once per physics step for every moving body
+	regardless, so it alone is the medium-based detection signal swim needs (the
+	player movement logic at the start of `PhysicsSystem.Step` reads the value
+	resolved during the previous step).
 
   positions and velocities. World coordinates are continuous cells, not
   pixels or integer grid indices - see Coordinate System below.
@@ -339,18 +342,14 @@ The live game state and the entity types that make it up.
   calls for - mirroring `IPatrolBody.PatrolForce`'s role for a patrolling
   hazard, just proportional to the remaining speed gap rather than a fixed
   direction, so the player still reaches (and then holds) the target speed
-  promptly without overshooting or oscillating. Both `WalkForce` and
-  `PatrolForce` are further scaled by `PhysicsSystem.ResolveMediumForceScale`,
-  which maps the body's current medium's raw `Viscosity` (see above) to a
-  multiplier in `[MinMediumForceScale, 1.0]` - distinct from the passive
-  buoyancy/drag terms above, this damps a body's own actively-generated
-  motor force, so a stride/push-off through a viscous medium (e.g. `Water`)
-  is inherently less effective than the same effort on land. Jump-off
+  promptly without overshooting or oscillating. Neither `WalkForce` nor
+  `PatrolForce` is scaled by the current medium; a viscous medium (e.g.
+  `Water`) resists them only through the passive buoyancy/drag terms above.
+  Jump-off
   impulses (a standing jump, or letting go of a ladder/pipe with an upward
   launch) are the one exception to the continuous-force model, and
   deliberately so: each is a genuine instantaneous velocity kick applied
-  once on the frame it triggers (also scaled by the same
-  `ResolveMediumForceScale`), not a sustained, ongoing motion to converge
+  once on the frame it triggers, not a sustained, ongoing motion to converge
   toward, so they remain direct velocity assignments on purpose - discrete
   state-machine transitions, not the continuous locomotion `WalkForce`
   drives. Also resolves
@@ -405,7 +404,9 @@ The live game state and the entity types that make it up.
   hazard/collectable overlap, and any `IClimberBody`/`IHangerBody`'s
   `IsTouchingClimbable`/`IsTouchingHangable` overlap against
   `IsClimbable`/`IsHangable` terrain. Restitution/friction used in any given
-  collision response are the combined (simple-average, see `Combine`) values
+  collision response are the combined values (friction: geometric mean,
+  restitution: softness-weighted average using `Hardness`, see
+  below `RestingBounceSpeedThreshold`)
   of both contacting bodies' own resolved material properties (see
   `Body2D.Restitution`/`Friction` below), not a single one-sided or
   type-based value. Solid-collision response (`ResolveAgainstSolid`/
@@ -467,11 +468,10 @@ The live game state and the entity types that make it up.
   (`Body2D.LastStepDisplacementX`/`ReferenceVelocityX`) - the real speed of a
   finite-mass support, which riders (`GetSurfaceVelocityX`) and
   `ResolveContact`'s friction are judged against (static supports use their
-  prescribed `Velocity`) -
-  including a `WorldBoundsSentinel` placeholder body so a body resting
-  against the world's own floor/wall/ceiling (not a placed platform) records
-  an ordinary `SurfaceBottom` contact the same way as any other solid, with
-  no special-casing. `ResolveContact` then records the reciprocal contact
+  prescribed `Velocity`). World edges (`ResolveWorldBounds`) are a
+  contact-free safety net: all four sides clamp and reflect identically, but
+  record no contact, so a body touching only an edge is not grounded.
+  `ResolveContact` then records the reciprocal contact
   pair on both sides as it resolves a landing (e.g. the rider gets
   `SurfaceBottom` against the solid, the solid gets `SurfaceTop` against the
   rider). `IPhysicsBody.IsGrounded` is a derived, read-only property
@@ -479,13 +479,7 @@ The live game state and the entity types that make it up.
   docs/Decisions.md for why it is not a stored flag.
   `RemoveContact(ContactType.SurfaceBottom)` the instant a jump/climb/hang
   begins, so the derived state reflects "airborne" for that same frame
-  rather than waiting for `Resolve`'s next contact pass. `Body2D.
-  IsOneWayPlatform` lets a static solid block only a genuine downward-moving
-  top-landing (`ResolveAgainstOtherBody` checks the contact normal's
-  overlap axis and the body's velocity relative to the solid); any other
-  overlap axis, or a body moving upward through it, passes straight
-  through untouched, so jumping up through a one-way platform from below
-  just works with no separate code path. Broad-phase candidate gathering
+  rather than waiting for `Resolve`'s next contact pass. Broad-phase
   uses a per-frame `SpatialGrid<T>` (one instance each for solids and moving
   bodies - `_solidsGrid`/`_movingBodiesGrid`, bucketed by `GridCellSize`)
   rather than testing every solid/mover pair unconditionally, so collision
@@ -495,8 +489,7 @@ The live game state and the entity types that make it up.
   about a body's actual collision rectangles or rendered characters.
   Everything downstream of a broad-phase candidate list - resolving a body
   against a specific solid or another specific moving body - is the narrow
-  phase, and always performs the fine-grained check ported (in spirit) from
-  the older ConsoleGame2D prototype's `CheckCharacterCollision`:
+  phase, and always performs a fine-grained character check:
   `TryFindContact` only accepts a rectangle-pair overlap if at least
   one world cell within it has a non-empty character on both bodies' sprite
   frames (see `HasCharacterOverlap`), rather than trusting the merged

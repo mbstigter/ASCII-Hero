@@ -129,7 +129,7 @@ public class World2D
     public char? DefaultBackColor { get; private set; }
 
     /// <summary>
-
+    /// The resolved Global+World material library. Each body resolves its
     /// <see cref="Body2D.Density"/>/<see cref="Body2D.Friction"/>/<see cref="Body2D.Restitution"/>
     /// from the material name(s) resolved onto its active <see cref="SpriteFrame.Materials"/>.
     /// </summary>
@@ -349,8 +349,7 @@ public class World2D
 
     /// <summary>
     /// Loads a world's background/object-placement files and the sprite assets they reference,
-    /// building up Platforms and the Player's spawn position/sprite. Replaces what used to be a
-    /// hardcoded constructor - see AssetFormat.md section 3 for the world file format and
+    /// building up Platforms and the Player's spawn position/sprite. See AssetFormat.md section 3 for the world file format and
     /// section 1.1 for the Global/World fallback rule applied by SpriteLoader. The optional
     /// <paramref name="progress"/> callback is invoked once after each of the first 4 logical
     /// steps completes (settings, palette/materials, background, object definitions), then
@@ -645,7 +644,7 @@ public class World2D
 
 
                 var gravityAffected = !objectSection.TryGetValue("GravityAffected", out var gravityText) || !bool.TryParse(gravityText, out var parsedGravity) || parsedGravity;
-                // Restitution is no longer defaulted here - absent means "use whatever the
+                // Restitution is not defaulted here - absent means "use whatever the
                 // spawned body's resolved material provides" (see the post-spawn material
                 // resolution below), only an explicit ini value overrides that.
                 var restitutionOverride = objectSection.TryGetValue("Restitution", out var restitutionText) && IniValueParser.TryParseDouble(restitutionText, out var parsedRestitution)
@@ -666,7 +665,10 @@ public class World2D
                 var densityOverride = objectSection.TryGetValue("Density", out var densityText) && IniValueParser.TryParseDouble(densityText, out var parsedDensity)
                     ? (double?)parsedDensity
                     : null;
-                // Lets a placement spawn its asset with a different material than the asset's own
+                var hardnessOverride = objectSection.TryGetValue("Hardness", out var hardnessText) && IniValueParser.TryParseDouble(hardnessText, out var parsedHardness) && parsedHardness > 0
+                    ? (double?)parsedHardness
+                    : null;
+                // Lets a placement spawn its asset
                 // DefaultMaterial/per-cell material layer (e.g. re-using the one Ball asset to
                 // test Rubber vs. Steel-ball behavior in TestPhysics) without needing a second,
                 // otherwise-identical sprite asset just to carry a different DefaultMaterial.
@@ -776,11 +778,8 @@ public class World2D
                 // that axis, instead of the default inference toward whichever bound is farther
                 // from the spawn position - e.g. so two platforms sharing the same range can be
                 // made to start in opposite phase. Expressed the same intuitive way as
-                // DynamicHazard's own PatrolInitialDirectionX, rather than the more abstract (if
-                // admittedly axis-agnostic) "Min"/"Max" wording used here previously - since each
-                // key already names its own axis, spelling out the value abstractly bought nothing
-                // and only cost readability. Remember Y increases downward (see docs/Architecture.md's
-                // Coordinate System), so "Down" means toward PatrolMaxY, same as "Max" did before.
+                // DynamicHazard's own PatrolInitialDirectionX. Remember Y increases downward (see docs/Architecture.md's
+                // Coordinate System), so "Down" means toward PatrolMaxY.
                 var patrolInitialDirectionTowardMaxX = objectSection.TryGetValue("PatrolInitialDirectionX", out var patrolDirectionXText)
                     ? (bool?)string.Equals(patrolDirectionXText, "Right", StringComparison.OrdinalIgnoreCase)
                     : null;
@@ -856,6 +855,7 @@ public class World2D
                         world.Player.Density = densityOverride ?? playerMaterial.Density;
                         world.Player.Friction = frictionOverride ?? playerMaterial.Friction;
                         world.Player.Restitution = restitutionOverride ?? playerMaterial.Restitution;
+                        world.Player.Hardness = hardnessOverride ?? playerMaterial.Hardness;
                         world.Player.Viscosity = playerMaterial.Viscosity;
                         // Player-only "muscle power"/cruising-speed overrides - default to
                         // PhysicsSystem's own constants (see Player2D.WalkForceMultiplier/WalkSpeed/
@@ -1055,6 +1055,7 @@ public class World2D
                 spawnedBody.Density = densityOverride ?? material.Density;
                 spawnedBody.Friction = frictionOverride ?? material.Friction;
                 spawnedBody.Restitution = restitutionOverride ?? material.Restitution;
+                spawnedBody.Hardness = hardnessOverride ?? material.Hardness;
                 spawnedBody.Viscosity = material.Viscosity;
                 if (materialOverride is not null)
                 {
