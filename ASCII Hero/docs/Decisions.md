@@ -51,10 +51,12 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `CollisionSystem.CombineFriction`/`CombineRestitution`). Impacts slower
   than `PhysicsConstants.RestingBounceSpeedThreshold` never bounce, so
   resting bodies settle instead of micro-bouncing.
-- **The solids/movers narrow phase re-runs several times per frame**
-  (`SolverIterations = 4`) so simultaneous contacts (a corner, a body
-  sandwiched between two others) reconcile instead of fighting each other
-  frame to frame.
+- **The solids/movers narrow phase re-runs several times per step**
+  (`SolverIterations = 8`) so simultaneous contacts (a corner, a body
+  sandwiched between two others, a crate stack with the player on top)
+  reconcile within one step instead of fighting each other. A final solids-only
+  pass afterwards guarantees no body ends the step overlapping immovable terrain
+  after a mover-vs-mover correction.
 - **Broad phase uses a spatial grid** (`SpatialGrid<T>`, one for solids and
   one for moving bodies) so collision cost scales with nearby objects, not
   the level's total object count. Narrow phase additionally requires actual
@@ -85,44 +87,58 @@ capture the "why" behind a decision without needing a lengthy narrative.
   contact per overlapping rectangle.** The rectangle overlapping most deeply (by its own natural
   axis) defines that contact's normal; every other overlapping rectangle is then re-measured
   along that *same* normal axis, and the worst (largest) of those depths is what is actually
-  Two rejected variants are each wrong
-  in an opposite direction: (1)
-  overlapping rectangle fully and independently applied the along-normal velocity impulse more
-  than once for what was really one physical contact - an unearned extra velocity kick (visible
-  as inflated jump height) whenever a body's own shape has two rectangles overlapping the same
-  solid along different axes at once (e.g. `CollisionShapeBuilder`'s column-run pass giving the
-  player's jump pose both a 3-wide top rectangle and a narrower, one-row-taller rectangle through
-  the same column); (2) resolving only the single deepest rectangle and leaving every other
-  overlapping rectangle completely untouched that iteration instead regressed plain wall
-  collision to feel mushy - a rectangle that never happened to be the single deepest one across
-  4 solver iterations could end up never corrected at all, letting a body visibly sink slightly
-  into an ordinary wall while walking into it. Re-measuring every overlapping rectangle along the
-  primary rectangle's own axis (rather than independently letting each rectangle pick its own
-  axis, and rather than ignoring non-primary rectangles outright) fixes both: every rectangle's
-  overlap along the established contact direction is still guaranteed to be corrected in the same
-  pass, while only one velocity/friction response and one contact recording happens per solid per
-  iteration. Any leftover overlap along a genuinely different axis (a separate physical contact)
-  is left for a later solver iteration, which re-detects fully fresh contacts against the body's
-  just-corrected position rather than permanently ignoring it.
+  corrected. Every rectangle's overlap along the established contact direction is therefore
+  corrected in the same pass (no body slowly sinking into a wall), while only one
+  velocity/friction response and one contact recording happens per solid per iteration
+  (applying the impulse per rectangle would count one physical contact several times and
+  inflate e.g. jump height). Leftover overlap along a genuinely different axis (a separate
+  physical contact) is left for a later solver iteration, which re-detects fresh contacts
+  against the just-corrected position.
 - **A kinematic body** (`KinematicObject2D`) is static-for-collision-response
   (never pushed) but moves at a prescribed velocity, and a resting body
   matches that velocity in the platform's reference frame. This alone - no
   extra carry/re-seat mechanism - makes a resting rider follow a moving
   platform on both axes, because the player's own movement is force-based
-  rather than overwritten from input.
+  rather than overwritten from input. Patrolling kinematic platforms brake
+  smoothly to rest at each route end and speed up again, with a global
+  acceleration limit (`PhysicsConstants.KinematicPlatformAcceleration`, not
+  per level), so riders experience a finite acceleration held by ordinary
+  friction instead of an instant velocity reversal.
+- **Locomotion is traction-limited and has a reaction.** The grounded
+  walk/crawl motor force is clamped to combined friction times the body's
+  weight times `PhysicsConstants.GroundTractionMultiplier` (10, a calibration for the
+  stylised gravity/proportions so ordinary floors keep the snappy feel; only
+  slippery pairings bind), and the equal and opposite force is applied to a finite-mass
+  support. A ground jump is relative to the support's vertical velocity and
+  pushes a finite-mass support down with equal and opposite momentum. The
+  walk force *is* the foot friction, so contact friction is not applied again
+  to a walking player's ground contact (climbing/hanging/swimming excluded).
+- **Friction takes back the distance it cancels (static friction).** Bodies move
+  before collision runs, so friction alone would remove velocity but leave that
+  step's slide, letting any push creep a well-gripped body. When friction removes
+  horizontal velocity, the matching displacement from this step's integration is
+  undone too (`Body2D.UndoFrictionDisplacement`, capped by what was actually
+  travelled), so a body held by sufficient grip stays exactly put.
+- **Fast bodies are substepped.** Collision is discrete, so each fixed step is split
+  into equal substeps when the fastest moving body would travel more than
+  `PhysicsConstants.MaxStepTravelCells` (0.4 cells) in it, up to `MaxSubsteps` (8).
+  Ordinary walking/jumping stays one step; only fast falls/launches pay extra.
+  Support reference velocity and friction undo use the actual (sub)step length.
 - **A resting body's support is judged by its actual movement, not its
   `Velocity`, unless the support is static.** A finite-mass support (e.g. a
   patrolling `DynamicObject2D`) has its own `Velocity` cancelled every step by
-  contact friction with whatever stands on it, so reading `Velocity` made
+  contact friction with whatever stands on it, so reading `Velocity` would make
   riders target ~0 and slip off. `Body2D` records its horizontal displacement
-  over the last physics step (`LastStepDisplacementX`, `ReferenceVelocityX`),
+  over the last physics step, measured from its position at the end of the
+  previous collision pass so collision pushes are not mistaken for motion
+  (`LastStepDisplacementX`, `ReferenceVelocityX`),
   and both `GetSurfaceVelocityX` (the rider's motor/patrol reference) and
   `CollisionSystem.ResolveContact`'s tangential friction use it for the
   supporting body (identified by the contact normal, so pair resolution order
   doesn't matter). Static/kinematic supports keep using their prescribed
   `Velocity` unchanged.
 - **Contacts are tracked as explicit `ContactType` flags** per body
-  (`Body2D.AddContact`/`HasContact`), snapshotted-and-cleared once per frame;
+  (`Body2D.AddContact`/`HasContact`), snapshotted-and-cleared once per physics step;
   `IPhysicsBody.IsGrounded` is derived from this (`HasContact(SurfaceBottom)`),
   not a separately stored, ordering-bug-prone flag.
 - **Facing/patrol targets are resolved relative to the surface the body
@@ -153,15 +169,13 @@ capture the "why" behind a decision without needing a lengthy narrative.
   summing the overlapped area of every qualifying same-material volume (which are
   assumed not to overlap each other - a level design rule, not enforced in code). A body only
   grazing a medium's edge therefore receives proportionally less buoyancy/drag than
-  one fully immersed (fraction 1.0, identical to the previous full-strength
-  behavior), which is what stops a surface-floating body from visibly bouncing as it
+  one fully immersed (fraction 1.0), which is what stops a surface-floating body from visibly bouncing as it
   crosses the binary overlap boundary each frame. When no placed medium volume
   overlaps at all, the body resolves to the default `Air` fallback at fraction 1.0
   (not 0.0) - `Air` is the ambient substance filling all otherwise-unoccupied space,
   not a bounded level-authored volume with edges to be partially submerged past, so
   its own low but nonzero `Viscosity` drag keeps applying continuously everywhere
-  outside a placed volume, exactly as before overlap-fraction scaling was
-  introduced. A placed volume of the same density as `Air` also displaces the
+  outside a placed volume. A placed volume of the same density as `Air` also displaces the
   fallback (only a strictly less dense one is skipped), so an `Air`-material volume
   can be a medium in its own right (e.g. a wind tunnel). Only bodies implementing
   `IMediumAffected` (mirroring `IGravityAffected`) receive these forces; `CurrentMedium`
@@ -203,36 +217,21 @@ capture the "why" behind a decision without needing a lengthy narrative.
   the body's own restitution (with the resting-bounce threshold). They have no material,
   apply no friction and record no contacts, so a body touching only an edge is not grounded.
   Levels must provide their own floors, walls and ceilings.
-- **Added mass is not modelled (possible later improvement).**
-  through a fluid must also accelerate some of the surrounding fluid, so it behaves as
-  if heavier while submerged (roughly half the displaced fluid mass for a round body).
-  Without it, bouncy bodies keep bouncing longer underwater than they would in reality.
-  If added, it belongs in `StepMovingBodyWithForces` as
-  `effectiveMass = mass + submergedFraction * coefficient * medium.Density * volume`,
-  used only to convert net force to acceleration (gravity and buoyancy still use the real mass).
+- **Added mass is not modelled.** A body accelerating through a fluid does not also
+  accelerate the surrounding fluid, so bouncy bodies keep bouncing slightly longer
+  underwater than they would in reality.
 - **Physics/Collision run on a fixed timestep accumulator, not a variable/capped
-  per-frame step** (`GameLoop.OnPlayingFrameAsync`'s `_physicsAccumulatorSeconds`,
-  a "cap the step size and
-  sub-step to cover the frame" approach would let
-  ordinary frame-rate jitter, which alone (independent of any oversized-single-step
-  tunneling concern) was enough to visibly perturb collision/pose resolution right
-  at a grounded/airborne boundary, since the exact instant contact is gained/lost
-  shifts with the immediately preceding step's size - observed as pose flicker
-  (rapid grounded/airborne alternation) specifically in the ~25-40 FPS range, where
-  frame deltas straddled the old cap unpredictably. Each frame's elapsed time is
-  now added to an accumulator, which is drained in however many whole steps of
-  exactly `FixedPhysicsStepSeconds` are currently available - every step
-  identically sized, deterministically, regardless of how the frame rate
-  fluctuates - with any remainder left for next frame's accumulator rather than
-  folded into an odd-sized partial step this frame. `CollisionSystem.Resolve` and
-  `World2D.ApplyPendingRemovals` both re-run after every fixed step (not once for
-  the whole frame), so a large catch-up delta still can't let a body integrate
-  several times before ever being collision-checked (neither Physics nor Collision
-  uses continuous/swept detection). Animation/camera/render remain once per real
-  frame, since both are purely presentational and already delta-tolerant. The
-  accumulator is reset to `0` when a new world finishes loading, so no leftover
-  time from a previous world (or time spent loading) is burned through as extra
-  steps on the new world's first frame.
+  per-frame step** (`GameLoop`'s `_physicsAccumulatorSeconds`). Each frame's elapsed
+  time is added to the accumulator, which is drained in whole steps of exactly
+  `PhysicsConstants.FixedPhysicsStepSeconds`; any remainder carries over to the next
+  frame. Identically sized steps keep collision and pose resolution deterministic
+  regardless of frame-rate jitter (a variable step shifts the exact instant contact is
+  gained or lost, causing grounded/airborne pose flicker). Physics, Collision and
+  `World2D.ApplyPendingRemovals` run for every step (and every fast-body substep), so a
+  large catch-up delta never lets a body integrate several times before being
+  collision-checked. Animation/camera/render run once per real frame. The accumulator
+  is reset when a new world finishes loading, so loading time is not burned through as
+  extra steps on the first frame.
 
 ## Assets & Materials
 
@@ -389,7 +388,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
 
 - **`Up` (directional) and `Jump` (action) are always distinct inputs, never
   even for the ordinary ground jump** - letting `Up` also trigger a
-  jump is unintuitive and rejected.
+  jump would be unintuitive.
 - **Two full, independent key sets** are supported for local co-op/preference
   - "Player 1" (arrows + `Space` + `Enter` as action) and "Player 2" (`WASD` + `Left Ctrl` + `E` as action).
 - **"Stance" is the stored choice, "pose" is the displayed result.** The
@@ -443,14 +442,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   gameplay viewport as `ViewportColumns`/`ViewportRows` (character counts)
   times that cell size (see docs/AssetFormat.md §4.3). Switching fonts or
   zoom level never requires touching game code - just updating the ini
-  values. Rejected alternatives: a hardcoded 16x28
-  target cell size with a fixed 1280x700 canvas, and
-  auto-detecting
-  separate integer `FontScale` multiplier (dropped because `measureText`
-  doesn't reliably report a true bitmap font's real native size - the
-  bundled 8x14 font measured back as 9.143x16 at a 16px probe size - and the
-  extra scale key was redundant once the final size is just configured
-  directly).
+  values. The size is not auto-detected because `measureText` does not
+  reliably report a bitmap font's real native size.
 - **`WorldRenderer` only builds glyphs for what's inside the camera's current
   viewport** - physics, collision, and animation are unaffected and keep
   simulating every body regardless of visibility.
@@ -486,7 +479,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `ForegroundBackColors`), instead of resolving each visible cell's color code
   against the palette every frame in `WorldRenderer`. These layers are purely
   static level data, so the palette lookup only ever needs to happen once per
-  cell, not once per cell per frame; `WorldRenderer` now just reads the
+  cell, not once per cell per frame; `WorldRenderer` just reads the
   precomputed color directly.
 
 ## Level/Game Flow
@@ -494,25 +487,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **Level selection is a strict `GameMode` state machine** backed by a
   `Global/Worlds.ini` catalog (world metadata/thumbnails loaded without
   loading the full playable world).
-any confirm key (`InputState.IsConfirmPressed`: Enter, E, Space or Left Control) confirms and returns to the world-select screen, a second `Esc` cancels. Menu and end-screen confirmations accept the same keys.
-
-## Notably rejected/reverted approaches
-
-A few approaches were deliberately tried and abandoned; if you find old
-comments or muscle memory referencing these, they're gone:
-
-- The `MultiRect`/`CharacterGrid` narrow-phase toggle and its `N`/`B` debug
-  (`CharacterGrid` is the only narrow phase).
-- `CollisionSystem._groundedSolids` and `MaintainVerticalGroundedContact`
-  (platform-carry hacks; force-based player movement makes them
-  unnecessary).
-(hang-snap uses an exact
-  overlap-based correction).
-(rejected).
-(patrol initial direction
-  uses `Left`/`Right`/`Up`/`Down`).
-- Batching consecutive same-row/same-color/adjacent glyphs in
-  `game-interop.js`'s `drawFrame` into one `fillRect`/`fillText` call pair
-  per run (measured no FPS improvement, slightly negative, likely because
-  game-object glyphs interleave with background/foreground glyphs in the
-  array, keeping runs short - reverted to one draw call pair per glyph).
+- **`Esc` asks before leaving a world.** During play it freezes the game behind an
+  "Exit game?" prompt: any confirm key (`InputState.IsConfirmPressed`: Enter, E, Space or
+  Left Control) confirms and returns to the world-select screen, a second `Esc` cancels.
+  Menu and end-screen confirmations accept the same keys.

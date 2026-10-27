@@ -55,11 +55,15 @@ This page is a tour of what the engine lets you build. For exact syntax, see
 | `Player` | Spawn point and hero sprite |
 | `StaticObject` | Immovable terrain such as platforms and walls |
 | `DynamicObject` | Moves under gravity or its own velocity, for example a bouncing ball |
-| `KinematicObject` | Moves on a predefined path and is never affected by gravity, so it suits moving platforms. It can bounce between bounds on X and/or Y at a set `PatrolSpeedX`/`PatrolSpeedY`, and riders are carried along |
+| `KinematicObject` | Moves on a predefined path and is never affected by gravity, so it suits moving platforms. It patrols between bounds on X and/or Y at a set `PatrolSpeedX`/`PatrolSpeedY`, braking smoothly at each end, and riders are carried along |
 | `StaticHazard` | Non-moving danger such as spikes or toxic plants |
 | `DynamicHazard` | A hazard that moves, such as a patrolling creature or a flying butterfly |
 | `KinematicHazard` | A hazard on a predefined path (constant velocity or bounded patrol), such as a saw blade or laser |
 | `Collectable` | A non-solid pickup with a configurable effect |
+| `Gate` | A door or hatch: solid while closed, passable while open. Opened by a key or a switch |
+| `Switch` | A button or lever the player operates with the action key |
+| `Device` | A machine such as a fan, lamp or pump that a switch turns on and off |
+| `FlowZone` | A moving medium, such as a river or a wind tunnel |
 
 ### Collectables (`Type`)
 
@@ -67,11 +71,17 @@ This page is a tour of what the engine lets you build. For exact syntax, see
 - `Ring` counts a ring and adds 5 to the score; every 25 rings (per world) give an extra life. Does not heal.
 - `Checkpoint` sets the player's respawn point.
 - `LevelEnd` finishes the level.
-opens the gate with
-  the same `Lock` (see below).
+- `Key` opens the gate with the same `Lock` (see below).
 
 Add `EffectClip` to play an animation on pickup. Add `EffectPersists = true` to leave the effect
 behind as a permanent "already used" marker, for example a lit checkpoint.
+
+### Gates, keys and switches
+
+- **Locked gates.** A gate with a `Lock` name opens when the player brings a key with the same
+  `Lock` and presses the action key next to it.
+- **Switches.** A switch drives every gate, device, flow zone or kinematic object with the same
+  `Link` name. Switches can toggle or latch on.
 
 ### Enemies and moving hazards
 
@@ -121,11 +131,18 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
 - **Whole-object materials.** Set a `DefaultMaterial` per sprite; combine materials by placing
   separate objects.
 - **Realistic contact response.** Bounce and friction come from both bodies' materials combined.
-  Slick ice and grippy rubber behave differently.
-Friction drags whatever stands on a moving body,
-  including walking creatures such as a friendly turtle.
+  Slick ice and grippy rubber behave differently. Slow impacts settle instead of bouncing forever,
+  and a body with enough grip stays put when pushed.
+- **Mass from material.** A body's mass is its material's density times its size, so a crate made
+  of a heavier material is harder to push.
+- **Riding and pushing.** Friction drags whatever stands on a moving body, including walking
+  creatures such as a friendly turtle. Walking and jumping push back on a movable support.
+- **Stacking.** Dynamic bodies such as crates can be stacked into towers and pyramids.
 - **Fluids and media.** Bodies in `Water`-like materials get buoyancy and quadratic drag.
   Swimming through a viscous medium is harder than walking on land.
+- **Flowing media.** A `FlowZone` makes a medium move, such as a river or a wind tunnel.
+- **No tunnelling.** Fast-moving bodies are simulated in smaller steps so they do not pass
+  through thin walls.
 - **Tunable per placement:** `Restitution`, `GravityAffected`, and `InitialVelocityX`/`Y`.
 - **Custom materials.** Add your own, for example a low-friction `Ice`, to the global library
   or to a single world.
@@ -156,8 +173,10 @@ Climbable and hangable surfaces are ordinary terrain objects marked with `Climba
 - **Per-pose footstep sounds.** `[Sounds]` maps a pose (`Walk`, `Crawl`, `Climb`, `Hang`,
   `Clamber`, `Swim`) to a sound played on each animation frame step. `JumpStart` and `Land`
   play when the player leaves and returns to the ground.
-`DiamondPickup`, `RingPickup`, `KeyPickup`, `DoorOpen`, `Checkpoint`, `LevelEnd`,
-  `Squash`, `Jump`, `Land`, `Step`, `SoftStep`, `Grab`, `Splash`, `MenuMove` and `MenuSelect` (subtle sounds for moving through the world selection menu and choosing a world).
+- **Built-in sounds** in the global library include `DiamondPickup`, `RingPickup`,
+  `KeyPickup`, `DoorOpen`, `Checkpoint`, `LevelEnd`, `Squash`, `Jump`, `Land`, `Step`,
+  `SoftStep`, `Grab`, `Splash`, `MenuMove` and `MenuSelect` (subtle sounds for moving through
+  the world selection menu and choosing a world).
 - **Per-world sound overrides.** A world can replace or add sounds with its own
   `SoundLibrary.ini`.
 - **Global switches.** `Settings.ini` has `Enabled` and `MasterVolume` for sound.
@@ -165,7 +184,8 @@ Climbable and hangable surfaces are ordinary terrain objects marked with `Climba
 
 ## Authoring workflow
 
-plus optional color layers.
+1. Draw the sprite in `{Asset}_{clip}_characters.txt`,
+  plus optional color layers.
 2. Describe it in `{Asset}_settings.ini`.
 3. Give it a code in your level's `objects.ini`.
 4. Type the code into `objects.txt`.
@@ -182,8 +202,9 @@ plus optional color layers.
 ## Known limitations and planned work
 
 - Hazards have no chase behavior yet.
-- Kinematic objects move at constant velocity or bounce between bounds. Arbitrary movement
-  paths are not supported yet.
+- Kinematic objects patrol between bounds (braking smoothly at each end) or move at constant
+  velocity. Arbitrary movement paths are not supported yet.
+- Climbing and hanging are scripted rather than grip-based, so ladders and pipes cannot move yet.
 - Buttons and levers are operated only by the player; enemies cannot flip them yet.
 - Respawn has no invulnerability window.
 

@@ -1,35 +1,35 @@
                 
+VVVV            
                 
-                
-                
-    UUULLLD     
-          UUU   
-                
-AAAAAAAAAAAAAAAA
-//end
-                
-                
-                
-           D    
-   UUU LLLUUU   
-                
+    UUULLL   D  
+     D       UUU
+   UUU   UUU    
                 
 AAAAAAAAAAAAAAAA
 //end
                 
-                
-            D   
-          UUU   
-  UUU  LLL      
-                
+ VVVV           
+              D 
+   UUU LLL   UUU
+   D     UUU    
+  UUU           
                 
 AAAAAAAAAAAAAAAA
 //end
                 
-            D   
-          UUU   
+  VVVV         D
+             UUU
+  UUU  LLLUU    
+ D              
+ UUU            
                 
+AAAAAAAAAAAAAAAA
+//end
+               D
+   VVVV      UUU
+         UUU    
  UUU   LLL      
-                
+D               
+UUU             
                 
 AAAAAAAAAAAAAAAA

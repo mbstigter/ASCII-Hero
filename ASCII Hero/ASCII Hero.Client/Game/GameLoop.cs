@@ -533,11 +533,42 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         _physicsAccumulatorSeconds += deltaSeconds;
         while (_physicsAccumulatorSeconds >= PhysicsConstants.FixedPhysicsStepSeconds)
         {
-            _physics.Step(_world, _input, PhysicsConstants.FixedPhysicsStepSeconds);
-            _collision.Resolve(_world);
-            _world.ApplyPendingRemovals();
+            // Fast bodies: split the step so no body moves further than MaxStepTravelCells per
+            // substep, so discrete collision cannot tunnel through thin walls. Ordinary motion
+            // stays a single step.
+            var substeps = CountSubsteps();
+            var substepSeconds = PhysicsConstants.FixedPhysicsStepSeconds / substeps;
+            for (var i = 0; i < substeps; i++)
+            {
+                _physics.Step(_world, _input, substepSeconds);
+                _collision.Resolve(_world, substepSeconds);
+                _world.ApplyPendingRemovals();
+            }
             _physicsAccumulatorSeconds -= PhysicsConstants.FixedPhysicsStepSeconds;
         }
+    }
+
+    /// <summary>
+    /// Substeps needed this fixed step: the fastest moving body's travel in one step (estimated
+    /// from its current velocity plus one step of gravity) divided by
+    /// <see cref="PhysicsConstants.MaxStepTravelCells"/>, capped at
+    /// <see cref="PhysicsConstants.MaxSubsteps"/>.
+    /// </summary>
+    private int CountSubsteps()
+    {
+        var gravityGain = Math.Abs(_world.Gravity) * PhysicsConstants.FixedPhysicsStepSeconds;
+        var maxSpeed = 0.0;
+        foreach (var body in _world.Objects)
+        {
+            if (body is IPhysicsBody movingBody && !body.IsStatic)
+            {
+                var speed = Math.Max(Math.Abs(movingBody.Velocity.X), Math.Abs(movingBody.Velocity.Y) + gravityGain);
+                maxSpeed = Math.Max(maxSpeed, speed);
+            }
+        }
+
+        var travel = maxSpeed * PhysicsConstants.FixedPhysicsStepSeconds;
+        return Math.Clamp((int)Math.Ceiling(travel / PhysicsConstants.MaxStepTravelCells), 1, PhysicsConstants.MaxSubsteps);
     }
 
     /// <summary>Forwards every sound queued on the world this frame to the sound player.</summary>

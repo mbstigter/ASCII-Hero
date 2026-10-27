@@ -38,7 +38,7 @@ public interface IPhysicsBody
     void RemoveContact(Physics.ContactType type, Body2D? other = null);
 
     /// <summary>See <see cref="World.Body2D.SnapshotContactsForNextFrame"/>.</summary>
-    void SnapshotContactsForNextFrame();
+    void SnapshotContactsForNextFrame(double stepSeconds);
 
     /// <summary>The body's collision shape, as one or more rectangles in world space.</summary>
     IReadOnlyList<Physics.Rect> CollisionRects { get; }

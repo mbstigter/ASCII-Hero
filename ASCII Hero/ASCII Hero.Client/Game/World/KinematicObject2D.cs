@@ -136,12 +136,15 @@ public class KinematicObject2D : Body2D, IPhysicsBody, ILinkTarget
     }
 
     /// <summary>
-    /// Advances this body's prescribed motion by one frame: recomputes each configured axis's
+    /// Advances this body's prescribed motion by one frame: steers each configured axis's
     /// velocity component toward its current target bound (reversing once within
     /// <see cref="GameDefaults.PatrolTurnThreshold"/> of it), leaves any un-patrolled axis's velocity component
     /// untouched, then integrates <see cref="Body2D.Position"/> from the resulting
     /// <see cref="Velocity"/> - called once per frame by <see cref="Physics.PhysicsSystem"/>
     /// instead of the gravity/force-based integration every other moving body goes through.
+    /// Velocity changes are limited to <see cref="PhysicsConstants.KinematicPlatformAcceleration"/>,
+    /// and the speed toward a bound never exceeds what can still be braked to rest before it
+    /// (<c>sqrt(2 * a * distance)</c>), so the platform slows down, stops and speeds up again smoothly.
     /// </summary>
     public void Move(double deltaSeconds)
     {
@@ -154,31 +157,34 @@ public class KinematicObject2D : Body2D, IPhysicsBody, ILinkTarget
 
         if (PatrolMinX is { } minX && PatrolMaxX is { } maxX)
         {
-            var targetX = _patrolMovingTowardMaxX ? maxX : minX;
-            if (Math.Abs(Position.X - targetX) <= GameDefaults.PatrolTurnThreshold)
-            {
-                _patrolMovingTowardMaxX = !_patrolMovingTowardMaxX;
-                targetX = _patrolMovingTowardMaxX ? maxX : minX;
-            }
-
-            velocity.X = (targetX > Position.X ? 1.0 : targetX < Position.X ? -1.0 : 0.0) * PatrolSpeedX;
+            velocity.X = SteerAxis(Position.X, velocity.X, minX, maxX, PatrolSpeedX, ref _patrolMovingTowardMaxX, deltaSeconds);
         }
 
         if (PatrolMinY is { } minY && PatrolMaxY is { } maxY)
         {
-            var targetY = _patrolMovingTowardMaxY ? maxY : minY;
-            if (Math.Abs(Position.Y - targetY) <= GameDefaults.PatrolTurnThreshold)
-            {
-                _patrolMovingTowardMaxY = !_patrolMovingTowardMaxY;
-                targetY = _patrolMovingTowardMaxY ? maxY : minY;
-            }
-
-            velocity.Y = (targetY > Position.Y ? 1.0 : targetY < Position.Y ? -1.0 : 0.0) * PatrolSpeedY;
+            velocity.Y = SteerAxis(Position.Y, velocity.Y, minY, maxY, PatrolSpeedY, ref _patrolMovingTowardMaxY, deltaSeconds);
         }
 
         Velocity = velocity;
         Position = new Vector2D(
             Position.X + velocity.X * deltaSeconds,
             Position.Y + velocity.Y * deltaSeconds);
+    }
+
+    private static double SteerAxis(double position, double velocity, double min, double max, double cruiseSpeed, ref bool movingTowardMax, double deltaSeconds)
+    {
+        var target = movingTowardMax ? max : min;
+        if (Math.Abs(position - target) <= GameDefaults.PatrolTurnThreshold)
+        {
+            movingTowardMax = !movingTowardMax;
+            target = movingTowardMax ? max : min;
+        }
+
+        var acceleration = PhysicsConstants.KinematicPlatformAcceleration;
+        var distance = Math.Abs(target - position);
+        var direction = target > position ? 1.0 : target < position ? -1.0 : 0.0;
+        var desired = direction * Math.Min(cruiseSpeed, Math.Sqrt(2.0 * acceleration * distance));
+        var maxChange = acceleration * deltaSeconds;
+        return velocity + Math.Clamp(desired - velocity, -maxChange, maxChange);
     }
 }

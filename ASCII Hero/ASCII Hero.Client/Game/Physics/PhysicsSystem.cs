@@ -350,7 +350,7 @@ public class PhysicsSystem
         // motor's gap is measured against player.Velocity, so leaving the impulse only in the
         // local copy would make the motor apply the same velocity change a second time.
         player.Velocity = velocity;
-        UpdateWalkForce(player, targetVelocityX, targetVelocityY);
+        UpdateWalkForce(world, player, targetVelocityX, targetVelocityY, deltaSeconds);
 
         if (!player.IsClimbing && !player.IsHanging && input.IsJumpPressed && player.IsGrounded && player.Stance == "Walk" && !stoodUpThisFrame)
         {
@@ -362,7 +362,20 @@ public class PhysicsSystem
             // strongest magnitude since it launches off solid ground with both legs planted.
             // The impulse is the same in every medium; a viscous medium (e.g. water) limits the
             // resulting height only through its passive quadratic drag in StepMovingBodyWithForces.
-            velocity.Y = -GameDefaults.WalkJumpSpeed;
+            // The kick is relative to the support's own vertical velocity (a jump off a rising
+            // platform launches faster in world terms), and by Newton's third law the push-off
+            // drives a finite-mass support downward with the equal and opposite momentum.
+            var support = player.GetContactingBodies(ContactType.SurfaceBottom).FirstOrDefault();
+            var supportVelocityY = support is IPhysicsBody supportBody ? supportBody.Velocity.Y : 0.0;
+            velocity.Y = supportVelocityY - GameDefaults.WalkJumpSpeed;
+            if (support is { IsStatic: false } and IPhysicsBody movableSupport)
+            {
+                var playerMass = player.Mass > 0 ? player.Mass : 1.0;
+                var supportMass = support.Mass > 0 ? support.Mass : 1.0;
+                var supportVelocity = movableSupport.Velocity;
+                supportVelocity.Y += GameDefaults.WalkJumpSpeed * playerMass / supportMass;
+                movableSupport.Velocity = supportVelocity;
+            }
             // Clears IsGrounded immediately so the jump's own frame already shows airborne (jump
             // pose, re-jump gated out) instead of waiting for the next collision pass to notice
             // the player has left the surface.
@@ -584,7 +597,7 @@ public class PhysicsSystem
     /// resolved material (<see cref="Body2D.Mass"/> of 0, treated as mass 1) still walks at the
     /// ordinary rate.
     /// </summary>
-    private static void UpdateWalkForce(Player2D player, double targetVelocityX, double targetVelocityY)
+    private static void UpdateWalkForce(World2D world, Player2D player, double targetVelocityX, double targetVelocityY, double deltaSeconds)
     {
         var mass = player.Mass > 0 ? player.Mass : 1.0;
         // Horizontal strength is cut to AirControlMultiplier while airborne (see its own doc
@@ -597,9 +610,34 @@ public class PhysicsSystem
         var horizontalMultiplier = player.IsGrounded ? player.WalkForceMultiplier : player.WalkForceMultiplier * GameDefaults.AirControlMultiplier;
         // Not scaled by the medium: a viscous medium resists motion only through the passive
         // drag in StepMovingBodyWithForces, which already grows with speed.
-        player.WalkForce = new Vector2D(
-            (targetVelocityX - player.Velocity.X) * mass * horizontalMultiplier,
-            (targetVelocityY - player.Velocity.Y) * mass * player.WalkForceMultiplier);
+        var forceX = (targetVelocityX - player.Velocity.X) * mass * horizontalMultiplier;
+        var forceY = (targetVelocityY - player.Velocity.Y) * mass * player.WalkForceMultiplier;
+
+        // Walking/crawling pushes horizontally against the ground through friction: the force
+        // can never exceed the combined friction coefficient times the body's weight (traction),
+        // so a slippery floor limits acceleration and braking. By Newton's third law the same
+        // force pushes the support the other way - a finite-mass support (e.g. a pushable block)
+        // is shoved backward; an immovable one simply absorbs it.
+        if (player.IsDrivingOnGround)
+        {
+            var support = player.GetContactingBodies(ContactType.SurfaceBottom).FirstOrDefault();
+            if (support is not null)
+            {
+                var friction = CollisionSystem.CombineFriction(player.Friction, support.Friction);
+                var maxTraction = friction * mass * Math.Abs(world.Gravity) * PhysicsConstants.GroundTractionMultiplier;
+                forceX = Math.Clamp(forceX, -maxTraction, maxTraction);
+
+                if (!support.IsStatic && support is IPhysicsBody supportBody)
+                {
+                    var supportMass = support.Mass > 0 ? support.Mass : 1.0;
+                    var supportVelocity = supportBody.Velocity;
+                    supportVelocity.X -= forceX / supportMass * deltaSeconds;
+                    supportBody.Velocity = supportVelocity;
+                }
+            }
+        }
+
+        player.WalkForce = new Vector2D(forceX, forceY);
     }
 
     /// <summary>
@@ -724,6 +762,10 @@ public class PhysicsSystem
         body.Position = new Vector2D(
             body.Position.X + velocity.X * deltaSeconds,
             body.Position.Y + velocity.Y * deltaSeconds);
+        if (body is Body2D frictionBody)
+        {
+            frictionBody.FrictionUndoBudgetX = velocity.X * deltaSeconds;
+        }
 
         // Pose (see IPosedBody) is resolved last, after velocity/position are both finalized for
         // this frame, so a velocity-derived facing (e.g. DynamicHazard2D's) reflects this frame's

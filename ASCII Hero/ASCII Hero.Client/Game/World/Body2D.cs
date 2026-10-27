@@ -142,9 +142,11 @@ public abstract class Body2D
     /// Clears every recorded contact for this frame, first preserving the current set as
     /// "previous frame" (see <see cref="_previousContacts"/>) for the next frame's direction
     /// disambiguation. Called once per body at the start of <see cref="Physics.CollisionSystem.Resolve"/>,
-    /// before any contact for the new frame is resolved/recorded.
+    /// before any contact for the new frame is resolved/recorded. <paramref name="stepSeconds"/> is
+    /// the length of the (sub)step just integrated, used to turn displacement into
+    /// <see cref="ReferenceVelocityX"/> and friction velocity changes into distance.
     /// </summary>
-    public void SnapshotContactsForNextFrame()
+    public void SnapshotContactsForNextFrame(double stepSeconds)
     {
         var snapshot = new Dictionary<Physics.ContactType, List<Body2D>>(_contacts.Count);
         foreach (var (type, bodies) in _contacts)
@@ -155,17 +157,54 @@ public abstract class Body2D
         _previousContacts = snapshot;
         _contacts.Clear();
 
-        // Called once per physics step, so this is the actual displacement over one step,
-        // after collision response (unlike Velocity, which collision may have altered).
+        // Measured from the position recorded after the previous frame's collision pass (see
+        // MarkResolvedPosition), so it is this body's own motion over the physics step only -
+        // positional pushes from collision corrections are not mistaken for movement.
         LastStepDisplacementX = _hasSnapshotPosition ? Position.X - _positionAtLastSnapshotX : 0.0;
+        _lastStepSeconds = stepSeconds > 0 ? stepSeconds : PhysicsConstants.FixedPhysicsStepSeconds;
+    }
+
+    /// <summary>
+    /// Records this body's position
+    /// the next step's <see cref="LastStepDisplacementX"/>.
+    /// </summary>
+    public void MarkResolvedPosition()
+    {
         _positionAtLastSnapshotX = Position.X;
         _hasSnapshotPosition = true;
     }
 
     private double _positionAtLastSnapshotX;
     private bool _hasSnapshotPosition;
+    private double _lastStepSeconds = PhysicsConstants.FixedPhysicsStepSeconds;
 
-    /// <summary>How far this body actually moved horizontally over the last physics step.</summary>
+    /// <summary>
+    /// Horizontal distance this body travelled during this step's force integration that contact
+    /// friction may still take back. Set by <see cref="Physics.PhysicsSystem"/> after integrating;
+    /// friction removes velocity after the body has already moved, so without undoing the matching
+    /// distance a body held by sufficient grip would still creep by one step's worth whenever it is
+    /// pushed.
+    /// </summary>
+    public double FrictionUndoBudgetX { get; set; }
+
+    /// <summary>
+    /// Takes back the distance travelled with velocity that friction just removed
+    /// (<paramref name="velocityChangeX"/>), limited to what was actually travelled this step.
+    /// </summary>
+    public void UndoFrictionDisplacement(double velocityChangeX)
+    {
+        var correction = velocityChangeX * _lastStepSeconds;
+        if (correction == 0 || Math.Sign(correction) == Math.Sign(FrictionUndoBudgetX))
+        {
+            return;
+        }
+
+        correction = Math.Sign(correction) * Math.Min(Math.Abs(correction), Math.Abs(FrictionUndoBudgetX));
+        Position = new Vector2D(Position.X + correction, Position.Y);
+        FrictionUndoBudgetX += correction;
+    }
+
+    /// <summary>How far this body moved horizontally under its own motion over the last physics step, excluding collision position corrections.</summary>
     public double LastStepDisplacementX { get; private set; }
 
     /// <summary>
@@ -174,7 +213,7 @@ public abstract class Body2D
     /// finite-mass body's <see cref="IPhysicsBody.Velocity"/> - is not cancelled by the contact
     /// response itself.
     /// </summary>
-    public double ReferenceVelocityX => LastStepDisplacementX / PhysicsConstants.FixedPhysicsStepSeconds;
+    public double ReferenceVelocityX => LastStepDisplacementX / _lastStepSeconds;
 
     /// <summary>
     /// Whether this body currently rests on something solid, be it a platform's top surface, the

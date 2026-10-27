@@ -464,7 +464,8 @@ The live game state and the entity types that make it up.
   via `Body2D.AddContact`/`HasContact`/`GetContactingBodies`.
   `Resolve` snapshots and clears every body's contacts (via
   `Body2D.SnapshotContactsForNextFrame`) at the very start of each frame, and
-  records each body's horizontal displacement since the previous snapshot
+  records each body's horizontal displacement since the end of the previous
+  collision pass (`Body2D.MarkResolvedPosition`), excluding collision pushes
   (`Body2D.LastStepDisplacementX`/`ReferenceVelocityX`) - the real speed of a
   finite-mass support, which riders (`GetSurfaceVelocityX`) and
   `ResolveContact`'s friction are judged against (static supports use their
@@ -762,6 +763,11 @@ large jumps after e.g. a tab switch):
    than one fixed step) for next frame rather than folding it into an
    odd-sized partial step this frame - so every single step is identically
    sized, deterministically, regardless of how the frame rate fluctuates.
+   When the fastest moving body would travel more than
+   `PhysicsConstants.MaxStepTravelCells` in one step, that fixed step is split
+   into equal substeps (`GameLoop.CountSubsteps`, at most `MaxSubsteps`), each
+   running the full Physics/Collision/removals sequence below, so fast bodies
+   cannot tunnel through thin walls.
    Each step runs `PhysicsSystem.Step` (resolves player jump/stance/pose
    input, feeding the player's own force-based ground/climb/hang locomotion,
    see `IWalkForceBody` above; applies gravity to affected bodies; and

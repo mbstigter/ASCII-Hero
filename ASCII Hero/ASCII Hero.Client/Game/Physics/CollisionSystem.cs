@@ -34,9 +34,9 @@ public class CollisionSystem
     // ---------------------------------------------------------------------------------------
 
     /// <summary>
-    /// Resolves all collision for one frame.
+    /// Resolves all collision for one physics (sub)step of <paramref name="stepSeconds"/>.
     /// </summary>
-    public void Resolve(World2D world)
+    public void Resolve(World2D world, double stepSeconds)
     {
         _movingBodies.Clear();
 
@@ -46,7 +46,7 @@ public class CollisionSystem
         // frame is resolved/recorded - see Body2D.SnapshotContactsForNextFrame.
         foreach (var contactBody in world.Objects)
         {
-            contactBody.SnapshotContactsForNextFrame();
+            contactBody.SnapshotContactsForNextFrame(stepSeconds);
         }
 
         foreach (var body in world.Objects)
@@ -111,13 +111,28 @@ public class CollisionSystem
             }
         }
 
+        // Final cleanup: mover-vs-mover corrections in the last iteration can push a body back
+        // into a solid. Solids are immovable, so one last solids-only pass guarantees no body
+        // ends the frame overlapping static terrain.
+        foreach (var body in _movingBodies)
+        {
+            foreach (var solid in GetCandidateSolids(body))
+            {
+                ResolveAgainstSolid(body, solid);
+            }
+        }
+
         foreach (var body in _movingBodies)
         {
             ResolveWorldBounds(world, body);
         }
 
-
         ResolveHazardsAndCollectables(world);
+
+        foreach (var body in world.Objects)
+        {
+            body.MarkResolvedPosition();
+        }
     }
 
     // ---------------------------------------------------------------------------------------
@@ -255,7 +270,7 @@ public class CollisionSystem
     /// keeps the pair slippery however grippy the other side is, and two equal materials keep
     /// their own value. Not capped at 1, since real friction coefficients can exceed 1.
     /// </summary>
-    private static double CombineFriction(double a, double b) => Math.Sqrt(Math.Max(a, 0.0) * Math.Max(b, 0.0));
+    internal static double CombineFriction(double a, double b) => Math.Sqrt(Math.Max(a, 0.0) * Math.Max(b, 0.0));
 
     /// <summary>
     /// Combines two bodies' restitution for a single contact, weighted by softness (1 / Hardness):
@@ -874,19 +889,40 @@ public class CollisionSystem
             }
         }
 
+        // A walking/crawling player's foot friction is already the traction-limited walk force
+        // (see PhysicsSystem.UpdateWalkForce, including its reaction on the support); applying
+        // contact friction to that ground contact as well would count the same friction twice.
+        var playerWalksOnContact =
+            (contact.Normal.Y < 0 && IsFootLocomotingPlayer(body)) ||
+            (contact.Normal.Y > 0 && other is not null && IsFootLocomotingPlayer(other));
+
         var frictionRelativeVelocity = bodyTangentSource - otherTangentSource;
         var tangentialRelativeSpeed = frictionRelativeVelocity.X * tangent.X + frictionRelativeVelocity.Y * tangent.Y;
         var normalImpulseMagnitudePerMass = Math.Abs(normalImpulse * bodyInverseMass);
-        var newTangentialRelativeSpeed = ApplyCoulombFriction(tangentialRelativeSpeed, normalImpulseMagnitudePerMass, friction);
+        var newTangentialRelativeSpeed = playerWalksOnContact
+            ? tangentialRelativeSpeed
+            : ApplyCoulombFriction(tangentialRelativeSpeed, normalImpulseMagnitudePerMass, friction);
         var tangentialDelta = tangentialRelativeSpeed - newTangentialRelativeSpeed;
+        // Friction also takes back the distance travelled this step with the velocity it removes
+        // (see Body2D.UndoFrictionDisplacement), so a body held by enough grip does not creep.
         body.Velocity -= tangent * (tangentialDelta * bodyShare);
+        ((Body2D)body).UndoFrictionDisplacement(-tangent.X * tangentialDelta * bodyShare);
         if (other is not null)
         {
             other.Velocity += tangent * (tangentialDelta * otherShare);
+            ((Body2D)other).UndoFrictionDisplacement(tangent.X * tangentialDelta * otherShare);
         }
 
         RecordContact(body, otherContactTarget, contact.Normal);
     }
+
+    /// <summary>
+    /// Whether <paramref name="body"/> is the player moving by foot (walking/crawling), whose
+    /// ground friction is already its traction-limited walk force - see
+    /// <see cref="World.Player2D.UsesFeetLocomotion"/>.
+    /// </summary>
+    private static bool IsFootLocomotingPlayer(IPhysicsBody body) =>
+        body is Player2D { UsesFeetLocomotion: true };
 
     /// <summary>
     /// Records the reciprocal <see cref="ContactType"/> pair for a resolved <see cref="Contact"/>

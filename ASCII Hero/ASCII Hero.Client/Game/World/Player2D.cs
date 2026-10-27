@@ -101,6 +101,21 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     public Vector2D WalkForce { get; set; }
 
     /// <summary>
+    /// True while <see cref="WalkForce"/> pushes horizontally against the ground (walking or
+    /// crawling): that force is then the foot friction itself - traction-limited, with a reaction
+    /// on the support - so contact friction must not be applied to the same ground contact again.
+    /// </summary>
+    public bool IsDrivingOnGround => IsGrounded && UsesFeetLocomotion;
+
+    /// <summary>
+    /// True when the player moves by pushing with the feet (walking/crawling), i.e. not climbing,
+    /// hanging or swimming. Unlike <see cref="IsDrivingOnGround"/> this does not depend on this
+    /// frame's contacts, so the collision pass can use it while those contacts are still being
+    /// rebuilt.
+    /// </summary>
+    public bool UsesFeetLocomotion => !IsClimbing && !IsHanging && !IsSwimming;
+
+    /// <summary>
     /// "Muscle power" - the mass-scaled force gain applied to converge <see cref="Velocity"/>
     /// toward the current target walk/crawl/climb/hang velocity (see
     /// <see cref="Physics.PhysicsSystem.UpdateWalkForce"/>). Defaults to
