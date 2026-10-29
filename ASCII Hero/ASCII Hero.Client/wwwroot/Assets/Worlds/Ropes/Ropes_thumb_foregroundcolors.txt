@@ -1,0 +1,26 @@
+                
+     BBAABAAB   
+                
+  B             
+  A BBB    BBB  
+  A             
+  B             
+BBBBBBBBBBBBBBBB
+//end
+                
+     BABAABAB   
+                
+  B             
+  A BBB    BBB  
+  B             
+  A             
+BBBBBBBBBBBBBBBB
+//end
+                
+     BAABAABB   
+                
+  B             
+  B BBB    BBB  
+  A             
+  A             
+BBBBBBBBBBBBBBBB

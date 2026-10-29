@@ -1,35 +1,35 @@
+       UUU      
                 
-    UUUU        
                 
-  A       LLLLLL
+    LLLL    LLLL
   A             
   A             
   A             
 LLLLLLLLLLLLLLLL
 //end
+        UUU     
                 
-     UUUU       
-  A             
-  A       LLLLLL
-  A             
-  A             
                 
-LLLLLLLLLLLLLLLL
-//end
-                
-  A   UUUU      
+  A LLLL    LLLL
   A             
-  A       LLLLLL
   A             
-                
                 
 LLLLLLLLLLLLLLLL
 //end
+         UUU    
                 
-     UUUU       
   A             
-  A       LLLLLL
+  A LLLL    LLLL
+  A             
+                
+                
+LLLLLLLLLLLLLLLL
+//end
+          UUU   
   A             
   A             
+  A LLLL    LLLL
+                
+                
                 
 LLLLLLLLLLLLLLLL

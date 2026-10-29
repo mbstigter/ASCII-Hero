@@ -75,6 +75,14 @@ public class SpriteClip
     /// Left, ...). Defaults to 0.
     /// </summary>
     public int DefaultFrame { get; init; }
+
+    /// <summary>
+    /// Whether (and how) this clip's frames can be repeated to build a longer platform/wall/beam.
+    /// Resolved per-clip from an optional <c>[Layout.{clipName}]</c> section, falling back to the
+    /// asset-wide <c>[Layout]</c> section, so one asset can hold e.g. a horizontal and a vertical
+    /// variant that tile along different axes.
+    /// </summary>
+    public TileAxis TileAxis { get; init; } = TileAxis.None;
 }
 
 /// <summary>
@@ -127,9 +135,6 @@ public class SpriteAsset
     public required string Name { get; init; }
     public required char EmptyChar { get; init; }
     public required IReadOnlyDictionary<string, SpriteClip> Clips { get; init; }
-
-    /// <summary>Whether (and how) this asset's frames can be repeated to build a longer platform/wall.</summary>
-    public TileAxis TileAxis { get; init; } = TileAxis.None;
 
     /// <summary>
     /// Color code (see <c>Global/ColorPalette.ini</c>) used for a cell whose own <c>_foregroundcolors.txt</c>

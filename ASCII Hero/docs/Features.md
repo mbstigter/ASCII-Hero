@@ -204,7 +204,7 @@ Climbable and hangable surfaces are ordinary terrain objects marked with `Climba
 - Hazards have no chase behavior yet.
 - Kinematic objects patrol between bounds (braking smoothly at each end) or move at constant
   velocity. Arbitrary movement paths are not supported yet.
-- Moving escalators/ropes only move in a straight line (Left, Right, Up or Down); when they carry
+- Moving conveyors/ropes only move in a straight line (Left, Right, Up or Down); when they carry
   the player past their end, the player simply lets go.
 - Buttons and levers are operated only by the player; enemies cannot flip them yet.
 - Respawn has no invulnerability window.

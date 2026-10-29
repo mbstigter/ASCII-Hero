@@ -199,11 +199,14 @@ capture the "why" behind a decision without needing a lengthy narrative.
   effect, open gate, switch, ladder) can leak its own material into the medium
   resolution and cause unintended buoyancy or swimming. `IsClimbable`/`IsHangable`
   terrain is still never a medium.
-- **Escalators/ropes are not a body type**: a moving surface on a body that stays put
+- **Conveyors/ropes are not a body type**: a moving surface on a body that stays put
   is the per-placement `Body2D.ConveyorVelocity` (`ConveyorDirection`/`ConveyorSpeed`),
   orthogonal to `Kind` like `IsClimbable`/`IsHangable`. `Body2D.GetCarryVelocity()`
   (own `Velocity` + `ConveyorVelocity`) is the single carry speed, so moving ladders/pipes
-  (kinematic patrol) and escalators/ropes share one path. Named `Conveyor*` rather than
+  (kinematic patrol) and conveyors/ropes (horizontal and vertical) share one path: grips use it as
+  their reference frame, and resting contacts use it as the solid's collision velocity
+  (friction drags riders along) and as the support speed for walking and jumping
+  (`GetSurfaceVelocityX`). Named `Conveyor*` rather than
   `Flow*` because it prescribes a carry velocity, not a push force inside a medium.
 - **Climbing/hanging are grip-based**: holding a climbable/hangable records a grip
   contact (`ContactType.Climbable`/`Hangable`); gravity stays on and the grip motor

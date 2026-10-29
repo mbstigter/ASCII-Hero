@@ -191,7 +191,7 @@ public class CollisionSystem
         {
             // Speed gates are measured relative to the surface's carry velocity (its own motion
             // plus any conveyor motion - see Body2D.GetCarryVelocity), so a moving ladder/pipe or
-            // an escalator/rope can be grabbed as easily as a fixed one. The touched surface is
+            // a conveyor/rope can be grabbed as easily as a fixed one. The touched surface is
             // recorded as a grip contact (ContactType.Climbable/Hangable), which PhysicsSystem
             // uses as the reference frame and reaction target for the grip motor.
             if (body is IClimberBody climber)
@@ -624,11 +624,13 @@ public class CollisionSystem
     /// immovable/infinite-mass - its own <see cref="Body2D.Position"/> is never touched by
     /// collision. A solid that is itself an <see cref="IPhysicsBody"/> (a kinematic platform) has
     /// a real <see cref="IPhysicsBody.Velocity"/> used as the collision's reference frame;
-    /// ordinary static terrain is implicitly stationary (<see cref="Vector2D.Zero"/>).
+    /// ordinary static terrain is implicitly stationary (<see cref="Vector2D.Zero"/>). Either may
+    /// add a moving surface (<see cref="Body2D.ConveyorVelocity"/>, e.g. a conveyor belt), which
+    /// friction then drags resting bodies along with (see <see cref="Body2D.GetCarryVelocity"/>).
     /// </summary>
     private static void ResolveAgainstSolid(IPhysicsBody body, Body2D solid)
     {
-        var solidVelocity = solid is IPhysicsBody solidBody ? solidBody.Velocity : default;
+        var solidVelocity = solid.GetCarryVelocity();
         ResolveAgainstOtherBody(body, solid, other: null, solidVelocity, otherInverseMass: 0.0);
     }
 

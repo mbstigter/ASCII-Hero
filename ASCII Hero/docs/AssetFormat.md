@@ -207,7 +207,7 @@ DefaultFrame = 0
 
 **`[Layout]`**
 - `EmptyChar` (default `' '`) — which character in layer files means "no cell here."
-- `TileAxis` (default `None`) — whether this asset is a tileable unit (see §2.5).
+- `TileAxis` (default `None`) — whether this asset is a tileable unit (see §2.5); can be overridden per clip in `[Layout.{clipName}]`.
 
 **`[Colors]`** (optional) — whole-asset default color codes (see `Global/ColorPalette.ini`),
 the color analog of `[Physics] DefaultMaterial` (§2.3):
@@ -301,16 +301,32 @@ TileAxis = Horizontal
 
 - **`TileAxis = Horizontal`** — the asset's `_characters.txt` (and matching
   `_foregroundcolors.txt`/`_backgroundcolors.txt`) is authored
-  **one cell wide** (any height). A placement's `Repeat` count (see §3.4)
-  repeats that single column side-by-side to build up the actual platform
+  **one unit wide** (usually one cell, any height). A placement's `Repeat` count (see §3.4)
+  repeats that unit side-by-side to build up the actual platform
   length at spawn time.
 - **`TileAxis = Vertical`** — the mirror case: the asset is authored **one
-  cell tall** (any width), and `Repeat` stacks that single row to build up the
+  unit tall** (usually one cell, any width), and `Repeat` stacks that unit to build up the
   actual wall/column height.
 - **`TileAxis = None`** (the default, and the only option when the key is
   omitted) — the asset is not tileable; it is always used exactly as
   authored, `Repeat` has no effect, and every other asset (`Player`, `Ball`,
   ...) is entirely unaffected by this feature.
+
+The axis can also be set per clip in a `[Layout.{clipName}]` section, which
+overrides `[Layout]` for that clip only (like `[Animation.{clipName}]` does for
+animation). This lets one asset hold a horizontal and a vertical version that
+repeat in different directions:
+
+```ini
+[Layout]
+EmptyChar = ' '
+
+[Layout.horizontal]
+TileAxis = Horizontal
+
+[Layout.vertical]
+TileAxis = Vertical
+```
 
 Tiling happens once, in memory, at spawn time — it repeats the authored unit's
 characters/foregroundcolors/backgroundcolors grids (and the resolved material
@@ -1258,11 +1274,12 @@ moving bodies, independent of its `Kind`:
   grip in the same way as `Climbable`. Usually paired with
   `Passable = true` for the same reason as `Climbable`.
 - **`ConveyorDirection`** / **`ConveyorSpeed`** — give the object a moving
-  surface while the object itself stays in place, like the rungs of an
-  escalator or a rope running over pulleys. `ConveyorDirection` is `Left`,
+  surface while the object itself stays in place, like a conveyor or a rope
+  (horizontal or vertical). `ConveyorDirection` is `Left`,
   `Right`, `Up` or `Down`; `ConveyorSpeed` is in cells/second and is required
-  whenever `ConveyorDirection` is set. Anything holding on is carried along at
-  that speed. Can also be combined with a moving object (`KinematicObject`),
+  whenever `ConveyorDirection` is set. Anything holding on, or standing,
+  crawling or resting on top, is carried along at that speed (a walking player can walk with or
+  against it).
   in which case both movements add up. When the surface carries the player
   past the end of the object, the player simply lets go and falls - place a
   floor or ledge there if they should land somewhere.
@@ -1270,21 +1287,21 @@ moving bodies, independent of its `Kind`:
 ```ini
 [Ladder]
 Asset = Ladder
-Clip = default
+Clip = vertical
 Kind = StaticObject
 Passable = true
 Climbable = true
 
 [HangingPipe]
 Asset = Pipe
-Clip = default
+Clip = horizontal
 Kind = StaticObject
 Passable = true
 Hangable = true
 
-[Escalator]
-Asset = Ladder
-Clip = default
+[VerticalConveyor]
+Asset = Conveyor
+Clip = vertical_up
 Kind = StaticObject
 Passable = true
 Climbable = true

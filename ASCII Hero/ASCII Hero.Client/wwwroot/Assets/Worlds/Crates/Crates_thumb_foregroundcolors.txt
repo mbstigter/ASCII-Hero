@@ -1,8 +1,8 @@
                 
-   BB      99   
-   BB      99   
-  BB99     BB   
-  BB99     BB   
- 99BB99    99   
- 99BB99    99   
+                
+     BB     99  
+    9999     BB 
+   BB99BB    99 
+  99BB99BB   BB 
+ BB99BB99BB  99 
 2222222222222222

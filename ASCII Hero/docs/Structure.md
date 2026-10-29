@@ -92,10 +92,11 @@ palettes, materials) from disk/HTTP into in-memory game objects.
   loading, and the game's one representation of "what a game object looks
   like": a `SpriteAsset` is one named asset (e.g. `Player`, `Ball`) holding
   every clip it defines (e.g. `walk_idle`, `walk_left`) plus asset-wide
-  metadata (its own empty-char, tile axis, default colors, optional
+  metadata (its own empty-char, default colors, optional
   stance/facing map). A `SpriteClip` is one named clip, holding one or more
   `SpriteFrame`s in sequence plus resolved animation timing (duration, loop
-  mode, default start frame). A `SpriteFrame` is the actual drawable/
+  mode, default start frame) and its tile axis (from `[Layout.{clip}]`,
+  falling back to `[Layout]`). A `SpriteFrame` is the actual drawable/
   collidable unit - parallel `Chars`/`Fore`/`Back`/`Materials` grids, one
   entry per cell - consumed directly by `WorldRenderer` (for its glyphs) and
   `CollisionSystem`/`Body2D` (for its silhouette/material lookup). A `Body2D`
@@ -147,8 +148,9 @@ The live game state and the entity types that make it up.
   and exposes the per-instance `IsPassable`/`IsClimbable`/`IsHangable` flags
   that let any static placement opt into those behaviors without a dedicated
   subclass, plus `ConveyorVelocity` (a moving surface on a body that stays
-  put, e.g. escalator/rope) and `GetCarryVelocity()` (own `Velocity` +
-  `ConveyorVelocity`, the speed something held onto the body is carried at).
+  put, e.g. conveyor/rope) and `GetCarryVelocity()` (own `Velocity` +
+  `ConveyorVelocity`, the speed something held onto or resting on the body is carried at;
+  also used by `GetSurfaceVelocityX` and as a solid's collision velocity).
 - **Concrete body types**, all deriving from `Body2D`:
   - `Player2D` - the player-controlled character; implements the mover,
 	gravity, collector, and killer capabilities (below), plus the climbing
@@ -397,7 +399,7 @@ The live game state and the entity types that make it up.
   body the other way, and measures every target, snap check and jump-off
   relative to the gripped body's `GetCarryVelocity()` (recorded as a
   `ContactType.Climbable`/`Hangable` contact by `CollisionSystem`), so moving
-  ladders/pipes and escalators/ropes carry the player. Both resolve their own dedicated
+  ladders/pipes and conveyors/ropes carry the player. Both resolve their own dedicated
   poses instead of the "Jump" swap - `Climb` (whose `Facing` is resolved
   along the vertical axis instead of horizontal, since it's a
   vertically-moving stance - see `SpriteAsset.Facing`/`StanceDefinition` - so

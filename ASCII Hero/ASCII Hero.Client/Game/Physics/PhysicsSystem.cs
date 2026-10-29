@@ -247,7 +247,7 @@ public class PhysicsSystem
         // platform's own velocity every single frame - the two forces fighting is what made the
         // player appear unable to ride a horizontally moving platform at all. Climbing/hanging
         // are likewise relative to the gripped surface's carry velocity (a moving ladder/pipe, or
-        // an escalator/rope - see Body2D.GetCarryVelocity); swimming has no carry concept, so its
+        // a conveyor/rope - see Body2D.GetCarryVelocity); swimming has no carry concept, so its
         // target speed stays absolute.
         var gripped = player.IsClimbing ? GetGrippedBody(player, ContactType.Climbable)
             : player.IsHanging ? GetGrippedBody(player, ContactType.Hangable)
@@ -378,7 +378,7 @@ public class PhysicsSystem
             // platform launches faster in world terms), and by Newton's third law the push-off
             // drives a finite-mass support downward with the equal and opposite momentum.
             var support = player.GetContactingBodies(ContactType.SurfaceBottom).FirstOrDefault();
-            var supportVelocityY = support is IPhysicsBody supportBody ? supportBody.Velocity.Y : 0.0;
+            var supportVelocityY = support?.GetCarryVelocity().Y ?? 0.0;
             velocity.Y = supportVelocityY - GameDefaults.WalkJumpSpeed;
             if (support is { IsStatic: false } and IPhysicsBody movableSupport)
             {

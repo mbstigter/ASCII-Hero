@@ -60,12 +60,16 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             var effectDurationSeconds = clipAnimationSection.TryGetValue("EffectDurationSeconds", out var effectDurationText)
                 ? ParseFrameDurationSeconds(effectDurationText)
                 : null;
+            // Per-clip [Layout.{clipName}] TileAxis likewise falls back to the asset-wide [Layout].
+            var clipTileAxis = settings.Section($"Layout.{clipName}").TryGetValue("TileAxis", out var clipTileAxisText)
+                ? ParseTileAxis(clipTileAxisText)
+                : tileAxis;
 
             var clipFolder = ResolveClipFolder(folder, clipName, clipFolders);
 
             clips[clipName] = await LoadClipAsync(
                 clipFolder, assetName, clipName, emptyChar, defaultMaterial,
-                frameDurationSeconds, animationMode, clipDefaultFrame ?? 0, effectDurationSeconds);
+                frameDurationSeconds, animationMode, clipDefaultFrame ?? 0, effectDurationSeconds, clipTileAxis);
         }
 
         return new SpriteAsset
@@ -73,7 +77,6 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             Name = assetName,
             EmptyChar = emptyChar,
             Clips = clips,
-            TileAxis = tileAxis,
             Poses = poses,
             DefaultPose = defaultPose,
             PoseSounds = new Dictionary<string, string>(
@@ -93,7 +96,8 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         double? frameDurationSeconds,
         AnimationMode animationMode,
         int defaultFrame,
-        double? effectDurationSeconds)
+        double? effectDurationSeconds,
+        TileAxis tileAxis)
     {
         var baseName = $"{folder}/{assetName}_{clipName}";
 
@@ -131,6 +135,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             AnimationMode = animationMode,
             DefaultFrame = defaultFrame,
             EffectDurationSeconds = effectDurationSeconds,
+            TileAxis = tileAxis,
         };
     }
 

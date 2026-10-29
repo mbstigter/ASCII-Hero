@@ -330,8 +330,8 @@ public abstract class Body2D
 
     /// <summary>
     /// Speed (cells/second) at which this body's surface moves while the body itself stays put -
-    /// e.g. the rungs of an escalator-style <see cref="IsClimbable"/> ladder or the hand line of a
-    /// rope-style <see cref="IsHangable"/> pipe. Zero for an ordinary surface. Loaded from the
+    /// e.g. a vertical conveyor's moving rungs (<see cref="IsClimbable"/>) or a moving
+    /// rope (<see cref="IsHangable"/> or <see cref="IsClimbable"/>). Zero for an ordinary surface. Loaded from the
     /// placement's <c>ConveyorDirection</c>/<c>ConveyorSpeed</c> keys; independent of concrete type.
     /// Combined with the body's own velocity by <see cref="GetCarryVelocity"/>.
     /// </summary>
@@ -340,7 +340,7 @@ public abstract class Body2D
     /// <summary>
     /// The velocity something held onto or riding this body should be carried at: the body's own
     /// <see cref="IPhysicsBody.Velocity"/> if it moves at all (e.g. a patrolling kinematic ladder;
-    /// zero for plain static terrain) plus its <see cref="ConveyorVelocity"/> (e.g. a fixed escalator).
+    /// zero for plain static terrain) plus its <see cref="ConveyorVelocity"/> (e.g. a fixed conveyor or rope).
     /// </summary>
     public Vector2D GetCarryVelocity()
     {
@@ -641,18 +641,25 @@ public abstract class Body2D
     /// grounded contact that is itself an <see cref="IPhysicsBody"/> - a static one (e.g.
     /// <see cref="KinematicObject2D"/>) reports its prescribed velocity, a finite-mass one its
     /// actual movement (<see cref="ReferenceVelocityX"/>); ordinary stationary terrain has none, so this falls back
-    /// to 0 exactly as it would without a moving platform involved at all.
+    /// to 0 exactly as it would without a moving platform involved at all. A support's
+    /// <see cref="ConveyorVelocity"/> (a conveyor belt) is added on top, the same way
+    /// <see cref="GetCarryVelocity"/> does for gripped ladders/pipes.
     /// </summary>
     public double GetSurfaceVelocityX()
     {
         foreach (var solid in GetContactingBodies(Physics.ContactType.SurfaceBottom))
         {
-            if (solid is IPhysicsBody solidBody)
+            if (solid is IPhysicsBody)
             {
                 // Static solids (kinematic platforms) prescribe their motion, so Velocity is exact.
                 // Finite-mass supports have Velocity altered by contact friction with this rider,
                 // so their actual displacement over the last step is the real carry speed.
-                return solid.IsStatic ? solidBody.Velocity.X : solid.ReferenceVelocityX;
+                return solid.IsStatic ? solid.GetCarryVelocity().X : solid.ReferenceVelocityX + solid.ConveyorVelocity.X;
+            }
+
+            if (solid.ConveyorVelocity.X != 0.0)
+            {
+                return solid.ConveyorVelocity.X;
             }
         }
 
@@ -684,7 +691,7 @@ public abstract class Body2D
     /// </summary>
     private void ApplyFrame(SpriteFrame sourceFrame)
     {
-        Frame = SpriteFrameTiler.Tile(sourceFrame, Sprite.TileAxis, _repeatCount);
+        Frame = SpriteFrameTiler.Tile(sourceFrame, Clip.TileAxis, _repeatCount);
         Size = new Vector2D(Frame.Width, Frame.Height);
         _localCollisionRects = CollisionShapeBuilder.DeriveRectangles(Frame.Chars, Sprite.EmptyChar);
         MaterialName = ResolveDominantMaterial(Frame.Materials);

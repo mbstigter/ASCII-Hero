@@ -33,9 +33,9 @@ not like a pixel-art game with ASCII characters placed on top.
 - Gravity and jumping.
 - Platform collision.
 - Smooth horizontal and vertical camera scrolling.
-- Ladders and pipes can move (along a path) or have a moving surface
-  (escalators, ropes); the player holds on by grip and is carried along.
-  When an escalator/rope carries the player past its end, the grip simply
+- Ladders and pipes can move (along a path); conveyors and ropes (horizontal
+  and vertical) have a moving surface. The player holds on by grip and is
+  carried along. When a conveyor/rope carries the player past its end, the grip simply
   ends and the player falls - there is no automatic dismount; levels place a
   floor or ledge at the end where a landing is intended.
 
