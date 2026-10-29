@@ -31,18 +31,15 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     public bool IsSwimming { get; set; }
 
     /// <summary>
-    /// The player is subject to normal world gravity except while <see cref="IsClimbing"/> or
-    /// <see cref="IsHanging"/>, during which it is suspended so <see cref="Physics.PhysicsSystem"/>
-    /// can drive vertical/lateral movement directly instead of fighting gravity's pull.
-    /// <see cref="IsSwimming"/> deliberately does NOT suspend gravity - unlike climbing/hanging
-    /// (gripping a solid surface), swimming is buoyant motion in a fluid, so gravity must keep
-    /// acting and is offset by the existing ambient buoyancy force (<see cref="IMediumAffected"/>,
-    /// always-on, separate from this flag) exactly like any other body immersed in a medium.
-    /// The swim motor force (see <see cref="Physics.PhysicsSystem.Step"/>) only adds
-    /// player-directed thrust on top of that, the same way <see cref="IWalkForceBody"/> adds
-    /// motor force on top of gravity for an ordinary walking body - it does not replace gravity.
+    /// The player is always subject to normal world gravity - including while
+    /// <see cref="IsClimbing"/>/<see cref="IsHanging"/>: the grip on the ladder/pipe carries the
+    /// weight instead (see <see cref="Physics.PhysicsSystem.UpdateWalkForce"/>), limited by the
+    /// combined friction of hands and surface, with an equal and opposite reaction on a finite-mass
+    /// gripped body. <see cref="IsSwimming"/> likewise keeps gravity, offset by the ambient
+    /// buoyancy force (<see cref="IMediumAffected"/>, always-on, separate from this flag); the
+    /// swim motor force only adds player-directed thrust on top of that.
     /// </summary>
-    public bool GravityAffected => !(IsClimbing || IsHanging);
+    public bool GravityAffected => true;
 
     /// <summary>The player is always subject to ambient-medium buoyancy/drag.</summary>
     public bool MediumAffected => true;
@@ -92,7 +89,7 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// mirrors how <see cref="IPatrolBody.PatrolForce"/> contributes for a patrolling hazard.
     /// Horizontal-only while on the ground (Walk/Crawl); also carries a vertical component while
     /// <see cref="IsClimbing"/> (driving up/down movement) or <see cref="IsHanging"/> (holding
-    /// position against nothing, since gravity is suspended) - both are sustained, ongoing
+    /// position against gravity, carried by the grip) - both are sustained, ongoing
     /// locomotion for as long as they're engaged, exactly like walking, so they share this same
     /// continuous force model rather than a direct velocity assignment. Only the discrete
     /// jump-off/let-go moments (see <see cref="Physics.PhysicsSystem.Step"/>) are true

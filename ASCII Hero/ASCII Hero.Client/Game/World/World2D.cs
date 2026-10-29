@@ -800,6 +800,25 @@ public class World2D
                 var hangable = objectSection.TryGetValue("Hangable", out var hangableText) && bool.TryParse(hangableText, out var parsedHangable) && parsedHangable;
                 var mediumCandidate = objectSection.TryGetValue("Medium", out var mediumText) && bool.TryParse(mediumText, out var parsedMedium) && parsedMedium;
 
+                // ConveyorDirection/ConveyorSpeed give any placement a moving surface while the body
+                // itself stays put (see Body2D.ConveyorVelocity). Y increases downward, so "Up" is -Y.
+                var conveyorVelocity = default(Vector2D);
+                if (objectSection.TryGetValue("ConveyorDirection", out var conveyorDirectionText))
+                {
+                    var conveyorDirection = conveyorDirectionText.Trim().ToLowerInvariant() switch
+                    {
+                        "left" => new Vector2D(-1, 0),
+                        "right" => new Vector2D(1, 0),
+                        "up" => new Vector2D(0, -1),
+                        "down" => new Vector2D(0, 1),
+                        _ => throw new FormatException($"Section '{sectionName}' of world '{worldName}' needs a 'ConveyorDirection' of Left, Right, Up or Down.")
+                    };
+                    var conveyorSpeed = objectSection.TryGetValue("ConveyorSpeed", out var conveyorSpeedText) && IniValueParser.TryParseDouble(conveyorSpeedText, out var parsedConveyorSpeed) && parsedConveyorSpeed >= 0
+                        ? parsedConveyorSpeed
+                        : throw new FormatException($"Section '{sectionName}' of world '{worldName}' has 'ConveyorDirection' but needs a non-negative numeric 'ConveyorSpeed'.");
+                    conveyorVelocity = new Vector2D(conveyorDirection.X * conveyorSpeed, conveyorDirection.Y * conveyorSpeed);
+                }
+
                 // X defaults to the entire world width (this body's left edge sweeping from the
                 // world's left edge to its right edge) when Patrol is enabled without any explicit
                 // range - unless the placement configured a vertical-only patrol via
@@ -1035,6 +1054,7 @@ public class World2D
                 spawnedBody.SoundName = objectSection.TryGetValue("Sound", out var soundNameText) ? soundNameText : null;
                 spawnedBody.IsClimbable = climbable;
                 spawnedBody.IsHangable = hangable;
+                spawnedBody.ConveyorVelocity = conveyorVelocity;
                 spawnedBody.IsMediumCandidate = mediumCandidate;
                 spawnedBody.ForeColorOverride = foreColorOverride;
                 spawnedBody.BackColorOverride = backColorOverride;

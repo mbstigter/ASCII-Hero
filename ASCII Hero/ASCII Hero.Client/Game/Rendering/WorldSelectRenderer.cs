@@ -23,6 +23,10 @@ public static class WorldSelectRenderer
     private const int SlotVerticalPadding = 1;
     internal const int BlockHeight = TitleRowCount + SlotVerticalPadding + WorldCatalog.ThumbnailHeight + SlotVerticalPadding;
 
+    // A selected title too long for its slot slides back and forth, pausing equally at each end.
+    private const double TitleScrollCharsPerSecond = 4.0;
+    private const double TitleScrollPauseSeconds = 1.0;
+
     // ---------------------------------------------------------------------------------------
     // Logo and controls hint
     // ---------------------------------------------------------------------------------------
@@ -118,7 +122,8 @@ public static class WorldSelectRenderer
             var titleRow = startRow;
             var thumbRow = startRow + TitleRowCount + SlotVerticalPadding;
 
-            AddTitle(glyphs, world, thumbCol, titleRow, cellWidthPixels, cellHeightPixels);
+            var titleScrollSeconds = worldIndex == screen.SelectedIndex ? screen.TitleScrollSeconds : (double?)null;
+            AddTitle(glyphs, world, titleScrollSeconds, thumbCol, titleRow, cellWidthPixels, cellHeightPixels);
 
             if (worldIndex == screen.SelectedIndex)
             {
@@ -190,19 +195,57 @@ public static class WorldSelectRenderer
         }
     }
 
-    /// <summary>Adds a world's title centered above its thumbnail, truncated to the thumbnail width.</summary>
+    /// <summary>
+    /// Adds a world's title centered above its thumbnail. A title wider than the thumbnail is
+    /// truncated, unless <paramref name="scrollSeconds"/> is given (the selected world), in which
+    /// case a thumbnail-wide window slides back and forth along it.
+    /// </summary>
     private static void AddTitle(
-        List<Glyph> glyphs, WorldSummary world, double thumbCol, double titleRow,
+        List<Glyph> glyphs, WorldSummary world, double? scrollSeconds, double thumbCol, double titleRow,
         double cellWidthPixels, double cellHeightPixels)
     {
-        var title = world.Title.Length > WorldCatalog.ThumbnailWidth
-            ? world.Title[..WorldCatalog.ThumbnailWidth]
+        var overflow = world.Title.Length - WorldCatalog.ThumbnailWidth;
+        var offset = overflow > 0 && scrollSeconds is { } seconds ? GetTitleScrollOffset(overflow, seconds) : 0;
+        var title = overflow > 0
+            ? world.Title.Substring(offset, WorldCatalog.ThumbnailWidth)
             : world.Title;
         var titleStartCol = thumbCol + (WorldCatalog.ThumbnailWidth - title.Length) / 2.0;
 
         var label = new UILabel(titleStartCol, titleRow, width: title.Length, height: 1, foreColor: RenderConstants.DefaultForeColor);
         label.Lines.Add(title);
         UIRenderer.AddLabel(glyphs, label, cellWidthPixels, cellHeightPixels);
+    }
+
+    /// <summary>
+    /// Character offset into an over-long title at the given time: pause at the start, slide to the
+    /// end, pause there for the same time, slide back, repeat. Whole characters only, so the text
+    /// stays on the cell grid.
+    /// </summary>
+    private static int GetTitleScrollOffset(int overflow, double seconds)
+    {
+        var slideSeconds = overflow / TitleScrollCharsPerSecond;
+        var cycleSeconds = 2 * (TitleScrollPauseSeconds + slideSeconds);
+        var t = seconds % cycleSeconds;
+
+        double position;
+        if (t < TitleScrollPauseSeconds)
+        {
+            position = 0;
+        }
+        else if ((t -= TitleScrollPauseSeconds) < slideSeconds)
+        {
+            position = t * TitleScrollCharsPerSecond;
+        }
+        else if ((t -= slideSeconds) < TitleScrollPauseSeconds)
+        {
+            position = overflow;
+        }
+        else
+        {
+            position = overflow - (t - TitleScrollPauseSeconds) * TitleScrollCharsPerSecond;
+        }
+
+        return Math.Clamp((int)Math.Round(position), 0, overflow);
     }
 
     /// <summary>Adds the selector box around a slot's thumbnail.</summary>

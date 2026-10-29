@@ -2,8 +2,8 @@ namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>
 /// A physics body that can hang and shimmy laterally from an <see cref="Body2D.IsHangable"/>
-/// surface (e.g. a pipe/rope) - gravity suspended while actually hanging. A small, focused
-/// capability interface (see <see cref="IClimberBody"/>'s doc comment for why this is separate
+/// surface (e.g. a pipe/rope) - held by grip (gravity stays on) while actually hanging. A small,
+/// focused capability interface (see
 /// rather than one combined interface). Only <see cref="Player2D"/> implements this today, but
 /// nothing here is player-specific.
 /// </summary>

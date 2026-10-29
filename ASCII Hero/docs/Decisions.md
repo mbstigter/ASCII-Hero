@@ -199,6 +199,21 @@ capture the "why" behind a decision without needing a lengthy narrative.
   effect, open gate, switch, ladder) can leak its own material into the medium
   resolution and cause unintended buoyancy or swimming. `IsClimbable`/`IsHangable`
   terrain is still never a medium.
+- **Escalators/ropes are not a body type**: a moving surface on a body that stays put
+  is the per-placement `Body2D.ConveyorVelocity` (`ConveyorDirection`/`ConveyorSpeed`),
+  orthogonal to `Kind` like `IsClimbable`/`IsHangable`. `Body2D.GetCarryVelocity()`
+  (own `Velocity` + `ConveyorVelocity`) is the single carry speed, so moving ladders/pipes
+  (kinematic patrol) and escalators/ropes share one path. Named `Conveyor*` rather than
+  `Flow*` because it prescribes a carry velocity, not a push force inside a medium.
+- **Climbing/hanging are grip-based**: holding a climbable/hangable records a grip
+  contact (`ContactType.Climbable`/`Hangable`); gravity stays on and the grip motor
+  (`UpdateWalkForce`) carries the weight. Climb/hang targets, snap/grab speed checks,
+  the hang snap's vertical velocity and jump-offs are all relative to the gripped
+  body's `GetCarryVelocity()`. The whole grip force is limited by combined friction x
+  weight x `GripTractionMultiplier`; beyond that the body slides along the surface
+  (no separate grip-loss rule). A finite-mass gripped body receives the equal and
+  opposite reaction; static/kinematic ones absorb it. Bodies passing a passable
+  ladder/pipe without gripping get no friction from it.
 - **Gates and switches share one two-state mechanism** (`TwoStateObject2D`): a
   `Gate2D` is a door/hatch whose `IsPassable` follows its state; a `Switch2D` is a
   passable button/lever; a `Device2D` is a machine-like object that only swaps clips (a

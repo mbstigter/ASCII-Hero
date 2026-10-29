@@ -116,6 +116,17 @@ public static class PhysicsConstants
     /// </summary>
     public const double HangOverlapEpsilon = 0.01;
 
+    /// <summary>
+    /// Calibration factor on the grip limit (combined friction x weight) while climbing/hanging -
+    /// see <see cref="Physics.PhysicsSystem.UpdateWalkForce"/>, the grip counterpart of
+    /// <see cref="GroundTractionMultiplier"/>. The grip must carry the full weight (gravity stays
+    /// on while climbing/hanging) plus whatever the climb motor and a moving surface demand; at 10
+    /// it comfortably does so on ordinary materials, while a genuinely slippery pairing (or a
+    /// surface accelerating harder than the grip allows) makes the body slide along it. Not
+    /// overridable via any ini file.
+    /// </summary>
+    public const double GripTractionMultiplier = 10.0;
+
     // --- Kinematic platforms ---
 
     /// <summary>

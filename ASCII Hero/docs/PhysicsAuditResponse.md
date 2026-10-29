@@ -34,11 +34,11 @@ Verdict after the follow-up work: **yes, for the modelled scope.** Remaining dev
 
 - No rotation: bodies are axis-aligned and never tip over.
 - Weight through stacks propagates via iterated contact impulses, not an exact solver; very tall stacks may compress slightly.
-- Climbing/hanging are scripted (gravity suspended, no grip limit, no reaction).
+- Climbing/hanging grip has no separate grip-loss rule beyond its friction limit; bodies sliding past a gripped ladder/pipe feel no extra friction.
 - Added mass in fluids is not modelled.
 - World edges are a safety net, not material surfaces.
 
 ## Open (not physics correctness)
 
 - **Performance:** the Crates world runs ~7 FPS vs ~30 in TestPhysics. Many mutually touching dynamic bodies cost far more than many static ones. Unmeasured suspects: no sleeping of resting bodies, per-cell `HasCharacterOverlap` per touching pair per iteration, per-contact allocations (LINQ, `new List<Contact>`, `_movingBodies.IndexOf`) causing WASM GC pauses, and rendering many multi-cell sprites. Profile Crates vs TestPhysics before choosing a fix.
-- **Planned: grip-based climbing/hanging and moving ladders/pipes.** Holding a climbable/hangable records a grip contact; gravity stays on and the grip carries the weight; the motor is grip-limited (scaled by material friction) with an equal and opposite reaction on a finite-mass gripped body; movement and jump-off are relative to the gripped body, so `KinematicObject2D` patrol can drive moving ladders/pipes. Current speeds and jump strengths remain the targets. Open: grip-loss rules, friction for bodies sliding past, interaction with the hang snap.
+- **Done: grip-based climbing/hanging and moving ladders/pipes.** See docs/Decisions.md (climbing/hanging) for the current rules.

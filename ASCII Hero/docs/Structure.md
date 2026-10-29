@@ -146,7 +146,9 @@ The live game state and the entity types that make it up.
   data, handles animation frame advancement and stance/facing pose switching,
   and exposes the per-instance `IsPassable`/`IsClimbable`/`IsHangable` flags
   that let any static placement opt into those behaviors without a dedicated
-  subclass.
+  subclass, plus `ConveyorVelocity` (a moving surface on a body that stays
+  put, e.g. escalator/rope) and `GetCarryVelocity()` (own `Velocity` +
+  `ConveyorVelocity`, the speed something held onto the body is carried at).
 - **Concrete body types**, all deriving from `Body2D`:
   - `Player2D` - the player-controlled character; implements the mover,
 	gravity, collector, and killer capabilities (below), plus the climbing
@@ -334,7 +336,8 @@ The live game state and the entity types that make it up.
   same accumulator.
   sustained locomotion - walk/crawl on the ground, climbing a ladder
   (including its vertical motion), and hanging/shimmying from a pipe/rope
-  (including holding position against suspended gravity) - is one such force
+  (including holding position against gravity, which stays on - the grip
+  carries the weight) - is one such force
   source, all driven the same way: `Player2D` implements `IWalkForceBody`,
   and each frame `PhysicsSystem.UpdateWalkForce` recomputes its `WalkForce`
   as a proportional "motor" force (both axes) converging `Velocity` toward
@@ -388,8 +391,13 @@ The live game state and the entity types that make it up.
   speed so the player can step off sideways onto a floor or another ladder;
   while hanging, the player is held in place vertically (still laterally
   movable, at its own dedicated - and slower still while `Clambering` -
-  speed) until it lets go via the stance ladder above. Both suspend gravity
-  via `IGravityAffected.GravityAffected` and resolve their own dedicated
+  speed) until it lets go via the stance ladder above. Neither suspends
+  gravity: the grip motor carries the weight, is limited by combined
+  friction x weight (`GripTractionMultiplier`), pushes a finite-mass gripped
+  body the other way, and measures every target, snap check and jump-off
+  relative to the gripped body's `GetCarryVelocity()` (recorded as a
+  `ContactType.Climbable`/`Hangable` contact by `CollisionSystem`), so moving
+  ladders/pipes and escalators/ropes carry the player. Both resolve their own dedicated
   poses instead of the "Jump" swap - `Climb` (whose `Facing` is resolved
   along the vertical axis instead of horizontal, since it's a
   vertically-moving stance - see `SpriteAsset.Facing`/`StanceDefinition` - so
@@ -451,16 +459,18 @@ The live game state and the entity types that make it up.
   - see docs/Decisions.md for the two rejected variants
   (resolving every rectangle independently; resolving only the
   deepest one and ignoring the rest).
-  share one generic snap-speed gate (a body moving too fast does not snap on,
+  share one generic snap-speed gate, measured relative to the surface's
+  `GetCarryVelocity()` (a body moving too fast does not snap on,
   matching a jump arc's peak still needing to finish naturally rather than
   instantly catching on a passing platform/pipe/ladder); hanging additionally
   requires approaching the surface from underneath, checked geometrically
 
 
   flags (`SurfaceTop`/`SurfaceBottom`/`SurfaceLeft`/`SurfaceRight`, plus
-  `Climbable`/`Hangable`, currently unused/reserved - climbing/hanging touch
-  detection is still done via `IClimberBody.IsTouchingClimbable`/
-  `IHangerBody.IsTouchingHangable` rather than routed through `ContactType`),
+  `Climbable`/`Hangable`, recorded by `CollisionSystem` for the ladder/pipe
+  currently gripped and read back by `PhysicsSystem` as the grip's reference
+  frame and reaction target; the `IClimberBody.IsTouchingClimbable`/
+  `IHangerBody.IsTouchingHangable` flags are kept alongside for engage/release),
   via `Body2D.AddContact`/`HasContact`/`GetContactingBodies`.
   `Resolve` snapshots and clears every body's contacts (via
   `Body2D.SnapshotContactsForNextFrame`) at the very start of each frame, and
@@ -616,7 +626,9 @@ The live game state and the entity types that make it up.
 - **`WorldSelectRenderer`** - builds the world-selection screen's glyph list
   (thumbnails, titles, selector box). Unlike `WorldRenderer` it has no camera
   and no `World2D` - it lays out directly in viewport cell coordinates, since
-  the selection screen exists before any world is loaded.
+  the selection screen exists before any world is loaded. Titles wider than a
+  thumbnail are truncated, except the selected one, which slides back and
+  forth (equal pause at each end) driven by `WorldSelectScreen.TitleScrollSeconds`.
 
 - **`AnimationSystem`** - advances every body's animation timer once per
   frame (bodies with no animation configured, or a single frame, no-op
@@ -667,7 +679,8 @@ The live game state and the entity types that make it up.
   window (`ScrollOffset`) that keeps the selection centered in the middle
   slot once there are enough worlds on both sides. Edge-triggers Left/Right
   (so holding the key doesn't repeat every frame) and exposes `Confirmed`
-  once the action key is pressed.
+  once the action key is pressed. Also keeps `TitleScrollSeconds`, the time
+  since the current selection was made (reset on every selection change).
 
 ### Game Loop
 

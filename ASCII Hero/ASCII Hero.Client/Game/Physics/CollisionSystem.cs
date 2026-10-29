@@ -189,49 +189,66 @@ public class CollisionSystem
 
         foreach (var body in world.Objects)
         {
+            // Speed gates are measured relative to the surface's carry velocity (its own motion
+            // plus any conveyor motion - see Body2D.GetCarryVelocity), so a moving ladder/pipe or
+            // an escalator/rope can be grabbed as easily as a fixed one. The touched surface is
+            // recorded as a grip contact (ContactType.Climbable/Hangable), which PhysicsSystem
+            // uses as the reference frame and reaction target for the grip motor.
             if (body is IClimberBody climber)
             {
-                climber.IsTouchingClimbable = IsWithinSnapSpeed(climber.Velocity) &&
-                    climbables.Any(climbable => Overlaps(climber, climbable));
+                climber.IsTouchingClimbable = false;
+                foreach (var climbable in climbables)
+                {
+                    if (!Overlaps(climber, climbable) || !IsWithinSnapSpeed(climber.Velocity - climbable.GetCarryVelocity()))
+                    {
+                        continue;
+                    }
+
+                    climber.IsTouchingClimbable = true;
+                    climber.AddContact(ContactType.Climbable, climbable);
+                    break;
+                }
             }
 
             if (body is IHangerBody hanger)
             {
                 hanger.IsTouchingHangable = false;
-                if (IsWithinSnapSpeed(hanger.Velocity))
+                foreach (var hangable in hangables)
                 {
-                    foreach (var hangable in hangables)
+                    var carryVelocity = hangable.GetCarryVelocity();
+                    if (!IsWithinSnapSpeed(hanger.Velocity - carryVelocity)
+                        || !Overlaps(hanger, hangable) || !WouldSnapFromBelow(hanger, hangable))
                     {
-                        if (!Overlaps(hanger, hangable) || !WouldSnapFromBelow(hanger, hangable))
-                        {
-                            continue;
-                        }
+                        continue;
+                    }
 
-                        // IsTouchingHangable is reported here even while SuppressHangUntilClear
-                        // is set below, so PhysicsSystem's debounce-release check ("once no
-                        // longer touching at all") only fires once the body has genuinely
-                        // cleared the surface's overlap, not the instant a jump/swing begins
-                        // while still overlapping it.
-                        hanger.IsTouchingHangable = true;
+                    // IsTouchingHangable is reported here even while SuppressHangUntilClear
+                    // is set below, so PhysicsSystem's debounce-release check ("once no
+                    // longer touching at all") only fires once the body has genuinely
+                    // cleared the surface's overlap, not the instant a jump/swing begins
+                    // while still overlapping it.
+                    hanger.IsTouchingHangable = true;
+                    hanger.AddContact(ContactType.Hangable, hangable);
 
-                        // While IHangerBody.SuppressHangUntilClear is set (PhysicsSystem just made
-                        // the player jump/swing off, or explicitly let go, this same frame), skip
-                        // the actual snap/stop below even though overlap is still detected above -
-                        // otherwise the jump-off velocity set moments ago in PhysicsSystem would
-                        // be immediately zeroed and the body re-snapped right back. The overlap
-                        // keeps being reported above regardless, so the debounce is only released
-                        // once truly clear.
-                        if (hanger.SuppressHangUntilClear)
-                        {
-                            break;
-                        }
-
-                        // Detected and corrected synchronously, in this same call, rather than
-                        // waiting for a flag set on a previous frame.
-                        hanger.Velocity = new Vector2D(hanger.Velocity.X, 0);
-                        SnapOntoHangable(hanger, hangable);
+                    // While IHangerBody.SuppressHangUntilClear is set (PhysicsSystem just made
+                    // the player jump/swing off, or explicitly let go, this same frame), skip
+                    // the actual snap/stop below even though overlap is still detected above -
+                    // otherwise the jump-off velocity set moments ago in PhysicsSystem would
+                    // be immediately zeroed and the body re-snapped right back. The overlap
+                    // keeps being reported above regardless, so the debounce is only released
+                    // once truly clear.
+                    if (hanger.SuppressHangUntilClear)
+                    {
                         break;
                     }
+
+                    // Detected and corrected synchronously, in this same call, rather than
+                    // waiting for a flag set on a previous frame. Vertical velocity is matched
+                    // to the surface's carry velocity rather than zeroed, so a rising/falling
+                    // pipe holds the body at rest relative to itself.
+                    hanger.Velocity = new Vector2D(hanger.Velocity.X, carryVelocity.Y);
+                    SnapOntoHangable(hanger, hangable);
+                    break;
                 }
             }
         }

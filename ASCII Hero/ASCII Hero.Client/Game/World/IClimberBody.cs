@@ -2,7 +2,7 @@ namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>
 /// A physics body that can climb an <see cref="Body2D.IsClimbable"/> surface (e.g. a ladder) -
-/// straight up/down movement, gravity suspended while actually climbing. A small, focused
+/// straight up/down movement, held by grip (gravity stays on) while actually climbing. A small, focused
 /// capability interface (mirroring <see cref="IGravityAffected"/>/<see cref="ICollectorBody"/>/
 /// <see cref="IKillerBody"/>) rather than one combined "mover" interface, so a body can implement
 /// this without also being able to hang (see <see cref="IHangerBody"/>) - the two mechanics are

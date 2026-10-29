@@ -1,0 +1,35 @@
+                
+    UUUU        
+                
+  A       LLLLLL
+  A             
+  A             
+  A             
+LLLLLLLLLLLLLLLL
+//end
+                
+     UUUU       
+  A             
+  A       LLLLLL
+  A             
+  A             
+                
+LLLLLLLLLLLLLLLL
+//end
+                
+  A   UUUU      
+  A             
+  A       LLLLLL
+  A             
+                
+                
+LLLLLLLLLLLLLLLL
+//end
+                
+     UUUU       
+  A             
+  A       LLLLLL
+  A             
+  A             
+                
+LLLLLLLLLLLLLLLL

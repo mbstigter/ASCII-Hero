@@ -1249,13 +1249,23 @@ moving bodies, independent of its `Kind`:
   collectable is picked up on contact) — this default simply keeps that
   existing behavior data-driven instead of hardcoded by `Kind`.
 - **`Climbable`** — if `true`, the player can climb straight up/down while
-  overlapping this object (e.g. a ladder), with gravity suspended for the
-  duration. Usually paired with `Passable = true` so the object doesn't also
+  overlapping this object (e.g. a ladder), holding on by grip: the object's
+  material affects how well the hands hold (a very slippery one makes the
+  player slide). Usually paired with `Passable = true` so the object doesn't also
   block horizontal movement.
 - **`Hangable`** — if `true`, the player can hang from and move laterally
-  along this object while overlapping it from below (e.g. a pipe/bar), with
-  gravity mostly suspended for the duration. Usually paired with
+  along this object while overlapping it from below (e.g. a pipe/bar), held by
+  grip in the same way as `Climbable`. Usually paired with
   `Passable = true` for the same reason as `Climbable`.
+- **`ConveyorDirection`** / **`ConveyorSpeed`** — give the object a moving
+  surface while the object itself stays in place, like the rungs of an
+  escalator or a rope running over pulleys. `ConveyorDirection` is `Left`,
+  `Right`, `Up` or `Down`; `ConveyorSpeed` is in cells/second and is required
+  whenever `ConveyorDirection` is set. Anything holding on is carried along at
+  that speed. Can also be combined with a moving object (`KinematicObject`),
+  in which case both movements add up. When the surface carries the player
+  past the end of the object, the player simply lets go and falls - place a
+  floor or ledge there if they should land somewhere.
 
 ```ini
 [Ladder]
@@ -1271,6 +1281,15 @@ Clip = default
 Kind = StaticObject
 Passable = true
 Hangable = true
+
+[Escalator]
+Asset = Ladder
+Clip = default
+Kind = StaticObject
+Passable = true
+Climbable = true
+ConveyorDirection = Up
+ConveyorSpeed = 3
 ```
 
 

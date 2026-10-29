@@ -29,6 +29,12 @@ public class WorldSelectScreen(IReadOnlyList<WorldSummary> worlds, int visibleSl
 
     public WorldSummary SelectedWorld => Worlds[SelectedIndex];
 
+    /// <summary>
+    /// Seconds since the current selection was made; drives the back-and-forth scroll of a selected
+    /// title too long to fit above its thumbnail. Restarts whenever the selection changes.
+    /// </summary>
+    public double TitleScrollSeconds { get; private set; }
+
     private bool _wasLeftPressed;
     private bool _wasRightPressed;
     private bool _wasConfirmPressed;
@@ -45,6 +51,7 @@ public class WorldSelectScreen(IReadOnlyList<WorldSummary> worlds, int visibleSl
         var leftPressed = input.IsLeftPressed;
         var rightPressed = input.IsRightPressed;
         var confirmPressed = input.IsConfirmPressed;
+        var previousIndex = SelectedIndex;
 
         if (rightPressed && !_wasRightPressed)
         {
@@ -54,6 +61,8 @@ public class WorldSelectScreen(IReadOnlyList<WorldSummary> worlds, int visibleSl
         {
             SelectedIndex = Math.Max(SelectedIndex - 1, 0);
         }
+
+        TitleScrollSeconds = SelectedIndex == previousIndex ? TitleScrollSeconds + deltaSeconds : 0;
 
         var maxOffset = Math.Max(0, Worlds.Count - VisibleSlotCount);
         ScrollOffset = Math.Clamp(ScrollOffset, SelectedIndex - (VisibleSlotCount - 1), SelectedIndex);

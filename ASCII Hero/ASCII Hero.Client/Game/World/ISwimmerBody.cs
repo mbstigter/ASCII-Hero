@@ -27,9 +27,9 @@ public interface ISwimmerBody : IPhysicsBody
     /// from a directional key press while <see cref="Body2D.CurrentMedium"/> is swimmable and the
     /// body is not grounded, climbing, or hanging (see <see cref="Physics.PhysicsSystem.Step"/>).
     /// Held until the medium is no longer swimmable, or the body becomes grounded/climbing/
-    /// hanging. Unlike climbing/hanging, this deliberately does NOT suspend gravity (see
-    /// <see cref="Player2D.GravityAffected"/>) - swimming is buoyant motion in a fluid, not
-    /// gripping a solid surface, so gravity keeps acting and is offset by the existing ambient
+    /// hanging. Like climbing/hanging, this does NOT suspend gravity (see
+    /// <see cref="Player2D.GravityAffected"/>) - but swimming is buoyant motion in a fluid, not
+    /// gripping a solid surface, so gravity is offset by the existing ambient
     /// buoyancy force (<see cref="IMediumAffected"/>, always-on, independent of this flag) the
     /// same way it would for any other body immersed in a medium. This flag only adds the
     /// player-directed swim motor force (see <see cref="World.IWalkForceBody"/>) on top of that,

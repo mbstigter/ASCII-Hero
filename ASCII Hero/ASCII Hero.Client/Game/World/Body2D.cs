@@ -310,7 +310,7 @@ public abstract class Body2D
 
     /// <summary>
     /// Whether the player can climb this static body (e.g. a ladder) - straight up/down movement,
-    /// gravity suspended while overlapping. Checked generically by <see cref="Physics.PhysicsSystem"/>
+    /// held by a friction-limited grip (gravity stays on). Checked generically by <see cref="Physics.PhysicsSystem"/>
     /// against the player's current overlap each frame, independent of concrete type - any static
     /// placement (not just a dedicated "ladder" asset) can opt in via this flag. A climbable body
     /// is not automatically passable; set <see cref="IsPassable"/> too if it shouldn't also block
@@ -320,13 +320,33 @@ public abstract class Body2D
 
     /// <summary>
     /// Whether the player can hang and move laterally from this static body (e.g. a pipe/bar) -
-    /// gravity mostly suspended while overlapping from below. Checked generically by
+    /// held by a friction-limited grip while overlapping from below. Checked generically by
     /// <see cref="Physics.PhysicsSystem"/> against the player's current overlap each frame,
     /// independent of concrete type, the same way <see cref="IsClimbable"/> is. A hangable body is
     /// not automatically passable; set <see cref="IsPassable"/> too if it shouldn't also block
     /// movement (the usual case for an actual pipe/bar).
     /// </summary>
     public bool IsHangable { get; set; }
+
+    /// <summary>
+    /// Speed (cells/second) at which this body's surface moves while the body itself stays put -
+    /// e.g. the rungs of an escalator-style <see cref="IsClimbable"/> ladder or the hand line of a
+    /// rope-style <see cref="IsHangable"/> pipe. Zero for an ordinary surface. Loaded from the
+    /// placement's <c>ConveyorDirection</c>/<c>ConveyorSpeed</c> keys; independent of concrete type.
+    /// Combined with the body's own velocity by <see cref="GetCarryVelocity"/>.
+    /// </summary>
+    public Vector2D ConveyorVelocity { get; set; }
+
+    /// <summary>
+    /// The velocity something held onto or riding this body should be carried at: the body's own
+    /// <see cref="IPhysicsBody.Velocity"/> if it moves at all (e.g. a patrolling kinematic ladder;
+    /// zero for plain static terrain) plus its <see cref="ConveyorVelocity"/> (e.g. a fixed escalator).
+    /// </summary>
+    public Vector2D GetCarryVelocity()
+    {
+        var ownVelocity = this is IPhysicsBody moving ? moving.Velocity : default;
+        return new Vector2D(ownVelocity.X + ConveyorVelocity.X, ownVelocity.Y + ConveyorVelocity.Y);
+    }
 
     /// <summary>The sprite asset this object was spawned from.</summary>
     public SpriteAsset Sprite { get; private set; } = null!;

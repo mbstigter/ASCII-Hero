@@ -173,9 +173,12 @@ public class PhysicsSystem
                 // below: ClimbJumpSpeed alone isn't fast enough to clear the ladder's overlap
                 // (and Up/Down are still likely held) within a single frame, so without
                 // _suppressClimbUntilClear the very next frame would immediately re-grab the same
-                // ladder before the jump is ever visible.
+                // ladder before the jump is ever visible. Relative to the gripped surface, like the
+                // ground jump is relative to its support.
+                var grip = GetGrippedBody(player, ContactType.Climbable);
                 player.IsClimbing = false;
-                velocity.Y = -GameDefaults.ClimbJumpSpeed;
+                velocity.Y = (grip?.GetCarryVelocity().Y ?? 0.0) - GameDefaults.ClimbJumpSpeed;
+                ApplyJumpReaction(player, grip, GameDefaults.ClimbJumpSpeed);
                 _suppressClimbUntilClear = true;
             }
         }
@@ -199,8 +202,10 @@ public class PhysicsSystem
                 // (see the ordinary horizontal-movement block below) rather than a separate one.
                 // Same debounce as the explicit let-go below, so the player can't instantly
                 // re-grab the exact surface they just launched off.
+                var grip = GetGrippedBody(player, ContactType.Hangable);
                 player.IsHanging = false;
-                velocity.Y = -GameDefaults.HangJumpSpeed;
+                velocity.Y = (grip?.GetCarryVelocity().Y ?? 0.0) - GameDefaults.HangJumpSpeed;
+                ApplyJumpReaction(player, grip, GameDefaults.HangJumpSpeed);
                 player.SuppressHangUntilClear = true;
             }
             else if (!player.IsClambering && downPressedThisFrame)
@@ -240,9 +245,17 @@ public class PhysicsSystem
         // WalkForce (scaled by WalkForceMultiplier, deliberately strong so input feels responsive)
         // would then fight CollisionSystem's friction-based drag pulling the player toward the
         // platform's own velocity every single frame - the two forces fighting is what made the
-        // player appear unable to ride a horizontally moving platform at all. Climbing/hanging/
-        // swimming have no such platform-carry concept, so their target speed stays absolute.
-        var groundVelocityX = player.IsClimbing || player.IsHanging || player.IsSwimming ? 0.0 : player.GetSurfaceVelocityX();
+        // player appear unable to ride a horizontally moving platform at all. Climbing/hanging
+        // are likewise relative to the gripped surface's carry velocity (a moving ladder/pipe, or
+        // an escalator/rope - see Body2D.GetCarryVelocity); swimming has no carry concept, so its
+        // target speed stays absolute.
+        var gripped = player.IsClimbing ? GetGrippedBody(player, ContactType.Climbable)
+            : player.IsHanging ? GetGrippedBody(player, ContactType.Hangable)
+            : null;
+        var gripVelocity = gripped?.GetCarryVelocity() ?? default;
+        var groundVelocityX = player.IsClimbing || player.IsHanging ? gripVelocity.X
+            : player.IsSwimming ? 0.0
+            : player.GetSurfaceVelocityX();
         var targetVelocityX = groundVelocityX;
         if (input.IsLeftPressed)
         {
@@ -279,10 +292,9 @@ public class PhysicsSystem
         player.MoveIntentY = input.IsUpPressed ? -1.0 : input.IsDownPressed ? 1.0 : 0.0;
 
         // Vertical target speed for the same mass-scaled motor force: straight up/down at a
-        // fixed climb speed while IsClimbing (gravity already suspended via
-        // Player2D.GravityAffected), held at exactly zero while IsHanging (gravity likewise
-        // suspended, so a zero-velocity target is all it takes to hold position - there is no
-        // opposing force it needs to fight), and left equal to the player's own current Velocity.Y
+        // fixed climb speed while IsClimbing, held at rest while IsHanging - both relative to the
+        // gripped surface's carry velocity, with gravity still acting and carried by the grip
+        // (see UpdateWalkForce) - and left equal to the player's own current Velocity.Y
         // everywhere else so the vertical component of WalkForce is simply zero and gravity/
         // collision response (falling, landing, jump arcs) are entirely unaffected by this motor.
         // Both climbing and hanging are sustained, ongoing locomotion for as long as they're
@@ -292,7 +304,7 @@ public class PhysicsSystem
         double targetVelocityY;
         if (player.IsClimbing)
         {
-            targetVelocityY = 0;
+            targetVelocityY = gripVelocity.Y;
             if (input.IsUpPressed)
             {
                 targetVelocityY -= GameDefaults.ClimbVerticalSpeed;
@@ -309,20 +321,20 @@ public class PhysicsSystem
         }
         else if (player.IsHanging)
         {
-            targetVelocityY = 0;
+            targetVelocityY = gripVelocity.Y;
             player.RemoveContact(ContactType.SurfaceBottom);
         }
         else if (player.IsSwimming)
         {
             // Up/down while swimming is vertical thrust (depth control), not a distinct pose.
-            // Unlike climbing/hanging, gravity is NOT suspended while swimming (see
-            // Player2D.GravityAffected) - buoyancy/drag (IMediumAffected, always-on) already
-            // offsets it, the same way it does for any other immersed body. With no Up/Down
+            // Gravity keeps acting while swimming, as it does while climbing/hanging (see
+            // Player2D.GravityAffected) - but here buoyancy/drag (IMediumAffected, always-on)
+            // offsets it rather than a grip, the same way it does for any other immersed body. With no Up/Down
             // held, the target is the player's own current velocity (motor contributes ~0 net
             // force), so gravity/buoyancy alone govern idle vertical drift - mirroring the
             // airborne "no horizontal key held" case above. With Up/Down held, the target is a
-            // fixed absolute speed (0 +/- SwimVerticalSpeed), exactly like climbing's vertical
-            // target above - NOT relative to the current (already-moving) velocity, which would
+            // fixed absolute speed (0 +/- SwimVerticalSpeed) - like climbing's vertical target
+            // above, but absolute since a fluid has no carry velocity - NOT relative to the current (already-moving) velocity, which would
             // recompute a moving goalpost every frame and never actually converge, snowballing
             // into runaway speed instead of the intended bounded SwimVerticalSpeed.
             targetVelocityY = velocity.Y;
@@ -350,7 +362,7 @@ public class PhysicsSystem
         // motor's gap is measured against player.Velocity, so leaving the impulse only in the
         // local copy would make the motor apply the same velocity change a second time.
         player.Velocity = velocity;
-        UpdateWalkForce(world, player, targetVelocityX, targetVelocityY, deltaSeconds);
+        UpdateWalkForce(world, player, gripped, targetVelocityX, targetVelocityY, deltaSeconds);
 
         if (!player.IsClimbing && !player.IsHanging && input.IsJumpPressed && player.IsGrounded && player.Stance == "Walk" && !stoodUpThisFrame)
         {
@@ -406,7 +418,30 @@ public class PhysicsSystem
     }
 
     /// <summary>
-    /// Whether <paramref name="medium"/> is dense/viscous enough to swim in - the medium-based
+    /// The climbable/hangable body the player is gripping (recorded as a grip contact of the
+    /// given <paramref name="type"/> by <see cref="CollisionSystem"/>), or null if none.
+    /// </summary>
+    private static Body2D? GetGrippedBody(Player2D player, ContactType type) =>
+        player.GetContactingBodies(type).FirstOrDefault();
+
+    /// <summary>
+    /// Equal and opposite reaction of a climb/hang jump-off on a finite-mass gripped body
+    /// (mirroring the ground jump's push on its support). An immovable body simply absorbs it.
+    /// </summary>
+    private static void ApplyJumpReaction(Player2D player, Body2D? gripped, double jumpSpeed)
+    {
+        if (gripped is { IsStatic: false } and IPhysicsBody grippedBody)
+        {
+            var playerMass = player.Mass > 0 ? player.Mass : 1.0;
+            var grippedMass = gripped.Mass > 0 ? gripped.Mass : 1.0;
+            var grippedVelocity = grippedBody.Velocity;
+            grippedVelocity.Y += jumpSpeed * playerMass / grippedMass;
+            grippedBody.Velocity = grippedVelocity;
+        }
+    }
+
+    /// <summary>
+    /// Whether <paramref name="medium"/> is dense/viscous enough to swim in
     /// detection <see cref="World.ISwimmerBody"/> keys off (see <see cref="Step"/>'s swim
     /// engage/disengage logic), analogous to how <see cref="Body2D.IsClimbable"/>/
     /// <see cref="Body2D.IsHangable"/> key climbing/hanging off a specific surface instead. A
@@ -597,9 +632,41 @@ public class PhysicsSystem
     /// resolved material (<see cref="Body2D.Mass"/> of 0, treated as mass 1) still walks at the
     /// ordinary rate.
     /// </summary>
-    private static void UpdateWalkForce(World2D world, Player2D player, double targetVelocityX, double targetVelocityY, double deltaSeconds)
+    private static void UpdateWalkForce(World2D world, Player2D player, Body2D? gripped, double targetVelocityX, double targetVelocityY, double deltaSeconds)
     {
         var mass = player.Mass > 0 ? player.Mass : 1.0;
+
+        // Climbing/hanging: the force goes through the hands into the gripped ladder/pipe. Gravity
+        // stays on, so the grip also carries the body's weight (feed-forward, so the hold doesn't
+        // sag below the target). The whole grip force is limited by combined friction x weight
+        // (see PhysicsConstants.GripTractionMultiplier) - beyond that the body slides along the
+        // surface - and by Newton's third law pushes a finite-mass gripped body the other way.
+        if (gripped is not null)
+        {
+            var gripForceX = (targetVelocityX - player.Velocity.X) * mass * player.WalkForceMultiplier;
+            var gripForceY = (targetVelocityY - player.Velocity.Y) * mass * player.WalkForceMultiplier - mass * world.Gravity;
+            var gripFriction = CollisionSystem.CombineFriction(player.Friction, gripped.Friction);
+            var maxGrip = gripFriction * mass * Math.Abs(world.Gravity) * PhysicsConstants.GripTractionMultiplier;
+            var gripMagnitude = Math.Sqrt(gripForceX * gripForceX + gripForceY * gripForceY);
+            if (gripMagnitude > maxGrip)
+            {
+                var scale = gripMagnitude > 0 ? maxGrip / gripMagnitude : 0.0;
+                gripForceX *= scale;
+                gripForceY *= scale;
+            }
+
+            if (gripped is { IsStatic: false } and IPhysicsBody grippedBody)
+            {
+                var grippedMass = gripped.Mass > 0 ? gripped.Mass : 1.0;
+                var grippedVelocity = grippedBody.Velocity;
+                grippedVelocity.X -= gripForceX / grippedMass * deltaSeconds;
+                grippedVelocity.Y -= gripForceY / grippedMass * deltaSeconds;
+                grippedBody.Velocity = grippedVelocity;
+            }
+
+            player.WalkForce = new Vector2D(gripForceX, gripForceY);
+            return;
+        }
         // Horizontal strength is cut to AirControlMultiplier while airborne (see its own doc
         // comment) so a jump carries over whatever horizontal speed the player left the ground
         // with - including a moving platform's carried speed - rather than that speed being

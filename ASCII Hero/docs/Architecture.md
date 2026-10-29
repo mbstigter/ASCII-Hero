@@ -106,10 +106,10 @@ core's own force/collision/medium math.
   acceleration via `a = F / mass`, and integrated into velocity — for a
   gravity-only body this is numerically identical to a direct `velocity.Y +=
   gravity * dt`, but it is the extension point for any non-gravity force
-  source. Climb/hang vertical velocity and jump-off impulses remain direct
-  velocity assignments on purpose — those are discrete state-machine
-  locomotion modes (like a scripted teleport), not continuous ground-level
-  walk/crawl locomotion. There is no separate constraint-solver "normal
+  source. Climbing/hanging use the same motor, limited by grip (combined
+  friction x weight) and relative to the gripped ladder/pipe's carry velocity,
+  with gravity still on; only jump-off impulses remain direct velocity
+  assignments on purpose — a push-off happens in a single instant. There is no separate constraint-solver "normal
   force" term; a resting body's velocity along the contact normal is instead
   resolved by `CollisionSystem`'s own impulse-based response each frame it
   remains in contact (see below).
