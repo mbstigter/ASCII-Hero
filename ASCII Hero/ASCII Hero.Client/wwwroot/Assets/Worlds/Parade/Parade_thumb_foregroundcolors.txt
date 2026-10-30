@@ -1,0 +1,53 @@
+ F              
+          K     
+    R           
+                
+IIIIIIIIIIIIIIII
+           N    
+  I             
+        E       
+//end
+  F             
+         K      
+     R          
+                
+IIIIIIIIIIIIIIII
+          N     
+   I            
+       E        
+//end
+   F            
+        K       
+      R         
+                
+IIIIIIIIIIIIIIII
+         N      
+    I           
+      E         
+//end
+    F           
+       K        
+       R        
+                
+IIIIIIIIIIIIIIII
+        N       
+     I          
+     E          
+//end
+     F          
+      K         
+        R       
+                
+IIIIIIIIIIIIIIII
+       N        
+      I         
+    E           
+//end
+      F         
+     K          
+         R      
+                
+IIIIIIIIIIIIIIII
+      N         
+       I        
+   E            

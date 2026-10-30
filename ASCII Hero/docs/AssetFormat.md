@@ -78,6 +78,11 @@ back to `Global/` only if not found there:
   is itself the override signal. This resolution happens per asset name, not per
   world: a world that overrides one sprite still gets every other sprite from
   `Global/Sprites/` as normal.
+- **Group folders**: related sprites may be grouped under a shared folder by
+  including it in the asset name, e.g. `Asset = Group/Variant` reads
+  `Sprites/Group/Variant/`. Each grouped sprite is a complete asset with its own
+  settings, and its files keep the plain variant name as their prefix
+  (`Variant_settings.ini`, `Variant_{clipName}_characters.txt`).
 - **Colors/materials**: a world's own `ColorPalette.ini`/`MaterialLibrary.ini` (if present) is
   merged over `Global/ColorPalette.ini`/`Global/MaterialLibrary.ini` - entries with the same
   code/section name in the world file take precedence; entries only defined

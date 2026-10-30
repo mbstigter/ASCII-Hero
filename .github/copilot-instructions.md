@@ -48,6 +48,10 @@ Check [docs/AssetFormat.md](../ASCII%20Hero/docs/AssetFormat.md).
 
 After code changes, build the solution and address build errors before considering the task complete.
 
+### Source Control
+
+- Never commit or push to Git without the user's explicit consent; leave changes uncommitted and ask first.
+
 ### Decision Documentation
 
 - docs/Decisions.md is maintained as a compact, current-state-only reference of architecture/design decisions grouped by subsystem, NOT a chronological historical log. When a decision is added, changed, or superseded/reverted, update docs/Decisions.md in place (edit/remove bullets) rather than appending historical entries.

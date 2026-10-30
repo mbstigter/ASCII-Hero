@@ -58,7 +58,9 @@ palettes, materials) from disk/HTTP into in-memory game objects.
 - **`AssetPathResolver`** - resolves which folder (`Worlds/{WorldName}/Sprites/{Asset}`
   or `Global/Sprites/{Asset}`) a sprite's files should be read from, applying
   the "world-local folder overrides global" rule: presence of a world-local
-  settings file is itself the override signal, no explicit flag needed. This
+  settings file is itself the override signal, no explicit flag needed. An
+  asset name may include a group folder (`Group/Variant`); its files are then
+  prefixed with the last segment only (`GetFileStem`). This
   resolution is per asset name, so a world overriding one sprite (e.g. an
   ice world's own winter-clothed `Player` reskin) still falls back to
   `Global/Sprites/` for every other sprite it uses.

@@ -247,6 +247,11 @@ capture the "why" behind a decision without needing a lengthy narrative.
   count.** The authored unit may be any number of cells long; the unit is
   repeated to fill the span exactly, cutting the last unit short when needed.
 - **The color palette is 36 codes** (`0`-`9`, `A`-`Z`).
+- **Variants of one kind of sprite may be grouped in a shared subfolder**
+  (`Asset = Group/Variant` reads `Sprites/Group/Variant/`). Each variant stays
+  a complete, independent asset with its own settings and clips, and its files
+  keep the plain variant name as prefix - grouping only organizes folders, it
+  adds no shared settings or inheritance between variants.
 - **Posed bodies** (`[Poses]` section) resolve
   their active clip - and facing, including a vertical axis for `Climb` - from
   each clip name's own suffix

@@ -16,7 +16,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
     public async Task<SpriteAsset> LoadAsync(string assetName, IReadOnlyList<string> clipNames, string? worldName)
     {
         var folder = await AssetPathResolver.ResolveSpriteFolderAsync(fileProvider, assetName, worldName);
-        var settingsContent = await fileProvider.TryReadTextAsync($"{folder}/{assetName}_settings.ini");
+        var settingsContent = await fileProvider.TryReadTextAsync($"{folder}/{AssetPathResolver.GetFileStem(assetName)}_settings.ini");
         var settings = IniDocument.Parse(settingsContent ?? string.Empty);
 
         var emptyChar = IniValueParser.ParseEmptyChar(settings.TryGetValue("Layout", "EmptyChar"));
@@ -99,7 +99,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         double? effectDurationSeconds,
         TileAxis tileAxis)
     {
-        var baseName = $"{folder}/{assetName}_{clipName}";
+        var baseName = $"{folder}/{AssetPathResolver.GetFileStem(assetName)}_{clipName}";
 
         var charsTask = fileProvider.TryReadTextAsync($"{baseName}_characters.txt");
         var foreTask = fileProvider.TryReadTextAsync($"{baseName}_foregroundcolors.txt");
