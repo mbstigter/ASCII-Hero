@@ -375,7 +375,7 @@ public class World2D
 
         var globalSettingsContent = await fileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/Settings.ini");
         var globalSettings = IniDocument.Parse(globalSettingsContent ?? string.Empty);
-        if (IniValueParser.TryParseDouble(globalSettings.TryGetValue("Physics", "Gravity"), out var gravity))
+        if (IniValueParser.TryParseDouble(settings.TryGetValue("Physics", "Gravity") ?? globalSettings.TryGetValue("Physics", "Gravity"), out var gravity))
         {
             world.Gravity = gravity;
         }

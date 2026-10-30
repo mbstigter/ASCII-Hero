@@ -199,7 +199,7 @@ DefaultForegroundColor = F
 DefaultBackgroundColor = D
 
 [Physics]
-DefaultMaterial = Creature
+DefaultMaterial = Wood
 
 [Animation]
 FrameDurationSeconds = 0.5
@@ -549,10 +549,10 @@ back to the hardcoded engine default. Lets an entire world nudge its default
 palette (e.g. a colder/warmer background tint) without touching every asset's
 own settings.ini.
 
-**`[Physics]`** — `Gravity` (default `40`), this world's gravity acceleration
-in world cells per second squared.
+**`[Physics]`** (optional) — `Gravity`, this world's gravity acceleration in
+world cells per second squared; falls back to `Global/Settings.ini` (§4.4).
 
-**`[World]`** (optional) — `Title`, a short human-readable name shown above
+**`[World]`** (optional)
 this world's thumbnail on the world-selection screen (see §3.2). Falls back
 to the world's own folder/asset name (e.g. `Level1`) if omitted. `Lives`
 (default 3) is the number of lives the player starts with. `RingsPerLife`
@@ -648,18 +648,17 @@ filesystem" approach `[Poses]` already uses for a sprite's clips.
 0 = Player
 1 = BrickPlatform
 P = Player
-E = Enemy
+C = Creature
 
 [Player]
 Asset = Player
 Clip = walk_idle
 Kind = Player
 
-[Enemy]
-Asset = Enemy
+[Creature]
+Asset = Creature
 Clip = idle
 Kind = DynamicHazard
-Facing = Left
 ```
 
 Every placement section requires `Kind` (which of the game's object categories
@@ -681,8 +680,8 @@ material's own `Character` glyph and colored by that material's own
 required at all:
 
 ```ini
-[GraniteBlock]
-Material = Granite
+[StoneBlock]
+Material = Stone
 Width = 4
 Height = 2
 Kind = StaticObject
@@ -741,8 +740,8 @@ The table below summarizes what each style supports:
 Each `[ObjectCodes]` entry maps a placement code to a section name, which in turn
 specifies which sprite asset/clip to spawn and any additional per-type properties.
 Per-instance overrides (e.g. one specific hazard with a custom patrol range) use
-their own dedicated code mapped to its own section (e.g. `2 = EnemyNarrowPatrol`
-alongside `1 = Enemy`).
+`2 = CreatureNarrowPatrol`
+alongside `1 = Creature`
 
 Throughout the rest of this section, "an object type" (or "a section") means
 one `[SectionName]` block in a world's `{WorldName}_objects.ini`. Every key
@@ -751,7 +750,7 @@ one `[SectionName]` block in a world's `{WorldName}_objects.ini`. Every key
 cell in `{WorldName}_objects.txt` that uses that section's code - placing the
 same code at five different spots spawns five bodies that all share that one
 section's tuning. To give one specific occurrence its own values instead
-(e.g. one particular enemy patrolling faster than all the others), author
+one particular creature patrolling
 it under its own code/section (the per-instance override just above)
 rather than editing the shared section - that section is then itself "an
 object type" in the sense used below, just one used by only a single
@@ -836,13 +835,7 @@ Kind = Collectable
 [SpikeTrap]
 Asset = Spikes
 Clip = default
-Kind = StaticHazard
 
-[PatrolEnemy]
-Asset = Enemy
-Clip = idle
-Kind = DynamicHazard
-Patrol = true
 ```
 
 A `Kind = DynamicHazard` placement may additionally set `Patrol = true` (default
@@ -864,16 +857,6 @@ its own schedule, with no separate "diagonal mode" needed:
   width of the world - enough to "just patrol the level" with no further
   authoring.
 
-```ini
-[CautiousEnemy]
-Asset = Enemy
-Clip = idle
-Kind = DynamicHazard
-Patrol = true
-PatrolMinX = 20
-PatrolMaxX = 35
-```
-
 Further optional keys tune the patrol force itself rather than its range:
 `PatrolForceMultiplierX` and `PatrolForceMultiplierY` (numbers, default `33`)
 scale how strongly - i.e. how "strong" this hazard is, its "muscle power" - it
@@ -892,23 +875,24 @@ position); `PatrolInitialDirectionY` (`Up` or `Down`) is the equivalent
 override for vertical patrol:
 
 ```ini
-[FastEnemy]
-Asset = Enemy
+[Creature]
+Asset = Creature
 Clip = idle
 Kind = DynamicHazard
-Patrol = true
+PatrolMinX = 20
+PatrolMaxX = 35
 PatrolForceMultiplierX = 50
 PatrolCruiseSpeedX = 10
 PatrolInitialDirectionX = Right
 ```
 
 ```ini
-[FlyingEnemy]
-Asset = FlyingEnemy
+[FlyingCreature]
+Asset = FlyingCreature
 Clip = fly_idle
 Kind = DynamicHazard
 GravityAffected = true
-Patrol = true
+PatrolMaxForceY = 2
 PatrolMinY = 4
 PatrolMaxY = 12
 PatrolCruiseSpeedY = 5
@@ -1143,9 +1127,9 @@ can therefore have two different sounds - `Sound` for hurting the player and
 `KillSound` for being killed - but a single contact only ever plays one of them.
 
 ```ini
-[Enemy]
+[Creature]
 Kind = DynamicHazard
-Sound = Hurt          ; Played when the player is hurt by touching it
+Sound
 KillSound = Squash    ; Played when the player squashes it from above
 
 [Ring]
@@ -1368,7 +1352,8 @@ and need a color only where that sprite leaves cells uncolored.
 [Glass]
 Density = 2.5
 Friction = 0.4
-Restitution = 0.1
+Restitution = 0.5
+Hardness = 9
 ForegroundColor = J
 BackgroundColor = I
 Character = ░
@@ -1376,15 +1361,16 @@ Character = ░
 [Rubber]
 Density = 1.1
 Friction = 0.9
-Restitution = 0.8
-ForegroundColor = 1
-BackgroundColor = 0
+Restitution = 0.85
+Hardness = 1
+ForegroundColor = K
 Character = ▓
 
 [Steel]
 Density = 7.8
 Friction = 0.3
-Restitution = 0.3
+Restitution = 0.6
+Hardness = 10
 ForegroundColor = U
 BackgroundColor = S
 Character = ▒
@@ -1449,11 +1435,12 @@ Fields:
 
 ### 4.4 `Global/Settings.ini`
 
-Game-wide defaults that apply unless overridden by a more specific per-asset
-`settings.ini` (e.g. default gravity, default empty-char). Extended as new
-game-wide concepts emerge.
+Game-wide defaults that apply unless overridden by a more specific
+`settings.ini`: `[Layout] EmptyChar` (default empty-cell marker for every grid
+file) and `[Physics] Gravity` (default gravity, in cells per second squared,
+for any world that sets none). The `[Sound]` section is described in §4.5.
 
-The `[Render]` section configures the font/viewport sizing used by the whole
+The `[Render]` section configures
 game (see `game-interop.js`'s `initialize`):
 
 ```ini
@@ -1526,7 +1513,7 @@ that order on the world-selection screen (§3.2):
 
 ```ini
 [Levels]
-Order = Level1, TestMovement, TestPhysics
+Order = FirstWorld, SecondWorld, TestWorld
 ```
 
 - **`Order`** — a comma-separated list of world folder names (each one a
