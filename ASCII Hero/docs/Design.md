@@ -15,7 +15,7 @@ not like a pixel-art game with ASCII characters placed on top.
   colour is a single-character code (`0-9` plus `A-Z`, 36 possible codes)
   looked up in a shared palette (`ColorPalette.ini`, see
   [AssetFormat.md](AssetFormat.md)). Codes are allocated mnemonically and
-  added as needed (e.g. `K`=blacK, `W`=White, `R`=Red) rather than filled in
+  added as needed rather than filled in
   sequentially — only as many as are actually used need to be defined.
 - The visual grid is a rendering concept only — it does not restrict movement
   or physics (see [Architecture.md](Architecture.md#coordinate-system)).
@@ -59,16 +59,16 @@ not like a pixel-art game with ASCII characters placed on top.
   as readily as ladder jump-off allows. Needs a mechanism closer to ladder's
   (where the debounce is released on landing as well as loss of overlap) -
   still to be designed.
-- **Material-Based Collision Response.** Largely done - a body's
+- **Material-Based Collision Response.** A body's
   `Density`/`Friction`/`Restitution` are resolved from a named
   material (`MaterialLibrary.ini`, see [Decisions.md](Decisions.md)) rather
   than ad-hoc per-body-type checks, and two contacting bodies' values
-  combine generically via `CollisionSystem.Combine`. Still open: any
+  combine generically via `CollisionSystem.CombineFriction`/`CombineRestitution`. Still open: any
   material-driven behavior beyond the physical constants themselves (e.g. a
   distinct sound/visual cue per material on contact).
 - **`DynamicHazard` behavior.** Linear patrol (back-and-forth along the X axis,
   under its own mass-scaled force - see
-  [Decisions.md](Decisions.md)) is now implemented via `IPatrolBody`/`Patrol`
+  [Decisions.md](Decisions.md)) is implemented via `IPatrolBody`/`Patrol`
   (see [AssetFormat.md §3.4](AssetFormat.md)), including per-placement
   `PatrolMinX`/`PatrolMaxX` bounds (e.g. the `Enemies` world's `SnakeTwo`
   confined to the platform it starts on, while `SnakeOne` still sweeps the
@@ -81,23 +81,22 @@ not like a pixel-art game with ASCII characters placed on top.
   still on - e.g. `Butterfly`). Chase behavior is not implemented - still to
   design/implement:
   - Chase-the-player movement.
-- **`KinematicObject` behavior.** Beyond constant-velocity motion, still to
-  design/implement:
+- **`KinematicObject` behavior.** Beyond acceleration-limited back-and-forth
+  patrol, still to design/implement:
   - Sprites no different from `StaticObject`.
   - Movement paths.
 - **Enhance sprites**, especially Crawl and Clamber, which currently feel
   underdeveloped compared to Walk/Hang - consider adding a third animation
   frame for these (and other) animated clips.
 - **Losing a life is a short event, not an instant reset**: the player's
-  `died` effect and the hazard's sound play with physics frozen for about a
-  second, then the player respawns (see docs/Decisions.md). There is still no
+  `died` effect and the hazard's sound play with physics frozen for about two
+  seconds, then
   invulnerability window after respawning; revisit if respawning next to a
   hazard feels unfair.
 - **Keys and gates are matched by a required `Lock` name** on both the key
   (`CollectableType.Key`) and the gate (`Kind = Gate`). A key without
   `Lock` is inert, like a collectable without `Type`. Gates can alternatively be
-  driven by a button or lever through a shared `Link` name (one switch, one
-  The HUD shows only a
+  driven by a button or lever through a shared `Link` name. The HUD shows only a
   single key icon (shown while at least one key is held) with a small
   superscript count (`¹`-`⁹`, `ⁿ` for more than 9), not a list, since a world
   may use many locks.

@@ -121,7 +121,7 @@ public class World2D
     /// DefaultForegroundColor</c> settings.ini key resolves to, used by <see cref="Rendering.WorldRenderer"/>
     /// as the fallback for any cell (background or object) whose own color code is absent/empty
     /// and whose sprite has no own default either. Null when not set, in which case the
-    /// hardcoded renderer default applies. See docs/AssetFormat.md Â§3.
+    /// hardcoded renderer default applies. See docs/AssetFormat.md §3.
     /// </summary>
     public char? DefaultForeColor { get; private set; }
 

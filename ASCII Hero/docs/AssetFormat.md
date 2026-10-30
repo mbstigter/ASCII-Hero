@@ -29,11 +29,11 @@ Assets/
 				Crawl/
 					Player_crawl_idle_characters.txt
 					...
-			BrickWall/
-				BrickWall_settings.ini
-				BrickWall_default_characters.txt
-				BrickWall_default_foregroundcolors.txt
-				BrickWall_default_backgroundcolors.txt
+			Wall/
+				Wall_settings.ini
+				Wall_default_characters.txt
+				Wall_default_foregroundcolors.txt
+				Wall_default_backgroundcolors.txt
 	Worlds/
 		Level1/
 			Level1_settings.ini
@@ -47,10 +47,10 @@ Assets/
 			ColorPalette.ini      (optional, world-specific overrides/additions)
 			MaterialLibrary.ini   (optional, world-specific overrides/additions)
 			Sprites/
-				BossPlant/           (optional, world-specific sprite - a boss unique
+				WorldHazard/         (optional, world-specific sprite - a hazard unique
 									 to this world, for example)
-						BossPlant_settings.ini
-						BossPlant_idle_characters.txt
+						WorldHazard_settings.ini
+						WorldHazard_idle_characters.txt
 						...
 ```
 
@@ -62,7 +62,7 @@ Assets/
 - **`Worlds/{WorldName}/`** holds one folder per world, containing that world's own
   background/object-placement files, plus optional world-specific `Sprites/`,
   `ColorPalette.ini`, and `MaterialLibrary.ini` for anything that only makes sense within that
-  one world (a unique boss sprite, a world-specific color not used anywhere else,
+  one world (a unique hazard sprite, a world-specific color not used anywhere else,
   a special material only this world's puzzle needs).
 
 ### 1.1 Override/fallback resolution
@@ -99,7 +99,8 @@ lowercase-prefixed, matching the asset/clip name (`Player_walk_idle_characters.t
 
 ## 2. Sprite files
 
-{characters|foregroundcolors|backgroundcolors}.txt`
+Each sprite asset lives in its own folder and is made of per-clip layer files named
+`{AssetName}_{clipName}_{characters|foregroundcolors|backgroundcolors}.txt`
 plus one `{AssetName}_settings.ini` per asset folder.
 
 - `clipName` defaults to `default` for single-clip static assets (platforms, tiles).
@@ -130,7 +131,7 @@ Multiple **frames** within one clip are separated by a line containing only
 (`walk_idle`, `walk_left`, ...) always live in their own separate files (per the
 naming pattern above) and never need a delimiter between them, since a clip's
 files only ever contain that one clip's frame(s). A single-frame clip (the
-common case, e.g. `BrickWall_default`) simply omits `//end` entirely - there is
+common case, e.g. `Wall_default`) simply omits `//end` entirely - there is
 nothing to separate. The frame boundary, when used, applies at identical line
 positions across all layer files for that clip (a `_foregroundcolors.txt` frame
 boundary lines up with the corresponding `_characters.txt` frame boundary).
@@ -181,7 +182,7 @@ An asset's material is set for the whole object in its `settings.ini`:
 
 ```ini
 [Physics]
-DefaultMaterial = Glass
+DefaultMaterial = Stone
 ```
 
 Every non-empty cell of the asset uses `DefaultMaterial`. There is no per-cell
@@ -198,7 +199,7 @@ DefaultForegroundColor = F
 DefaultBackgroundColor = D
 
 [Physics]
-DefaultMaterial = Snake
+DefaultMaterial = Creature
 
 [Animation]
 FrameDurationSeconds = 0.5
@@ -217,8 +218,8 @@ the color analog of `[Physics] DefaultMaterial` (§2.3):
   absent/empty. Resolution precedence for a given cell, checked in order,
   falling through whenever a step doesn't apply (code absent) or doesn't resolve
   (code not found in the palette): the cell's own per-cell code (from
-  `_foregroundcolors.txt`/`_backgroundcolors.txt`) &gt; this asset's
-  `[Colors]` default &gt; the world's own `[Colors]` default (see §3, `Level1_settings.ini`) &gt; a
+  `_foregroundcolors.txt`/`_backgroundcolors.txt`) > this asset's
+  `[Colors]` default > the world's own `[Colors]` default (see §3, `Level1_settings.ini`) > a
   hardcoded engine fallback (green foreground, no/transparent background fill).
   This lets an asset be authored with no color layer files at all (e.g. a
   single-color platform or ball) while still overriding the hardcoded fallback,
@@ -253,8 +254,8 @@ multiple frames. If omitted, multi-frame clips remain static at frame `DefaultFr
   Center frame so `PingPong` bounces symmetrically, or for a static shape-variant
   clip that should always render a frame other than `0`.
 - `EffectDurationSeconds` (optional, per-clip only) — only used when the clip is
-  (e.g. a `hurt`/`checkpointreached` clip)
-  plays before it disappears, replacing the default of frame count ×
+  played as an effect (e.g. a `hurt`/`checkpointreached` clip): how long it
+  plays before it disappears
   `FrameDurationSeconds` (one pass). A looping clip therefore keeps looping for
   this long. It does not stop a persistent effect (one that holds its last frame,
   like a crumbled husk) from persisting.
@@ -308,8 +309,7 @@ TileAxis = Horizontal
   any width) is stacked to fill the placement's `Span` in rows.
 - **`TileAxis = None`** (the default, and the only option when the key is
   omitted) — the asset is not tileable; it is always used exactly as
-  authored, `Span` has no effect, and every other asset (`Player`, `Ball`,
-  ...) is entirely unaffected by this feature.
+  authored, `Span` has no effect.
 
 The axis can also be set per clip in a `[Layout.{clipName}]` section, which
 overrides `[Layout]` for that clip only (like `[Animation.{clipName}]` does for
@@ -331,13 +331,13 @@ Tiling happens once, in memory, at spawn time — it repeats the authored unit's
 characters/foregroundcolors/backgroundcolors grids (and the resolved material
 grid) to produce a
 normal, full-size frame that is otherwise indistinguishable from one that had
-been hand-authored at that exact size. Collision shape derivation (§ see
-`CollisionShapeBuilder`), rendering, and every other consumer of a loaded frame
+been hand-authored at that exact size. Collision shape derivation, rendering,
+and every other consumer of a loaded frame
 work identically either way; only the small authored asset files on disk and
 the loading step differ.
 
-`SteelPlatform` and `BrickWall` are the reference tileable assets: `SteelPlatform`
-uses `TileAxis = Horizontal`, `BrickWall` uses `TileAxis = Vertical`.
+For example, a platform asset would use `TileAxis = Horizontal` and a wall
+asset `TileAxis = Vertical`.
 
 ### 2.6 Poses and facing (`[Poses]`)
 
@@ -432,7 +432,7 @@ sequence for a symmetric `PingPong` head-turn to bounce through.
 
 ### 2.7 Organizing clips into subfolders (`[ClipFolders]`)
 
-A simple asset (`Pipe`, `BrickWall`) has only one or two clips and is happiest
+A simple asset (a pipe, a wall) has only one or two clips
 kept as a flat folder of files. A busy multi-pose asset (`Player`, and any
 future NPC with many poses) accumulates many files per pose and reads more
 clearly split into one subfolder per pose. Both are supported by the same
@@ -451,7 +451,7 @@ walk = Walk
 crawl = Crawl
 ```
 
-(e.g. `hurt`)
+- Each key is either an exact clip name (e.g. `hurt`) or a prefix matching
   the part of a clip name before its first `_` (e.g. `walk` matches
   `walk_idle`, `walk_left`, `walk_right`). The longer, exact-clip-name form is
   checked first, so a prefix rule (`walk = Walk`) and a same-named exact
@@ -470,7 +470,7 @@ crawl = Crawl
   above, all of which keep referring to clips by their plain name.
 
 `Player` is the reference busy asset using this: `Player_settings.ini` (and its
-one-off `hurt` effect clip
+one-off `hurt` effect clip) stay in the root folder, while its `walk`, `crawl`,
 `jump`, `climb`, `hang`, and `clamber` clips each live in their own matching
 subfolder (`Sprites/Player/Walk/`, `Sprites/Player/Crawl/`, ...).
 
@@ -483,9 +483,9 @@ foreground art layers.
 ```
 Level1_settings.ini
 Level1_background_characters.txt        (optional)
-Level1_background_foregroundcolors.txt
-Level1_background_backgroundcolors.txt
-Level1_foreground_characters.txt 
+Level1_background_foregroundcolors.txt  (optional)
+Level1_background_backgroundcolors.txt  (optional)
+Level1_foreground_characters.txt        (optional)
 Level1_foreground_foregroundcolors.txt  (optional)
 Level1_foreground_backgroundcolors.txt  (optional)
 Level1_objects.txt
@@ -504,9 +504,8 @@ Level1_objects.ini
 - `Level1_background_*` follows the exact same rules as a sprite clip (empty
   cells, `//end` frames — though a world background typically
   has a single frame). This layer is purely visual/background terrain (e.g. distant
-  mountains) and is never physically solid.
-  `Level1_background_characters.txt` itself
-  none simply has nothing drawn on this layer, same as an absent
+  mountains) and is never physically solid. Entirely optional - a world with no
+  `Level1_background_characters.txt` simply has nothing drawn on this layer, same as an absent
   `Level1_foreground_characters.txt`.
 - `Level1_foreground_*` is the background layer's counterpart on the other side
   of the scene: purely visual, drawn last — on top of every game object,
@@ -517,7 +516,7 @@ Level1_objects.ini
   (e.g. prison bars, an overhanging foliage strip, a window frame) without
   needing a full per-object z-order system. Entirely optional — a world with
   no `Level1_foreground_characters.txt` simply has nothing drawn on this
-  layer, exactly as today. When present, it is **not** sized independently
+  layer. When present, it is **not** sized independently
   from its own content — like the background layer, its dimensions are fixed
   to the world's own width/height (from `Level1_objects.txt`), with any missing
   rows/columns padded with `EmptyChar`. This layer is always purely visual, never physically
@@ -606,7 +605,7 @@ the selector box) rather than ordinary Blazor HTML/CSS.
   count fits the viewport's width - odd so one slot is always exactly in
   the middle), further capped to however many worlds actually exist.
 - The default selection is the first world listed in `Global/Worlds.ini`
-  (§4.4). The selector box always sits around the same, fixed middle slot;
+  (§4.6). The selector box always sits around the same, fixed middle slot;
   what scrolls is which worlds occupy the row, not the box itself. With
   fewer worlds than slots (e.g. exactly 3 worlds shown in a 3-wide row), the
   row never needs to scroll at all - moving the selection just moves which
@@ -615,13 +614,14 @@ the selector box) rather than ordinary Blazor HTML/CSS.
   (edge-triggered - holding the key down does not repeat); the row only
   scrolls once the selection would otherwise land outside the visible
   slots, at which point it shifts by one thumbnail so the selection stays
-  Confirming (Enter, Space, E or Left Control) starts `GameLoop` with
+  visible.
+- Confirming (Enter, Space, E or Left Control) starts `GameLoop` with
   the selected world.
 
 Since this is a Blazor WebAssembly app with no server-side directory listing,
 the set of available worlds cannot be discovered by scanning
 `wwwroot/Assets/Worlds/` at runtime - it is an explicit, authored manifest
-(`Global/Worlds.ini`, §4.4), the same "authored list, not inferred from the
+(`Global/Worlds.ini`, §4.6), the same "authored list, not inferred from the
 filesystem" approach `[Poses]` already uses for a sprite's clips.
 
 ### 3.3 Object placement codes
@@ -648,15 +648,15 @@ filesystem" approach `[Poses]` already uses for a sprite's clips.
 0 = Player
 1 = BrickPlatform
 P = Player
-E = Goblin
+E = Enemy
 
 [Player]
 Asset = Player
 Clip = walk_idle
 Kind = Player
 
-[Goblin]
-Asset = Goblin
+[Enemy]
+Asset = Enemy
 Clip = idle
 Kind = DynamicHazard
 Facing = Left
@@ -674,7 +674,7 @@ applies to `Asset`-based sections.
 #### Materials-only objects
 
 A section may skip `Asset`/`Clip` entirely and instead name a `Material` (one
-already defined in `MaterialLibrary.ini`, see §1) plus a fixed `Width`/`Height` in
+already defined in `MaterialLibrary.ini`, see §4.3) plus
 cells. This spawns a solid rectangular body of that size, filled with that
 material's own `Character` glyph and colored by that material's own
 `ForegroundColor`/`BackgroundColor` - with no authored sprite asset/`_characters.txt`
@@ -741,18 +741,17 @@ The table below summarizes what each style supports:
 Each `[ObjectCodes]` entry maps a placement code to a section name, which in turn
 specifies which sprite asset/clip to spawn and any additional per-type properties.
 Per-instance overrides (e.g. one specific hazard with a custom patrol range) use
-their own dedicated code mapped to its own section (e.g. `2 = SnakeTwo` alongside
-`1 = SnakeOne`).
+their own dedicated code mapped to its own section (e.g. `2 = EnemyNarrowPatrol`
+alongside `1 = Enemy`).
 
 Throughout the rest of this section, "an object type" (or "a section") means
-one `[SectionName]` block in a world's `{WorldName}_objects.ini` (e.g.
-Every key
-`Restitution`, `PatrolForceMultiplierX`,
+one `[SectionName]` block in a world's `{WorldName}_objects.ini`. Every key
+(e.g. `Restitution`, `PatrolForceMultiplierX`,
 `WalkSpeed`, etc.) is set once per section and therefore applies to every
 cell in `{WorldName}_objects.txt` that uses that section's code - placing the
 same code at five different spots spawns five bodies that all share that one
 section's tuning. To give one specific occurrence its own values instead
-(e.g. one particular goblin patrolling faster than all the others), author
+(e.g. one particular enemy patrolling faster than all the others), author
 it under its own code/section (the per-instance override just above)
 rather than editing the shared section - that section is then itself "an
 object type" in the sense used below, just one used by only a single
@@ -773,14 +772,14 @@ platforms/walls of whatever length each placement actually needs, without
 hand-authoring a separate asset per length:
 
 ```ini
-[SteelPlatform]
-Asset = SteelPlatform
+[Platform]
+Asset = Platform
 Clip = default
 Kind = StaticObject
 Span = 8
 
-[BrickWall]
-Asset = BrickWall
+[Wall]
+Asset = Wall
 Clip = default
 Kind = StaticObject
 Span = 6
@@ -812,14 +811,16 @@ rather than needing to be memorized separately. Valid values: `Player` (the
 player's spawn point and sprite - exactly one placement per level should use
 this), `StaticObject` (immovable terrain, e.g. a platform), `DynamicObject`
 (moves under its own velocity/gravity, e.g. a bouncing ball),
-`KinematicObject` (moves at a constant, predefined velocity - never affected
+`KinematicObject` (moves at a prescribed velocity, easing to rest at route
+ends - never affected
 by gravity, restitution, or `GravityAffected`/`Restitution` keys),
 `DynamicHazard` (a hazard that moves like a `DynamicObject`, e.g. a toxic
 leaf or a patrolling creature, and damages the player on contact),
 `KinematicHazard` (a hazard that moves like a `KinematicObject`, e.g. a saw
 blade or laser), `StaticHazard` (a non-moving hazard, e.g.
-spikes), and `Collectable` (a non-solid, non-moving item removed from the
-world when the player contacts it). `KinematicObject`/`KinematicHazard`/`DynamicHazard`/
+spikes), `Collectable` (a non-solid, non-moving item removed from the
+world when the player contacts it), and the switchable `Gate`, `Switch`,
+`Device` and `FlowZone` (see their own sections below). `KinematicObject`/`KinematicHazard`/`DynamicHazard`/
 `StaticHazard`/`Collectable` placements read the same
 `GravityAffected`/`Restitution`/`InitialVelocityX`/`InitialVelocityY` keys as
 `DynamicObject` where applicable (`KinematicObject`/`KinematicHazard` ignore
@@ -837,8 +838,8 @@ Asset = Spikes
 Clip = default
 Kind = StaticHazard
 
-[PatrolGoblin]
-Asset = Goblin
+[PatrolEnemy]
+Asset = Enemy
 Clip = idle
 Kind = DynamicHazard
 Patrol = true
@@ -864,8 +865,8 @@ its own schedule, with no separate "diagonal mode" needed:
   authoring.
 
 ```ini
-[CautiousGoblin]
-Asset = Goblin
+[CautiousEnemy]
+Asset = Enemy
 Clip = idle
 Kind = DynamicHazard
 Patrol = true
@@ -891,8 +892,8 @@ position); `PatrolInitialDirectionY` (`Up` or `Down`) is the equivalent
 override for vertical patrol:
 
 ```ini
-[FastGoblin]
-Asset = Goblin
+[FastEnemy]
+Asset = Enemy
 Clip = idle
 Kind = DynamicHazard
 Patrol = true
@@ -902,8 +903,8 @@ PatrolInitialDirectionX = Right
 ```
 
 ```ini
-[FlappingBird]
-Asset = Bird
+[FlyingEnemy]
+Asset = FlyingEnemy
 Clip = fly_idle
 Kind = DynamicHazard
 GravityAffected = true
@@ -927,8 +928,8 @@ bumped heads back. `PatrolMaxForceX` defaults to unlimited and `PatrolMaxForceY`
 defaults to `0` (no vertical thrust, so a walker just falls); caps only limit
 force and never enable or disable an axis. An axis with no range holds the
 column (respectively height) the hazard was placed at, returning to it after a
-bump - which only works if the cap allows force there, so a flier sets
-`PatrolMaxForceY` rather than `GravityAffected = false`.
+bump - which only works if the cap allows force there, so a flier keeps
+gravity on and sets `PatrolMaxForceY`.
 
 **Patrolling a platform:** `PatrolStayOnPlatform = true` (default `false`) makes
 the horizontal range follow the static or kinematic solid the body is standing
@@ -940,7 +941,7 @@ solid, so a platform tiled from several pieces is patrolled one piece at a
 time.
 
 A `Kind = KinematicObject` or `Kind = KinematicHazard` placement (e.g. a moving
-platform or saw blade) may likewise set
+platform or saw blade) may likewise
 patrol, switched on and bounded by exactly the same rules as `DynamicHazard`
 above: `PatrolMinX`/`PatrolMaxX` patrol it horizontally,
 `PatrolMinY`/`PatrolMaxY` vertically, and an axis without bounds never moves
@@ -949,18 +950,18 @@ speed per axis and are always a positive magnitude, never a
 direction - the initial heading is inferred automatically (toward whichever
 bound is farther from the spawn position) unless overridden by
 `PatrolInitialDirectionX` (`Left` or `Right`) / `PatrolInitialDirectionY`
-(`Up` or `Down`), the `KinematicObject` equivalent of `DynamicHazard`'s
-spelled out as a direction word, since each key
-name already identifies its own axis.
-(see docs/Architecture.md's Coordinate System), so `Down` means toward the
+(`Up` or `Down`), the same keys as for `DynamicHazard`, each spelled out as a
+direction word since each key name already identifies its own axis. Y grows
+downward (see docs/Architecture.md's Coordinate System), so `Down` means toward the
 axis's max bound, same as `Up` means toward its min bound. Note
-`KinematicObject` moves at a constant, prescribed velocity rather than
+`KinematicObject` moves at a prescribed velocity (easing to rest at each
+route end) rather than
 force/gravity integration, so it has no equivalent of `DynamicHazard`'s
 gravity-asymmetric vertical patrol described above:
 
 ```ini
 [HorizontalPlatform]
-Asset = SteelPlatform
+Asset = MovingPlatform
 Clip = default
 Kind = KinematicObject
 Patrol = true
@@ -969,8 +970,8 @@ PatrolMaxX = 24
 PatrolSpeedX = 8
 PatrolInitialDirectionX = Left
 
-
-Asset = SteelPlatform
+[VerticalPlatform]
+Asset = MovingPlatform
 Clip = default
 Kind = KinematicObject
 Patrol = true
@@ -1128,8 +1129,8 @@ FlowSpeed = 6
 InitialState = On
 ```
 
-**Sound keys on object placements.**
-`SoundLibrary.ini` (§4.3.1). Both keys are optional - omit them for a silent
+**Sound keys on object placements.** `Sound` and `KillSound` name a sound from
+`SoundLibrary.ini` (§4.5). Both keys are optional
 object. Which event the key refers to depends on the kind of object:
 
 | Key         | On a hazard (`*Hazard`)                                              | On a `Collectable`                              |
@@ -1142,7 +1143,7 @@ can therefore have two different sounds - `Sound` for hurting the player and
 `KillSound` for being killed - but a single contact only ever plays one of them.
 
 ```ini
-[Snake]
+[Enemy]
 Kind = DynamicHazard
 Sound = Hurt          ; Played when the player is hurt by touching it
 KillSound = Squash    ; Played when the player squashes it from above
@@ -1157,28 +1158,26 @@ Sound = RingPickup    ; Played when the player picks it up
 full health bar one hit removes (default 1, a whole bar, so the player loses a
 life at once). For example `Damage = 0.2` takes a fifth of the bar and
 `Damage = 0.5` half of it. A hit costing the last of the bar costs one life.
+
 The `Player` section may additionally override its own "muscle power" and
-`DynamicHazard`'s `PatrolForceMultiplierX`/
-`PatrolCruiseSpeedX` expose for a patrolling hazard - deliberately the same
-key/property name (`ForceMultiplier`) for both, since they are the exact same
-"force gain converging toward a target speed" concept either way:
+target speeds, the same "force gain converging toward a target speed" concept
+that `DynamicHazard`'s `PatrolForceMultiplierX`/`PatrolCruiseSpeedX` expose
+for a patrolling hazard:
 `WalkForceMultiplier` (a number, default from
 `GameDefaults.WalkForceMultiplier`) scales how strongly the player
 accelerates toward its target speed; `WalkSpeed`/`CrawlSpeed` (cells/second,
 defaulting from `GameDefaults.WalkSpeed`/`CrawlSpeed`) are the
 target ground speeds while standing/walking vs. crouched/crawling,
-respectively. Only one force multiplier exists for the player (covering both
-Walk and Crawl) rather than a separate one per pose, because Climb/Hang are
-direct velocity-assignment locomotion modes, not force-based, so there is
-nothing else for a second multiplier to apply to. All three keys are optional
+respectively. One force multiplier covers all of the player's ground
+locomotion (Walk and Crawl). All three keys are optional
 and independent of one another:
 
 ```ini
 [Player]
-Asset = Hero
-Clip = idle
+Asset = Player
+Clip = walk_idle
 Kind = Player
-WalkForceMultiplier = 30 ; Default = GameDefaults.WalkForceMultiplier (22)
+WalkForceMultiplier = 30
 WalkSpeed = 16 ; Default = GameDefaults.WalkSpeed (12)
 CrawlSpeed = 8 ; Default = GameDefaults.CrawlSpeed (6)
 ```
@@ -1221,7 +1220,7 @@ ForegroundColor = Y
   than being tied to `Material`.
 - **`Friction`** — overrides this section's resolved material's `Friction`
   outright, independent of `Material`/`Restitution`/`Density` (e.g. an icy
-  patch of an otherwise-ordinary `Steel` platform, without needing a
+  patch of an otherwise-ordinary metal platform, without needing a
   dedicated near-duplicate material just for that one type).
 - **`Restitution`** — likewise overrides the resolved material's bounciness
   outright, independent of `Material`/`Friction`/`Density` (see the
@@ -1235,7 +1234,7 @@ ForegroundColor = Y
   body changes pose — see docs/Decisions.md) the same way the material's own
   density normally would. There is no separate `Mass` override key — a
   creature whose real-world mass shouldn't just fall out of its footprint
-  size (e.g. a snake much lighter than a human despite a similar bounding
+  size (e.g. a small creature much lighter than a human despite a similar bounding
   box) should instead be given its own dedicated, appropriately-calibrated
   material (see `Global/MaterialLibrary.ini`) rather than an ad hoc
   per-placement mass value.
@@ -1243,23 +1242,21 @@ ForegroundColor = Y
 - **`ForegroundColor`**/**`BackgroundColor`** — a single-character color code
   (see `Global/ColorPalette.ini`), a tier in `WorldRenderer`'s color-resolution
   chain, in precedence order after the cell's own per-cell code:
-  per-cell layer file &gt; this section's override &gt; the sprite asset's own
-  `[Colors]` default &gt; this object's resolved material's own
-  `ForegroundColor`/`BackgroundColor` (see §4.2) &gt; the level's own `[Colors]`
-  default (§3, above) &gt; a hardcoded engine fallback. Absent at any tier means
+  per-cell layer file > this section's override > the sprite asset's own
+  `[Colors]` default > this object's resolved material's own
+  `ForegroundColor`/`BackgroundColor` (see §4.3) > the level's own `[Colors]`
+  default (§3, above) > a hardcoded engine fallback. Absent at any tier means
   that tier has no color of its own and the chain continues unchanged.
 
 Any non-`Player` object type may also set `Passable`, `Climbable`, and/or
 `Hangable` (each default `false`, except `Passable` which defaults to `true`
-for `Kind = StaticHazard`/`Collectable`) to control how it interacts with
+for `Kind = StaticHazard`/`KinematicHazard`/`Collectable`/`Switch`/`FlowZone`) to control how it interacts with
 moving bodies, independent of its `Kind`:
 
 - **`Passable`** — if `true`, the object never blocks movement even though it
   is otherwise solid terrain (e.g. a wall type used as a level design
-  "secret passage"). `StaticHazard`/`Collectable` default to `true` since
-  neither has ever blocked movement (a hazard is meant to be walked into, a
-  collectable is picked up on contact) — this default simply keeps that
-  existing behavior data-driven instead of hardcoded by `Kind`.
+  "secret passage"). These kinds default to `true` because a hazard is meant
+  to be walked into and a collectable is picked up on contact.
 - **`Climbable`** — if `true`, the player can climb straight up/down while
   overlapping this object (e.g. a ladder), holding on by grip: the object's
   material affects how well the hands hold (a very slippery one makes the
@@ -1277,8 +1274,7 @@ moving bodies, independent of its `Kind`:
   the direction from the clip name ending in `_left`, `_right`, `_up` or
   `_down`. Anything holding on, or standing,
   crawling or resting on top, is carried along at that speed (a walking player can walk with or
-  against it).
-  in which case both movements add up. When the surface carries the player
+  against it, in which case both movements add up). When the surface carries the player
   past the end of the object, the player simply lets go and falls - place a
   floor or ledge there if they should land somewhere.
 
@@ -1330,11 +1326,11 @@ A world's own `ColorPalette.ini` (if present) is merged over this file per the
 Global/World fallback rule in §1.1. **If a world-local `ColorPalette.ini`
 redefines what an existing code means, it should be paired with a
 world-local `MaterialLibrary.ini`** for any material whose `ForegroundColor`/
-`BackgroundColor` (see §4.2) depends on that code — otherwise that
+`BackgroundColor` (see §4.3) depends on that code — otherwise that
 material's default color silently resolves against the unrelated global
 meaning of that same code rather than the world's own repurposed one.
 
-### 4.1a `Global/InterfaceColors.ini`
+### 4.2 `Global/InterfaceColors.ini`
 
 Defines the named colors of the game interface (menu, HUD, overlays and
 message boxes), separate from the world/sprite palette in §4.1. One
@@ -1355,7 +1351,7 @@ shrinking ripple drawn in its light tint at the front and its dark tint
 trailing, then the box keeps glowing through its dark, normal and light tints
 while the message stays in its normal tint.
 
-### 4.2 `Global/MaterialLibrary.ini`
+### 4.3 `Global/MaterialLibrary.ini`
 
 Defines the shared material library, referenced by `DefaultMaterial` in any
 `settings.ini` and by a placement's `Material` key. A material name that is not
@@ -1451,7 +1447,7 @@ Fields:
   own sprite's `_characters.txt`. A materials-only placement may also
   override it per-instance via its own `Character` key.
 
-### 4.3 `Global/Settings.ini`
+### 4.4 `Global/Settings.ini`
 
 Game-wide defaults that apply unless overridden by a more specific per-asset
 `settings.ini` (e.g. default gravity, default empty-char). Extended as new
@@ -1490,7 +1486,7 @@ FontHeightPixels = 28
   pixel constant — so it adapts automatically to whichever font size is
   configured.
 
-### 4.3.1 `Global/SoundLibrary.ini`
+### 4.5 `Global/SoundLibrary.ini`
 
 Defines named synthesized sounds (no audio files). A world may override or
 add sounds with its own `SoundLibrary.ini`, merged over the global one.
@@ -1520,10 +1516,10 @@ currently displayed (`Walk`, `Crawl`, `Climb`, `Hang`, `Clamber`, `Swim`). Two
 extra keys, `JumpStart` and `Land`, play once when the player leaves the
 ground upward and when it lands.
 
-`Global/Settings.ini`'s `[Sound]` section has `Enabled` and `MasterVolume`
-(0-1).
+`Global/Settings.ini`'s `[Sound]` section has `Enabled` (true/false) and
+`MasterVolume` (0-1); either key may be omitted (defaults: on, full volume).
 
-### 4.4 `Global/Worlds.ini`
+### 4.6 `Global/Worlds.ini`
 
 The explicit, authored manifest of every world available to play, shown in
 that order on the world-selection screen (§3.2):

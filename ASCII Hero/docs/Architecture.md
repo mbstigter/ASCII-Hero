@@ -40,8 +40,9 @@ into C# once per frame.
   Canvas at pixel positions derived from the camera transform, so glyphs can
   move smoothly even though the visual language is grid-based.
 - The game renders using a single bundled bitmap CP437 font, scaled to a
-  fixed pixel cell size that the browser measures and reports back to C#
-  (`CellMetrics`), so the world grid stays consistent.
+  fixed pixel cell size configured in `Global/Settings.ini` (`[Render]
+  FontWidthPixels`/`FontHeightPixels`) and confirmed back to C# as
+  `CellMetrics`, so the world grid stays consistent.
 
 ## JavaScript Interop
 
@@ -115,7 +116,7 @@ core's own force/collision/medium math.
   remains in contact (see below).
 - Every body lives in an ambient medium (`Body2D.CurrentMedium`), resolved
   fresh each frame by `PhysicsSystem` — `Air` by default, overridden to
-  whichever overlapping static/passable `Body2D` (e.g. a `Water` volume) has
+  whichever overlapping `Medium = true` placement (e.g. a `Water` volume) has
   the highest material `Density`. Any `IMediumAffected` body then receives
   two further terms in the same force accumulator: buoyancy (Archimedes'
   principle — the medium's density times the body's own resolved volume,
@@ -162,14 +163,11 @@ core's own force/collision/medium math.
   naturally drags a resting rider along toward matching the platform's own
   velocity (a grippy material carries the rider more than a slick one).
 - That velocity-matching, combined with `PhysicsSystem` integrating
-  velocity into `Position` each frame *before* `CollisionSystem.Resolve`
-  since its own
-  horizontal velocity is force/mass-driven
-  input — along a moving platform on both axes with no special-casing: the
-  ordinary landing-snap correction re-running against the platform's
-  current (already-moved) position every frame closes the platform-carry
-  gap on its own (a platform displacing farther in one frame than a body's
-  No separate
+  velocity into `Position` each frame *before* `CollisionSystem.Resolve`,
+  carries a rider along a moving platform on both axes with no
+  special-casing: the ordinary landing-snap correction re-running against
+  the platform's current (already-moved) position every frame closes the
+  platform-carry gap on its own. No separate
   carry or re-seat mechanism is needed (see docs/Decisions.md).
 - Hazard contact is resolved generically: any `IPhysicsBody` overlapping any
   `IHazardBody` in `World2D.Objects` is detected, with no concrete-type checks

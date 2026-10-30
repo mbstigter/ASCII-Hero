@@ -29,14 +29,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   friction response) only applies while the contacting pair is still
   actually approaching along the contact normal** (`normalRelativeSpeed < 0`)
   - never to a pair already separating or exactly grazing. Position
-  correction (push-apart) is unconditional and always runs regardless.
-  Without this, a rectangle pair that's still reported overlapping the
-  instant after a body has already launched away from it (e.g. a leftover
-  sliver of overlap against a solid's corner right as the player jumps
-  beside a slightly higher, tightly adjacent platform) got treated as a
-  fresh landing and impulse-response, injecting an extra unwanted velocity
-  kick (an unearned second jump boost) on top of the body's own existing
-  motion.
+  correction (push-apart) is unconditional and always runs regardless, so a
+  body launching away from a still-overlapping solid gets no extra kick.
 - **A body's `Density`/`Friction`/`Restitution` are resolved from a
   named material** (`MaterialLibrary`, merging Global+World-local ini,
   mirroring `ColorPalette`), with per-placement overrides; `Mass` is always
@@ -67,24 +61,12 @@ capture the "why" behind a decision without needing a lengthy narrative.
   collision-rectangle overlap.
 - **`CollisionShapeBuilder` derives collision rectangles from two
   complementary run-length-merge passes (row-run and column-run, the exact
-  transpose of each other), unioned together with duplicates removed** - not
-  row-run alone. A row-only decomposition of a curved/notched silhouette
-  (e.g. the round `Ball` sprite) produces very short, wide rectangles along
-  its flanks, whose shallow vertical overlap always wins the
-  minimum-translation-vector contact-direction rule in `CollisionSystem`,
-  even where the true overlap is deep horizontally - letting a body slide
-  sideways through the shape's middle instead of being blocked. The
-  column-run pass's tall, narrow rectangles along the same flanks give the
-  resolver a shallow-horizontal option there too, so the correct contact
-  normal wins regardless of where along a curved outline contact happens.
-  Deduplication (rather than just unioning both lists) is required, not
-  optional: for a blocky rectangular sprite both passes produce
-  byte-identical rectangles, and `CollisionSystem` resolves each of a body's
-  own rectangles independently per solver iteration - an undetected
-  duplicate silently doubles that contact's position correction and
-  velocity impulse every iteration, invisible at rest but capable of adding
-  real extra velocity (e.g. an unwanted jump-height boost) to a fast-moving
-  contact.
+  transpose of each other), unioned together with duplicates removed**, so a
+  curved/notched silhouette offers both shallow-vertical and
+  shallow-horizontal rectangles along its flanks and the correct contact
+  normal wins wherever contact happens. Duplicates must be removed because
+  each rectangle is resolved independently per solver iteration; a
+  duplicate would double that contact's correction and impulse.
 - **Of a body's own overlapping collision rectangles against one other body/solid,
   `ResolveAgainstOtherBody` resolves exactly one physical contact per solver iteration, not one
   contact per overlapping rectangle.** The rectangle overlapping most deeply (by its own natural
@@ -187,8 +169,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **A flowing medium is a `FlowZone2D`, not a separate force source.** A `FlowZone`
   placement is a `TwoStateObject2D` and `ILinkTarget` (like `Gate2D`) that is also a
   medium volume (`Medium = true`), with a `FlowDirection` (Left/Right/Up/Down) and a
-  `FlowSpeed` (the speed the medium moves at). While on
-  through `Link`) `ResolveCurrentMedium` returns the winning volume's flow, scaled by
+  `FlowSpeed` (the speed the medium moves at). While on (switched
+  through `Link`) `ResolveCurrentMedium`
   that volume's own overlapped share of the body, and the drag terms use the body's velocity
   *relative to the flow* - so flow acts only through the medium's viscosity (a fan's air is
   gentle, a river's water strong), a body moving with the flow feels less drag than one against
@@ -232,7 +214,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   medium.** A medium resists self-propelled motion only through its passive buoyancy and
   quadratic drag above, which already grow with speed and frontal area. Force gains
   (`WalkForceMultiplier`, `PatrolForceMultiplier`) and jump-off speeds are calibrated
-  for that model directly; there is no separate viscosity-based multiplier.
+  for that model directly.
 - **World edges are a symmetric, contact-free safety net, not level geometry.** All four
   edges clamp a body back inside and reflect only the velocity heading into the edge, using
   the body's own restitution (with the resting-bounce threshold). They have no material,
@@ -265,9 +247,9 @@ capture the "why" behind a decision without needing a lengthy narrative.
   count.** The authored unit may be any number of cells long; the unit is
   repeated to fill the span exactly, cutting the last unit short when needed.
 - **The color palette is 36 codes** (`0`-`9`, `A`-`Z`).
-(`[Poses]` section) resolve
+- **Posed bodies** (`[Poses]` section) resolve
   their active clip - and facing, including a vertical axis for `Climb` - from
-  each clip name's own suffix, not a fixed slot position/flag.
+  each clip name's own suffix
 - **Multi-frame animation is supported per clip** (`[Animation.{clip}]`
   timing overrides, `DefaultFrame`, `AnimationMode.Off` as an explicit
   opt-out for multi-frame-but-non-animating assets), including subtle idle
@@ -285,11 +267,11 @@ capture the "why" behind a decision without needing a lengthy narrative.
   their own, longer anchor (`FrameDurationSeconds = 5.4 / speed`) for fewer,
   slower strokes.
 - **`Kind` is mandatory in `_objects.ini`** and its values match concrete
-  class names 1:1 (`StaticObject`, `DynamicObject`, `KinematicObject`,
-  `StaticHazard`, `DynamicHazard`, `KinematicHazard`, `Collectable`,
-  `Player`) - no implicit fallback.
-- **"Hazard" is the single harmful-body concept** (no separate "hazard"
-  category): each motion model (static/kinematic/dynamic) has a harmless
+  class names minus the `2D` suffix (`StaticObject`, `DynamicObject`,
+  `KinematicObject`, `StaticHazard`, `DynamicHazard`, `KinematicHazard`,
+  `Collectable`, `Gate`, `Switch`, `Device`, `FlowZone`, `Player`) - no
+  implicit fallback.
+- **"Hazard" is the single harmful-body concept**: each motion model
   `*Object` and a harmful `*Hazard` variant, and being killable by a stomp is
   a per-instance flag (`IKillableBody.IsKillable`), not a separate type.
 
@@ -305,12 +287,10 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **Object sound keys are `Sound` and `KillSound`, with `Sound` meaning
   "the object's main event"**: for a hazard, the player being hurt by it; for
   a collectable, being picked up. `KillSound` is for a hazard being squashed
-  and replaces `Sound` for that contact. The keys were deliberately not split
-  into per-kind names (`HurtSound`/`PickupSound`): that would be a breaking
-  rename with silent failures on missed keys, and would need a new key for
-  every future kind of object.
-- **Each sound is a single pitch slide;
-  not implemented yet** (kept simple for now).
+  and replaces `Sound` for that contact. The same two keys serve every kind
+  of object.
+- **Each sound is a single pitch slide**; multi-note sounds are not
+  supported (kept simple for now).
 - **The world-select menu plays subtle `MenuMove`/`MenuSelect` sounds** when
   the selection moves / a world is confirmed. `GameLoop` detects both (so
   `WorldSelectScreen` stays audio-free) and loads the global-only sound
@@ -350,12 +330,11 @@ capture the "why" behind a decision without needing a lengthy narrative.
   cruise speed and force cap (`PatrolMaxForceX`, default unlimited, and
   `PatrolMaxForceY`, default 0 = no vertical thrust). Caps only limit force,
   never switch an axis on or off. An axis with no range holds its spawn
-  position via a spring target speed, so fliers use `PatrolMaxForceY` instead of
-  `GravityAffected = false`. Facing intent is the sign of the X target velocity
+  position via a spring target speed; fliers stay gravity-affected and get
+  lift from `PatrolMaxForceY`. Facing intent is the sign of the X target velocity
   (dead-zoned), so a body settled on its hold position shows its idle pose.
-  This is a distinct scheme from `KinematicObject2D`'s own constant-velocity,
-  non-force patrol (chosen to leave room for non-linear future paths without
-  redesigning the body).
+  `KinematicObject2D` patrols differently: acceleration-limited prescribed
+  velocity, no forces.
 - **Player state is four counters: Lives, Health, Rings and Score.** Health is a
   0-1 bar for the current life (HUD bar); Lives, Rings and Score are shown in
   the HUD text. Ordinary (non-fatal) hazard contact removes the hazard's
@@ -374,8 +353,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   player object is spawned - mirroring how `[World] Title` and `[Physics]
   Gravity` are already world-level settings rather than per-placement keys.
 - **Collectable variants are driven by a required `Type` key on the
-  `Diamond`/`Ring`/
-  `Checkpoint`/`LevelEnd`/`Key`), not a distinct `Kind` value and not an
+  placement** (`Diamond`/`Ring`/
+  `Checkpoint`/`LevelEnd`/`Key`), not
   asset-level `_settings.ini` key - matching how
   `Killable`/`EffectPersists`/`EffectClip` are already placement-level keys,
   and keeping the same sprite asset (e.g. `Ring`) reusable across multiple
@@ -390,11 +369,11 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `Player2D.Keys` (inert without one; the lock name lives on `Key2D`, not on
   `Body2D`); a `Gate2D` with a matching `Lock` is opened by the action key
   (`E`/`Enter`) when the player is within one cell of it, consuming one key, and
-  then stays open.
+  then stays open. `Checkpoint`/`LevelEnd` are also removed on
   pickup like every other collectable; a collectable's own
   `Collectable2D.EffectPersists` (mirroring `IKillableBody.EffectPersists`
-  on hazards/hazards) controls whether its pickup effect remains in its
-  place afterward as a permanent "already used" marker instead of fading
+  on hazards) controls whether its pickup effect remains in its
+  place afterward
   away - used by `Checkpoint`/`LevelEnd` in practice, but available to any
   collectable variant.
   `Checkpoint` records `World2D.RespawnPoint`, consumed by `World2D.Respawn()`;
@@ -412,16 +391,14 @@ capture the "why" behind a decision without needing a lengthy narrative.
   with a centered "Level Complete!"/"Game Over!" `UILabel` (solid black
   background, inside a `UIFrame` box that ripples inward from a compact
   larger size; green for Level Complete, red for Game Over), dismissed by a
-  action key press (only after that key has been released once, so
-  a held key doesn't dismiss it instantly), then back to
-  `GameMode.WorldSelecting` - the same reset path as the Escape-to-quit
-  shortcut.
+  confirm (action or jump) key press (only after that key has been released
+  once, so a held key doesn't dismiss it instantly), then back to
+  `GameMode.WorldSelecting` - the same reset path as a confirmed exit.
 
 ## Player Movement & Input
 
-- **`Up` (directional) and `Jump` (action) are always distinct inputs, never
-  even for the ordinary ground jump** - letting `Up` also trigger a
-  jump would be unintuitive.
+- **`Up` (directional) and `Jump` (action) are always distinct inputs**, even
+  for the ordinary ground jump.
 - **Two full, independent key sets** are supported for local co-op/preference
   - "Player 1" (arrows + `Space` + `Enter` as action) and "Player 2" (`WASD` + `Left Ctrl` + `E` as action).
 - **"Stance" is the stored choice, "pose" is the displayed result.** The
@@ -445,9 +422,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `CollisionSystem`-set touching flag, swim instead reads the player's own
   already-resolved `Body2D.CurrentMedium` directly every frame and compares
   it against `PhysicsConstants.SwimMediumMinDensity`/`SwimMediumMinViscosity`
-  (a medium qualifies if it clears *either* threshold, not both - density and
-  viscosity are independent physical properties, and requiring both would
-  wrongly exclude a hypothetical dense-but-thin or thin-but-viscous fluid).
+  (a medium qualifies if it clears *either* threshold, since density and
+  viscosity are independent physical properties).
   Engaging still mirrors climbing's deliberate-press model (a directional key
   must actually be held while submerged), not hanging's automatic grab, since
   merely drifting through a passable fluid volume shouldn't force the pose
@@ -480,14 +456,12 @@ capture the "why" behind a decision without needing a lengthy narrative.
   and "Hero" from the right (ease-out), shaded with a vertical-only gradient;
   the rest of the menu appears once it finishes (menu input is ignored until
   then, with no skip).
-- **Cell/canvas pixel size is a configured, final on-screen value - not
-  measured by the browser, not a fixed pixel constant, and not a separate
-  base-size-plus-scale pair.** `Global/Settings.ini`'s `[Render]` section
+- **Cell/canvas pixel size is a configured, final on-screen value.**
   requires `FontWidthPixels`/`FontHeightPixels` as the final cell size
   already at whatever zoom is wanted (`GameLoop.StartAsync` throws if either
   is missing); `GameLoop`/`CanvasBridge` then size the canvas element and the
   gameplay viewport as `ViewportColumns`/`ViewportRows` (character counts)
-  times that cell size (see docs/AssetFormat.md §4.3). Switching fonts or
+  times that cell size (see docs/AssetFormat.md §4.4). Switching fonts or
   zoom level never requires touching game code - just updating the ini
   values. The size is not auto-detected because `measureText` does not
   reliably report a bitmap font's real native size.
@@ -510,8 +484,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   (`GameLoop._showObjectCounterOverlay`, `InputState.IsObjectCounterToggleKeyPressed`
   bound to `O`), stacked directly under the FPS overlay (same row-1 vs.
   row-0 top-right corner), displaying `World2D.Objects.Count` (e.g. "42 Obj")
-  - added so a level author can watch the count drop live as collectables
-  (e.g. diamonds) are picked up. Off by default, same
+  so a level author can watch the count drop live as collectables
+  are picked up.
   right-aligned-by-rendered-length approach as the FPS overlay.
 - **`World2D.Respawn()` resets the player's position, velocity, and health**
   (position to `RespawnPoint` if a `Checkpoint` has been reached, else
@@ -523,11 +497,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   already-dead player can't retrigger it). There is no debug respawn key.
 - **Background/foreground layer colors are precomputed once at world load**
   (`World2D.BackgroundForeColors`/`BackgroundBackColors`/`ForegroundForeColors`/
-  `ForegroundBackColors`), instead of resolving each visible cell's color code
-  against the palette every frame in `WorldRenderer`. These layers are purely
-  static level data, so the palette lookup only ever needs to happen once per
-  cell, not once per cell per frame; `WorldRenderer` just reads the
-  precomputed color directly.
+  `ForegroundBackColors`), since these layers are static level data;
+  `WorldRenderer` just reads the precomputed color directly.
 
 ## Level/Game Flow
 

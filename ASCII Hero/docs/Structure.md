@@ -123,9 +123,8 @@ palettes, materials) from disk/HTTP into in-memory game objects.
 - **`WorldSummary` / `WorldCatalog`** - lightweight, non-gameplay metadata for
   the world-selection screen: a world's `Title` and its fixed 16x8, optionally
   animated thumbnail art (see docs/AssetFormat.md §3.1/§3.2), loaded without
-  loading the rest of that world's playable `World2D`.
-
-  every playable world from `Global/Worlds.ini` (§4.4) - Blazor WebAssembly
+  loading the rest of that world's playable `World2D`. `WorldCatalog` lists
+  every playable world from `Global/Worlds.ini` (§4.6) - Blazor WebAssembly
   has no way to list `wwwroot`'s directory contents at runtime, so (like
   `[Stances]`) this is an authored list rather than one inferred from the
   filesystem.
@@ -185,7 +184,7 @@ The live game state and the entity types that make it up.
     state to all its `Targets`; operated via `World2D.TryOperateSwitch`),
     `Device2D` (a machine-like object - fan, lamp - that only swaps its off/on clip) and
     `FlowZone2D` (a passable medium volume - water, air - whose medium flows in a
-    `FlowDirection` at a `FlowSpeed` while on;
+    `FlowDirection` at a `FlowSpeed` while on).
   - `ILinkTarget` - capability of an object a switch can drive (`LinkName`,
     `SetState`), implemented by `Gate2D`, `Device2D`, `FlowZone2D` and `KinematicObject2D` (which stops while
     off). `World2D.ResolveLinks` enforces one-switch-to-many-targets `Link` matching at load time.
@@ -208,16 +207,16 @@ The live game state and the entity types that make it up.
 	`Body2D.IsStatic`). Supports independent optional per-axis back-and-forth
 	patrol (`PatrolMinX`/`PatrolMaxX`/`PatrolSpeedX`,
 	`PatrolMinY`/`PatrolMaxY`/`PatrolSpeedY` - either, both, or neither axis
-	may be configured) at a constant, prescribed velocity - a distinct scheme
+	may be configured) at a prescribed velocity that eases to rest at each
+	route end (`PhysicsConstants.KinematicPlatformAcceleration`) - a distinct scheme
 	from `IPatrolBody`'s force-based, gravity-integrated patrol used by
-	`DynamicHazard2D`, chosen to leave room for a future non-linear (e.g.
-	rectangular-circuit) motion path without redesigning the body.
+	`DynamicHazard2D`.
   - `DynamicHazard2D` - an AI-controlled hazard that moves and collides exactly
 	like a `DynamicObject2D`; optionally patrols back and forth independently
 	on the X and/or Y axis via `IPatrolBody` (see below - a body configured
 	with both axes patrols diagonally), and implements `IPosedBody` to face
-	(and animate through) its sprite's directional clips (e.g. `Snake`'s
-	`move_left`/`move_right`) from its own resolved velocity each frame. Chase
+	(and animate through) its sprite's directional clips (e.g.
+	`move_left`/`move_right`) from
 	behavior is not yet implemented.
   - `Collectable2D` - a static, non-solid item removed from the world when a
 	collector body touches it (e.g. a coin or power-up), regardless of its
@@ -231,8 +230,8 @@ The live game state and the entity types that make it up.
   - `EffectInstance2D` - a purely cosmetic, non-collidable body that plays a
 	short visual effect clip (a pickup fade, a kill "crumble") and then
 	either self-removes or persists as a permanent decorative husk.
-
-  system that needs to act on "any body that can X" checks one of these
+  - **Capability interfaces** - behavior is selected by interface, never by concrete type; a
+    system that needs to act on "any body that can X" checks one of these
   instead. Some are bare markers (no state, just identity); others carry
   real per-instance state:
   - `IPhysicsBody` - participates in physics integration and collision
@@ -292,8 +291,7 @@ The live game state and the entity types that make it up.
 	`SpawnEffect` helper can also spawn an explicit, call-site-chosen clip
 	independent of `EffectClipName` - used so the player can have more than
 	one distinct effect for different situations (e.g. `Player2D`'s
-	"hurt" on a hazard hit
-	"checkpointreached" clip
+	"hurt" on a hazard hit and its "checkpointreached" clip;
 	`Player2D` is deliberately not an `IEffectTrigger`) as
 	independent, possibly-overlapping `EffectInstance2D`s, rather than being
 	limited to one fixed clip per body.
@@ -319,7 +317,7 @@ The live game state and the entity types that make it up.
 	regardless, so it alone is the medium-based detection signal swim needs (the
 	player movement logic at the start of `PhysicsSystem.Step` reads the value
 	resolved during the previous step).
-
+- **`Vector2D`** - the 2D vector struct used for all world-space
   positions and velocities. World coordinates are continuous cells, not
   pixels or integer grid indices - see Coordinate System below.
 
@@ -337,7 +335,7 @@ The live game state and the entity types that make it up.
   identical to a direct gravity-velocity add for a gravity-only body but is
   the extension point for any further force source. Each frame it also
   resolves every body's `CurrentMedium` (`ResolveCurrentMedium` - `Air` by
-  default, overridden to the highest-density overlapping static/passable
+  default, overridden to the highest-density overlapping `Medium = true`
   volume's material, e.g. a `Water` body, or an equal-density volume such as an
   `Air` wind tunnel) and, for any `IMediumAffected`
   body, adds a buoyancy force (Archimedes' principle - the medium's density
@@ -348,8 +346,8 @@ The live game state and the entity types that make it up.
   facing that axis - `Size.Y` for horizontal drag, `Size.X` for vertical drag,
   the 2D analog of cross-sectional area - so a bigger body feels
   proportionally more drag than a smaller one of the same material) into the
-  same accumulator.
-  sustained locomotion - walk/crawl on the ground, climbing a ladder
+  same accumulator. The player's
+  sustained locomotion - walk/crawl
   (including its vertical motion), and hanging/shimmying from a pipe/rope
   (including holding position against gravity, which stays on - the grip
   carries the weight) - is one such force
@@ -377,6 +375,7 @@ The live game state and the entity types that make it up.
   being airborne - and its pose, the displayed result (`Player2D.ResolvedPose`,
   derived each frame by `UpdatePose` from the stance plus the situation:
   Climb, Hang/Clamber, Swim, or a visual-only "Jump" pose while airborne).
+  It engages climbing/hanging (via
   `IClimberBody`/`IHangerBody`, generically) from the previous frame's
   `IsTouchingClimbable`/`IsTouchingHangable` (set by `CollisionSystem`):
   climbing requires a deliberate up/down key press while touching a climbable
@@ -385,7 +384,7 @@ The live game state and the entity types that make it up.
   first, as a separate step), and yields to landing on solid ground; hanging
   engages automatically as soon as a hangable surface is touched from
   underneath, picking the compact "clamber" pose if the stance was already
-  `Crawl` at the moment of grabbing on.
+  `Crawl` at the moment of grabbing on. Stance changes on the ground and
   while hanging are driven by one shared, structured up/down "stance ladder":
   on the ground, Up always means "more upright" (Crawl -> Walk) and Down
   always means "more compact" (Walk -> Crawl); while hanging, the same keys
@@ -449,14 +448,14 @@ The live game state and the entity types that make it up.
   terms since impulses here are resolved per-frame rather than as a
   continuous force). Combined with `PhysicsSystem` integrating that velocity
   into `Position` before `Resolve` runs each frame, this carries a resting
-  the player included, since its own horizontal velocity is
+  body - the player included, since its own horizontal velocity is
   force/mass-driven (see `IWalkForceBody` above) rather than overwritten
   from input every frame - along a moving platform on both axes with no
-  the platform-carry gap (a platform
+  special-casing: the platform-carry gap (a platform
   displacing farther in one frame than a body's own velocity-matched motion
   keeps up with) is closed simply by the ordinary landing-snap correction
   re-running against the platform's current (already-moved) position every
-  needed on either axis (see
+  frame, so no separate carry or re-seat mechanism is needed on either axis (see
   docs/Decisions.md).
   Moving-body-vs-moving-body resolution
   (`ResolveAgainstMover`, sharing its math with the solid case via the same
@@ -471,17 +470,14 @@ The live game state and the entity types that make it up.
   rectangle's own axis becomes the contact normal, every other overlapping
   rectangle is re-measured along that same normal, and the worst of those
   depths is what actually gets corrected/responded to via one call to
-  - see docs/Decisions.md for the two rejected variants
-  (resolving every rectangle independently; resolving only the
-  deepest one and ignoring the rest).
+  `ResolveContact`. Climbing and hanging engagement
   share one generic snap-speed gate, measured relative to the surface's
   `GetCarryVelocity()` (a body moving too fast does not snap on,
   matching a jump arc's peak still needing to finish naturally rather than
   instantly catching on a passing platform/pipe/ladder); hanging additionally
-  requires approaching the surface from underneath, checked geometrically
-
-
-  flags (`SurfaceTop`/`SurfaceBottom`/`SurfaceLeft`/`SurfaceRight`, plus
+  requires approaching the surface from underneath, checked geometrically.
+  Contacts are tracked per body as explicit `ContactType`
+  flags (`SurfaceTop`
   `Climbable`/`Hangable`, recorded by `CollisionSystem` for the ladder/pipe
   currently gripped and read back by `PhysicsSystem` as the grip's reference
   frame and reaction target; the `IClimberBody.IsTouchingClimbable`/
@@ -501,8 +497,7 @@ The live game state and the entity types that make it up.
   pair on both sides as it resolves a landing (e.g. the rider gets
   `SurfaceBottom` against the solid, the solid gets `SurfaceTop` against the
   rider). `IPhysicsBody.IsGrounded` is a derived, read-only property
-  see
-  docs/Decisions.md for why it is not a stored flag.
+  (`HasContact(SurfaceBottom)`); `PhysicsSystem` calls
   `RemoveContact(ContactType.SurfaceBottom)` the instant a jump/climb/hang
   begins, so the derived state reflects "airborne" for that same frame
   rather than waiting for `Resolve`'s next contact pass. Broad-phase
@@ -521,19 +516,9 @@ The live game state and the entity types that make it up.
   frames (see `HasCharacterOverlap`), rather than trusting the merged
   collision rectangles alone - a refinement that only matters for a shape
   whose true silhouette doesn't exactly fill its own merged rectangle (e.g.
-  diagonal/notched sprites).
-
-  passable body can't be misread as hanging while plunging through. Most of
-  this is resolved generically against capability interfaces, never by
-  checking concrete types - the player is just a moving body whose
-  restitution happens to be zero. Against solid terrain, a multi-rectangle
-  body (e.g. the player's narrower "head" rect above its wider "torso" rect)
-  is resolved one of its own rects at a time rather than picking a single
-  globally-deepest-overlapping pair, and each rect is re-read fresh from the
-  body's current position on every iteration - otherwise one rect's push-out
-  can leave another rect still stuck in the solid, or two rects' corrections
-  can fight each other frame to frame (visible as pose jitter while standing
-  still on solid ground).
+  diagonal/notched sprites). All of this is resolved generically against
+  capability interfaces, never by checking concrete types - the player is
+  just a moving body whose restitution happens to be zero.
 - **`CollisionShapeBuilder`** - derives a small set of collision rectangles
   from a sprite frame's actual non-empty glyph shape, so collision follows a
   sprite's real silhouette instead of its full bounding box. Runs two
@@ -574,8 +559,8 @@ The live game state and the entity types that make it up.
   scrolls past the world's own bounds. `SnapTo` immediately centers on a
   target with no smoothing (used once at world load); `Follow` smoothly
   catches up each frame afterward.
-- **`WorldRenderer`**
-  list of positioned glyphs (background layer plus every object's active
+- **`WorldRenderer`** - turns the visible part of the world into a flat
+  list of positioned glyphs
   frame), resolving each cell's color codes through the palette and
   converting world positions to pixel positions via the camera's current
   view. A game object's color-resolution chain is: per-cell code > its own
@@ -611,7 +596,7 @@ The live game state and the entity types that make it up.
   single ASCII character plus its already-resolved foreground/background CSS
   colors, already positioned in pixel space (not world/cell coordinates) for
   one specific frame. Built by `GlyphBuilder`/`WorldRenderer`/`UIRenderer`/
-  `WorldSelectRenderer`, then handed as a flat per-frame list straight to
+  `WorldSelectRenderer`/`WorldLoadingRenderer`, then
   `CanvasBridge` for drawing - it carries no reference back to the world cell,
   sprite, or object it came from, so it is purely a draw instruction, never
   retained or reused across frames.
@@ -656,6 +641,9 @@ The live game state and the entity types that make it up.
   While `WorldSelectScreen.IsIntroComplete` is false only the logo is drawn,
   with "ASCII" sliding in from the left and "Hero" from the right
   (`WorldSelectScreen.IntroSeconds`; menu input is ignored until it finishes).
+- **`WorldLoadingRenderer`** - creates the "Loading..." `UIBar`
+  (`CreateLoadingBar`) and draws the frozen selection layout plus that bar
+  while a world loads (`BuildLoadingFrame`).
 
 - **`AnimationSystem`** - advances every body's animation timer once per
   frame (bodies with no animation configured, or a single frame, no-op
@@ -717,9 +705,10 @@ The live game state and the entity types that make it up.
   screen, one loaded `World2D`. Driven entirely by JavaScript's
   `requestAnimationFrame` calling back into C# - never by Blazor's
   `StateHasChanged`.
-  - Internally a strict five-state `GameMode` (`WorldSelecting` ->
+  - Internally a strict `GameMode` state machine (`WorldSelecting` ->
     `LoadingWorld` -> `Playing` -> `LevelComplete` or `GameOver` -> back to
-    `WorldSelecting`) - never more than one is active, and
+    `WorldSelecting`, plus `ConfirmExit` while the "Exit game?" prompt is
+    open during play) - never more than one is active, and
     `OnFrame` switches on it to decide whether to drive
     `WorldSelectScreen`/`WorldSelectRenderer`, redraw the frozen selection
     layout plus a filling "Loading..." `UIBar` (a world's `World2D.LoadAsync`
@@ -732,7 +721,7 @@ The live game state and the entity types that make it up.
     spans a genuine async gap (in particular, `World2D.LoadAsync`'s real
     HTTP fetches while confirming a world) could otherwise be re-entered by
     an overlapping `OnFrame` call before it finishes, which would
-    manifest as
+    manifest as the
     selection screen and gameplay both appearing to render at once. Two
     guards prevent this: a blanket `_isProcessingFrame` flag drops any
     `OnFrame` call that overlaps one still in progress, and `GameMode` is
@@ -754,15 +743,15 @@ The live game state and the entity types that make it up.
    - Loads every world's lightweight `WorldSummary` up front via
 	 `WorldCatalog.LoadAllAsync` (reading `Global/Worlds.ini` for the world
 	 list, then each world's title + thumbnail only, not a full `World2D`).
-   - Initializes `CanvasBridge`, which sets up the canvas and reports back
-	 the real measured pixel size of one glyph cell for the active font.
+   - Initializes `CanvasBridge`, which sets up the canvas at the configured
+	 `[Render]` cell size and returns it as `CellMetrics`.
    - Builds the initial `WorldSelectScreen` (how many thumbnail slots fit the
-	 measured viewport width, defaulting the selection to the first world)
+	 viewport width, defaulting
 	 and puts `GameLoop` into its `WorldSelecting` `GameMode`.
 4. From here, `OnFrame` drives the world-selection screen (see below) until
    the player confirms a world, at which point `GameLoop` switches to its
    `LoadingWorld` `GameMode`, creates a `UIBar` sized to
-   `World2D.LoadStepCount` (`WorldSelectRenderer.CreateLoadingBar`), and
+   `World2D.LoadStepCount` (`WorldLoadingRenderer.CreateLoadingBar`), and
    loads that world's `World2D` via `World2D.LoadAsync` (reading settings,
    palette/materials, background, object definitions, and every object
    placement, resolving each placement's sprite through `SpriteLoader`) - so
@@ -770,7 +759,7 @@ The live game state and the entity types that make it up.
    reports its progress after each of those logical steps via an
    `IProgress<int>` callback, which fills in the bar's `CurrentValue`; every
    `OnFrame` tick that lands while still in `LoadingWorld` redraws the
-   frozen selection layout plus that bar (`WorldSelectRenderer.BuildLoadingFrame`)
+   (`WorldLoadingRenderer.BuildLoadingFrame`)
    instead of leaving the canvas showing a stale frame. Once loading
    completes, `GameLoop` snaps the camera immediately onto the world's
    designated camera target (the player by default, or another body if a
@@ -827,7 +816,8 @@ large jumps after e.g. a tab switch):
    adds 1 to `Player2D.Score`; `Ring` increments `Rings`, adds 5 to `Score` and, every
    `World2D.RingsPerLife` rings, resets `Rings` and adds a life; `Checkpoint`
    records `World2D.RespawnPoint`; `LevelEnd` sets `World2D.PendingTransition`
-   to `LevelEnd` for `GameLoop` to act on.
+   to `LevelEnd` for `GameLoop` to act on. Collectables (and hazards) with an
+   effect clip (e.g. a
    collectable with `EffectPersists = true`) spawn their pickup effect as a
    permanent husk in their place, the same way a killed hazard's effect can
    persist. `World2D.ApplyPendingRemovals`
@@ -857,15 +847,15 @@ large jumps after e.g. a tab switch):
    `CanvasBridge.DrawFrameAsync` sends the complete list to JavaScript to
    paint onto the canvas. `_hudText` is refreshed every `Playing` frame from
    `World2D.Player.Lives`/`.Rings`/`.Score` on its first row; its second row is a
-   and a key icon
+   "Health:" caption followed by the `_hudBar` gauge (`Player2D.Health`), and a key icon
    followed by a superscript count (`¹`-`⁹`, `ⁿ` for more than 9) appears while a key is held.
+   A dev/testing FPS overlay
    (`InputState.IsFpsToggleKeyPressed`, bound to `F`) can be toggled on top
    of the HUD, showing a smoothed frames-per-second reading computed each
    frame from that frame's own raw, unclamped elapsed time (not the fixed
-   Physics/Collision step size), right-aligned to the current viewport width
-   - recomputed each frame from the rendered text's own length (leading with
-     the number, e.g. "144 FPS") so the label stays flush with the corner
-     regardless of digit count - so it stays pinned to the top-right corner;
+   Physics/Collision step size), right-aligned using the rendered text's own
+   length (leading with the number, e.g. "144 FPS") so it stays pinned to the
+   top-right corner regardless of digit count;
    off by default so it never appears for an ordinary player. A second
    dev/testing overlay (`InputState.IsObjectCounterToggleKeyPressed`, bound
    to `O`) stacks directly under the FPS overlay, showing `World2D.Objects`'s
@@ -885,13 +875,12 @@ large jumps after e.g. a tab switch):
    Complete!"/"Game Over!" message on top (`GameLoop.AddEndScreenMessage`: a
    short trail of `UIFrame` boxes shrinks in a ripple onto the final box, then
    the `UILabel` appears inside it on a solid black background; green for
-   Level Complete, red for Game Over; the animation is driven by an elapsed
-   timer reset on entering the mode), and a jump
+   Level Complete, red for Game Over (amber for the "Exit game?" prompt, which
+   uses the same method); once settled the box border keeps glowing in steps
+   through the dark/normal/light tints while the text stays put; the animation is driven by an elapsed
+   timer reset on entering the mode), and a confirm-key press (only after
    those keys were released once) returns `GameLoop` to `GameMode.WorldSelecting`,
-   the same reset path used by the existing Escape-to-quit shortcut.
-
-
-
+   the same reset path used by a confirmed exit.
 
 ### Asset Loading (Global vs. World Fallback)
 
