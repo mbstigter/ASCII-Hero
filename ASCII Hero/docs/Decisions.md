@@ -474,7 +474,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   bootstrap fallback for the canvas before C# draws its first frame. Callers
   pick tints explicitly (e.g. a label's `HighlightColor`); nothing derives a
   darker/lighter tint automatically. End-screen ripples use the light tint
-  for the leading box and the dark tint for the trail.
+  for the leading box and the dark tint for the trail; once settled, the box
+  (not the text) keeps glowing in steps through dark, normal and light.
 - **The menu opens with a logo-only intro**: "ASCII" slides in from the left
   and "Hero" from the right (ease-out), shaded with a vertical-only gradient;
   the rest of the menu appears once it finishes (menu input is ignored until

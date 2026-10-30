@@ -1350,6 +1350,11 @@ startup error:
 - `RedDark`, `Red`, `RedLight` - `Red` colors the Game Over box.
 - `BlueDark`, `Blue`, `BlueLight` - spare tints for future interface use.
 
+Each message box (Level Complete, Game Over, exit confirmation) opens with a
+shrinking ripple drawn in its light tint at the front and its dark tint
+trailing, then the box keeps glowing through its dark, normal and light tints
+while the message stays in its normal tint.
+
 ### 4.2 `Global/MaterialLibrary.ini`
 
 Defines the shared material library, referenced by `DefaultMaterial` in any

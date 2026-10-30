@@ -122,6 +122,9 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// <summary>Per step, the box shrinks by this many cells on each axis (1 per side).</summary>
     private const int EndScreenStepCells = 2;
 
+    /// <summary>Once the ripple settles, how long the box shows each tint of its glow cycle.</summary>
+    private const double EndScreenGlowStepSeconds = 0.2;
+
     // Per-screen woosh sound (played as the ripple opens; see Global/SoundLibrary.ini).
     private const string LevelCompleteWooshSoundName = "LevelCompleteWoosh";
     private const string GameOverWooshSoundName = "GameOverWoosh";
@@ -726,8 +729,10 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
         for (var frameLevel = outermostLevel; frameLevel >= level; frameLevel--)
         {
-            // While rippling, the leading box is bright and the trail behind it dim; the final box uses the normal tint.
-            _endScreenFrame.ForeColor = level == 0 ? color : frameLevel == level ? lightColor : darkColor;
+            // While rippling, the leading box is bright and the trail behind it dim; once settled, the box glows dark -> normal -> light -> normal.
+            _endScreenFrame.ForeColor = level > 0
+                ? (frameLevel == level ? lightColor : darkColor)
+                : ((int)(_endScreenElapsedSeconds / EndScreenGlowStepSeconds) % 4) switch { 0 => darkColor, 2 => lightColor, _ => color };
             _endScreenFrame.Width = finalWidth + EndScreenStepCells * frameLevel;
             _endScreenFrame.Height = finalHeight + EndScreenStepCells * frameLevel;
             _endScreenFrame.Col = Math.Floor((_viewportWidthCells - _endScreenFrame.Width) / 2);
