@@ -35,6 +35,15 @@ public class WorldSelectScreen(IReadOnlyList<WorldSummary> worlds, int visibleSl
     /// </summary>
     public double TitleScrollSeconds { get; private set; }
 
+    /// <summary>How long the opening logo animation lasts before the rest of the menu appears.</summary>
+    public const double IntroDurationSeconds = 1.2;
+
+    /// <summary>Seconds since the menu first opened; drives the opening logo animation.</summary>
+    public double IntroSeconds { get; private set; }
+
+    /// <summary>True once the opening logo animation has finished.</summary>
+    public bool IsIntroComplete => IntroSeconds >= IntroDurationSeconds;
+
     private bool _wasLeftPressed;
     private bool _wasRightPressed;
     private bool _wasConfirmPressed;
@@ -52,6 +61,16 @@ public class WorldSelectScreen(IReadOnlyList<WorldSummary> worlds, int visibleSl
         var rightPressed = input.IsRightPressed;
         var confirmPressed = input.IsConfirmPressed;
         var previousIndex = SelectedIndex;
+
+        // During the opening logo animation input is ignored, so the hidden menu can't be operated.
+        if (!IsIntroComplete)
+        {
+            IntroSeconds += deltaSeconds;
+            _wasLeftPressed = leftPressed;
+            _wasRightPressed = rightPressed;
+            _wasConfirmPressed = confirmPressed;
+            return;
+        }
 
         if (rightPressed && !_wasRightPressed)
         {

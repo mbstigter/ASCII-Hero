@@ -27,17 +27,32 @@ public static class UIRenderer
         var lineCount = Math.Min(label.Lines.Count, label.Height);
         for (var i = 0; i < lineCount; i++)
         {
-            var line = label.Lines[i];
-            var content = line.Length > label.Width ? line[..label.Width] : line;
-
-            for (var j = 0; j < content.Length; j++)
+            var col = 0;
+            var isHighlighted = false;
+            foreach (var character in label.Lines[i])
             {
-                var pixelX = (label.Col + j) * cellWidthPixels;
+                // With a HighlightColor set, {} toggle highlighting and are not drawn themselves.
+                if (label.HighlightColor is not null && character is '{' or '}')
+                {
+                    isHighlighted = character == '{';
+                    continue;
+                }
+                if (col >= label.Width)
+                {
+                    break;
+                }
+
+                var pixelX = (label.Col + col) * cellWidthPixels;
                 var pixelY = (label.Row + i) * cellHeightPixels;
-                glyphs.Add(GlyphBuilder.BuildGlyph(pixelX, pixelY, content[j], label.ForeColor, label.BackColor));
+                var foreColor = isHighlighted ? label.HighlightColor : label.ForeColor;
+                glyphs.Add(GlyphBuilder.BuildGlyph(pixelX, pixelY, character, foreColor, label.BackColor));
+                col++;
             }
         }
     }
+
+    /// <summary>Visible width of a line once any {} highlight markers are left out.</summary>
+    public static int GetVisibleLength(string line) => line.Count(character => character is not ('{' or '}'));
 
     public static void AddBar(List<Glyph> glyphs, UIBar bar, double cellWidthPixels, double cellHeightPixels)
     {

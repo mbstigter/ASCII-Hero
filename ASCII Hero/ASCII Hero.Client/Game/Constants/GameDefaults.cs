@@ -195,6 +195,18 @@ public static class GameDefaults
     /// </summary>
     public const double PatrolLevelSpringGain = 2.0;
 
+    /// <summary>
+    /// Default surface speed (in world cells/second) of a conveyor placement that sets a direction
+    /// (explicitly via <c>ConveyorDirection</c> or inferred from its clip name) but no <c>ConveyorSpeed</c>.
+    /// </summary>
+    public const double DefaultConveyorSpeed = 3.0;
+
+    /// <summary>
+    /// Default medium speed (in world cells/second) of a <see cref="World.FlowZone2D"/> placement
+    /// with no <c>FlowSpeed</c> key.
+    /// </summary>
+    public const double DefaultFlowSpeed = 12.0;
+
     // --- Camera ---
 
     /// <summary>

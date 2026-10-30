@@ -18,7 +18,7 @@ public abstract class Body2D
     private double _animationElapsedSeconds;
     private int _animationFrameIndex;
     private int _animationDirection = 1;
-    private int _repeatCount = 1;
+    private int _span;
 
     /// <summary>
     /// This frame's resolved contacts, keyed by <see cref="Physics.ContactType"/> flag with the
@@ -493,17 +493,17 @@ public abstract class Body2D
     /// collision rectangles from the frame's char grid. Called once at spawn time; for a
     /// non-animating object (a static shape variant) this is the only call needed. Animated
     /// objects can call this again later to switch frames/clips. When the sprite declares a
-    /// <see cref="Assets.TileAxis"/> and <paramref name="repeatCount"/> is greater than 1, the
-    /// frame's authored unit is repeated along that axis first (see
+    /// <see cref="Assets.TileAxis"/> and <paramref name="span"/> (cells) is greater than 0, the
+    /// frame's authored unit is repeated along that axis to exactly that length first (see
     /// <see cref="SpriteFrameTiler"/>), letting one small tileable unit build up an
     /// arbitrary-length platform/wall.
     /// </summary>
-    protected void SetFrame(SpriteAsset sprite, string clipName, int frameIndex = 0, int repeatCount = 1)
+    protected void SetFrame(SpriteAsset sprite, string clipName, int frameIndex = 0, int span = 0)
     {
         Sprite = sprite;
         Clip = sprite.GetClip(clipName);
         _animationFrameIndex = frameIndex;
-        _repeatCount = repeatCount;
+        _span = span;
         _animationElapsedSeconds = 0;
         // Starting already at the last frame means the next PingPong tick should move backward,
         // not forward-then-immediately-clamp (which would otherwise waste one full tick doing
@@ -691,7 +691,7 @@ public abstract class Body2D
     /// </summary>
     private void ApplyFrame(SpriteFrame sourceFrame)
     {
-        Frame = SpriteFrameTiler.Tile(sourceFrame, Clip.TileAxis, _repeatCount);
+        Frame = SpriteFrameTiler.Tile(sourceFrame, Clip.TileAxis, _span);
         Size = new Vector2D(Frame.Width, Frame.Height);
         _localCollisionRects = CollisionShapeBuilder.DeriveRectangles(Frame.Chars, Sprite.EmptyChar);
         MaterialName = ResolveDominantMaterial(Frame.Materials);

@@ -76,9 +76,9 @@ public class KinematicObject2D : Body2D, IPhysicsBody, ILinkTarget
     }
 
     /// <summary>Assigns the loaded sprite asset/clip/frame, initial position and constant velocity.</summary>
-    public void Spawn(SpriteAsset sprite, string clipName, int frameIndex, Vector2D position, Vector2D velocity, int repeatCount = 1)
+    public void Spawn(SpriteAsset sprite, string clipName, int frameIndex, Vector2D position, Vector2D velocity, int span = 0)
     {
-        SetFrame(sprite, clipName, frameIndex, repeatCount);
+        SetFrame(sprite, clipName, frameIndex, span);
         Position = position;
         Velocity = velocity;
     }

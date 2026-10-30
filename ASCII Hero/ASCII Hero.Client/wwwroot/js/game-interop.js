@@ -4,7 +4,8 @@
 
 // Fallback glyph color applied when the canvas context is (re)configured, before the first real
 // frame is drawn (every actual glyph draw sets its own color from the C#-supplied per-glyph data -
-// see drawFrame - so this value is never otherwise visible).
+// see drawFrame - so this value is never otherwise visible). Interface colors themselves live in
+// Assets/Global/InterfaceColors.ini.
 const FALLBACK_FORE_COLOR = '#00ff00';
 
 let ctx = null;

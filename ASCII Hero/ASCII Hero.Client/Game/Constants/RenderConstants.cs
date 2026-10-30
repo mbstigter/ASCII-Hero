@@ -60,11 +60,11 @@ public static class RenderConstants
     public const double DefaultCellHeightPixels = 28;
 
     /// <summary>
-    /// Default foreground color used by any renderer (<see cref="Rendering.WorldRenderer"/>,
-    /// <see cref="Rendering.WorldSelectRenderer"/>, <see cref="Rendering.UIRenderer"/>) when
-    /// nothing more specific is resolved (no palette match, or no explicit color set) - the single
-    /// app-wide place this hex value is defined, so it isn't hardcoded independently in each
-    /// renderer. Not overridable via any ini file.
+    /// Default foreground color for world content (<see cref="Rendering.WorldRenderer"/> and the
+    /// menu's world thumbnails) when nothing more specific is resolved (no palette match), and the
+    /// last-resort fallback of <see cref="Rendering.GlyphBuilder"/>. Interface colors (menu, HUD,
+    /// message boxes) come from Global/InterfaceColors.ini instead (see
+    /// <see cref="Assets.InterfaceColors"/>). Not overridable via any ini file.
     /// </summary>
     public const string DefaultForeColor = "#00ff00";
 

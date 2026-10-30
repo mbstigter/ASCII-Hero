@@ -12,20 +12,20 @@ public abstract class TwoStateObject2D : StaticObject2D
 {
     private string? _onClipName;
     private string _offClipName = "default";
-    private int _repeatCount = 1;
+    private int _span;
 
     /// <summary>Whether this object is currently on (switched on / open).</summary>
     public bool IsOn { get; private set; }
 
     /// <summary>Assigns the sprite asset, both state clips, initial state and world position for this instance.</summary>
-    public void SpawnTwoState(SpriteAsset sprite, string offClipName, string? onClipName, bool initialOn, Vector2D position, int repeatCount = 1)
+    public void SpawnTwoState(SpriteAsset sprite, string offClipName, string? onClipName, bool initialOn, Vector2D position, int span = 0)
     {
         _offClipName = offClipName;
         _onClipName = onClipName;
-        _repeatCount = repeatCount;
+        _span = span;
         IsOn = initialOn;
         var clipName = ActiveClipName;
-        SetFrame(sprite, clipName, sprite.GetClip(clipName).DefaultFrame, repeatCount);
+        SetFrame(sprite, clipName, sprite.GetClip(clipName).DefaultFrame, span);
         Position = position;
         OnStateChanged();
     }
@@ -40,7 +40,7 @@ public abstract class TwoStateObject2D : StaticObject2D
 
         IsOn = on;
         var clipName = ActiveClipName;
-        SetFrame(Sprite, clipName, Sprite.GetClip(clipName).DefaultFrame, _repeatCount);
+        SetFrame(Sprite, clipName, Sprite.GetClip(clipName).DefaultFrame, _span);
         OnStateChanged();
     }
 

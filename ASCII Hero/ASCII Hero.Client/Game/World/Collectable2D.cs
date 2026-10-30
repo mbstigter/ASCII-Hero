@@ -41,9 +41,9 @@ public class Collectable2D : Body2D, ICollectableBody, IEffectTrigger
     }
 
     /// <summary>Assigns the loaded sprite asset/clip/frame, world position, and type for this instance.</summary>
-    public void Spawn(SpriteAsset sprite, string clipName, int frameIndex, Vector2D position, CollectableType? type = null, int repeatCount = 1)
+    public void Spawn(SpriteAsset sprite, string clipName, int frameIndex, Vector2D position, CollectableType? type = null, int span = 0)
     {
-        SetFrame(sprite, clipName, frameIndex, repeatCount);
+        SetFrame(sprite, clipName, frameIndex, span);
         Position = position;
         Type = type;
     }

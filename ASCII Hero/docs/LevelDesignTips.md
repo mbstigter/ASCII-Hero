@@ -40,9 +40,9 @@ changes gravity or the player's walk speed changes these numbers too.
 
 ## Repeatable objects
 
-Objects such as ropes, lasers and conveyors are built from a small unit that is repeated with
-`Repeat = N`. The total length is always a **multiple of the unit**, so plan gaps and ledges around
-these sizes.
+Objects such as ropes, lasers and conveyors are built from a small unit that is repeated to fill
+`Span = N`, the total length in cells (width for horizontal clips, height for vertical ones). A span
+that is not a multiple of the unit ends with a partial unit; for a clean end, pick a multiple.
 
 | Object | Clips | Unit along its length | Thickness |
 |---|---|---|---|
@@ -59,10 +59,10 @@ these sizes.
 | Pipe | `horizontal` / `vertical` | 1 | 1 |
 | Water surface | `horizontal` / `vertical` | 2 | 1 |
 
-Examples: a still rope with `Repeat = 4` is 8 cells long, a running rope with `Repeat = 4` is 12; a conveyor with `Repeat = 6` is 12 cells long.
+Examples: `Span = 12` on a running rope gives four whole 3-cell units; `Span = 10` gives three units
+plus one cell of a fourth.
 
-- Write the unit in the comment next to `Repeat` (for example `; Each repeat adds 3 cells of width`)
-  so the next designer does not have to look it up.
+- Running (animated) units look smoothest when the span is a multiple of the unit.
 - Pick the animated clip whose direction matches the object's `ConveyorDirection`, so the motion
   you see matches the way the player is carried.
 

@@ -29,4 +29,10 @@ public class UILabel(double col, double row, int width, int height, string? fore
 
     /// <summary>Background fill behind the text cells, or null for no fill (transparent).</summary>
     public string? BackColor { get; set; } = backColor;
+
+    /// <summary>
+    /// Color for text wrapped in {} (e.g. "Score:{120}"), or null to draw braces as plain text.
+    /// When set, the braces themselves are not drawn and take no space.
+    /// </summary>
+    public string? HighlightColor { get; set; }
 }

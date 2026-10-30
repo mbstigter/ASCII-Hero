@@ -11,9 +11,9 @@ public class StaticObject2D : Body2D
     }
 
     /// <summary>Assigns the loaded sprite asset/clip/frame and world position for this instance.</summary>
-    public void Spawn(SpriteAsset sprite, string clipName, int frameIndex, Vector2D position, int repeatCount = 1)
+    public void Spawn(SpriteAsset sprite, string clipName, int frameIndex, Vector2D position, int span = 0)
     {
-        SetFrame(sprite, clipName, frameIndex, repeatCount);
+        SetFrame(sprite, clipName, frameIndex, span);
         Position = position;
     }
 }

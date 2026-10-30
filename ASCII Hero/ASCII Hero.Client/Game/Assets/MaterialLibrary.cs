@@ -55,9 +55,9 @@ public readonly record struct Material(
 public class MaterialLibrary
 {
     /// <summary>
-    /// Fallback used when a body has no resolvable material (e.g. a sprite with no
-    /// <c>DefaultMaterial</c>): physically inert (massless,
-    /// frictionless, no bounce).
+    /// Fallback used when a body has no material at all (a sprite with no
+    /// <c>DefaultMaterial</c>): physically inert (massless, frictionless, no bounce). A material
+    /// name that is set but not defined is a world load error, not this fallback.
     /// </summary>
     public static readonly Material Undefined = new(Density: 0.0, Friction: 0.0, Restitution: 0.0);
 
@@ -71,6 +71,12 @@ public class MaterialLibrary
             fileProvider, worldName, "MaterialLibrary.ini", Merge, StringComparer.OrdinalIgnoreCase);
         return new MaterialLibrary(materials);
     }
+
+    /// <summary>
+    /// Whether a material with this name is defined. World loading uses it to reject unknown
+    /// material names (a typo in <c>Material</c> or <c>DefaultMaterial</c>) as a load error.
+    /// </summary>
+    public bool Contains(string materialName) => _materials.ContainsKey(materialName);
 
     /// <summary>
     /// Looks up a material's properties by name, or <see cref="Undefined"/> if the name is null

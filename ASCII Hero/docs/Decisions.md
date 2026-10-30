@@ -44,7 +44,10 @@ capture the "why" behind a decision without needing a lengthy narrative.
   body's lifetime (a pose change alters collision shape, never mass), and has
   no separate override - a
   creature needing a distinct mass should get its own dedicated material
-  instead. Two contacting
+  instead (every creature has one, named after it, rather than a shared
+  generic material with per-placement density). A `Material`/`DefaultMaterial`
+  name not defined in the library is a world load error, never a silent
+  fallback. Two contacting
   bodies' friction combines as the geometric mean `sqrt(a*b)` (not capped at
   1) and restitution as a softness-weighted average (each side weighted by
   `1 / Hardness`, so the softer, more-deforming body dominates the bounce;
@@ -184,7 +187,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **A flowing medium is a `FlowZone2D`, not a separate force source.** A `FlowZone`
   placement is a `TwoStateObject2D` and `ILinkTarget` (like `Gate2D`) that is also a
   medium volume (`Medium = true`), with a `FlowDirection` (Left/Right/Up/Down) and a
-  `FlowStrength` (the speed the medium moves at). While on (`InitialState`, or a switch
+  `FlowSpeed` (the speed the medium moves at). While on
   through `Link`) `ResolveCurrentMedium` returns the winning volume's flow, scaled by
   that volume's own overlapped share of the body, and the drag terms use the body's velocity
   *relative to the flow* - so flow acts only through the medium's viscosity (a fan's air is
@@ -257,7 +260,10 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `Height` instead of `Asset`+`Clip` synthesizes an in-memory `SpriteAsset`
   (`SyntheticSpriteFactory`) filled with the material's `Character`, reusing
   the exact same body/collision/render pipeline as any sprite-backed object.
-  `Repeat`/`TileAxis` don't apply to these (no smaller authored unit to tile).
+  `Span`/`TileAxis` don't apply to these (no smaller authored unit to tile).
+- **Tileable placements set their length with `Span` (cells), not a repeat
+  count.** The authored unit may be any number of cells long; the unit is
+  repeated to fill the span exactly, cutting the last unit short when needed.
 - **The color palette is 36 codes** (`0`-`9`, `A`-`Z`).
 (`[Poses]` section) resolve
   their active clip - and facing, including a vertical axis for `Climb` - from
@@ -311,6 +317,15 @@ capture the "why" behind a decision without needing a lengthy narrative.
   library at startup, since no world library exists yet in the menu.
 
 ## World Objects & Capability Model
+
+- **Object keys that belong together default each other instead of requiring each other.**
+  Setting any key of a group switches the feature on and the missing keys fall back to
+  defaults: a conveyor or flow direction falls back to the clip-name suffix
+  (`_left`/`_right`/`_up`/`_down`), conveyor/flow/kinematic patrol speeds to
+  `GameDefaults`, and a patrol bound switches patrol on with its missing opposite bound at
+  the world edge (`Patrol = false` overrides). Loading fails only when a value cannot be
+  read or the configuration is broken (no direction at all, Gate with both Lock and Link,
+  unmatched switch links). `World2D.ObjectSection` reads every key this way.
 
 - **`World2D` holds one generic `List<Body2D> Objects`**, not separate
   per-category collections; `PhysicsSystem`/`CollisionSystem`/`WorldRenderer`
@@ -451,6 +466,19 @@ capture the "why" behind a decision without needing a lengthy narrative.
 
 ## Rendering & Camera
 
+- **Interface colors live in `Global/InterfaceColors.ini`, separate from the
+  world/sprite `ColorPalette.ini`.** Named tints (green/amber/red/blue, dark/
+  normal/light, plus black) are the only source of HUD, menu, overlay and
+  message-box colors; all names are required. `RenderConstants.DefaultForeColor`
+  remains the world-content fallback, and `game-interop.js` keeps one green
+  bootstrap fallback for the canvas before C# draws its first frame. Callers
+  pick tints explicitly (e.g. a label's `HighlightColor`); nothing derives a
+  darker/lighter tint automatically. End-screen ripples use the light tint
+  for the leading box and the dark tint for the trail.
+- **The menu opens with a logo-only intro**: "ASCII" slides in from the left
+  and "Hero" from the right (ease-out), shaded with a vertical-only gradient;
+  the rest of the menu appears once it finishes (menu input is ignored until
+  then, with no skip).
 - **Cell/canvas pixel size is a configured, final on-screen value - not
   measured by the browser, not a fixed pixel constant, and not a separate
   base-size-plus-scale pair.** `Global/Settings.ini`'s `[Render]` section

@@ -1,4 +1,4 @@
-using ASCII_Hero.Client.Game.Assets;
+﻿using ASCII_Hero.Client.Game.Assets;
 using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.Rendering;
 
@@ -121,7 +121,7 @@ public class World2D
     /// DefaultForegroundColor</c> settings.ini key resolves to, used by <see cref="Rendering.WorldRenderer"/>
     /// as the fallback for any cell (background or object) whose own color code is absent/empty
     /// and whose sprite has no own default either. Null when not set, in which case the
-    /// hardcoded renderer default applies. See docs/AssetFormat.md §3.
+    /// hardcoded renderer default applies. See docs/AssetFormat.md Â§3.
     /// </summary>
     public char? DefaultForeColor { get; private set; }
 
@@ -348,17 +348,12 @@ public class World2D
     public const int LoadStepCount = 6;
 
     /// <summary>
-    /// Loads a world's background/object-placement files and the sprite assets they reference,
-    /// building up Platforms and the Player's spawn position/sprite. See AssetFormat.md section 3 for the world file format and
-    /// section 1.1 for the Global/World fallback rule applied by SpriteLoader. The optional
-    /// <paramref name="progress"/> callback is invoked once after each of the first 4 logical
-    /// steps completes (settings, palette/materials, background, object definitions), then
-    /// fractionally within step 5 as each distinct sprite asset (and clip) any object definition
-    /// needs gets loaded - one asset at a time, evenly dividing 4-5 by how many distinct assets
-    /// there are, since this is where the bulk of load time (HTTP fetches) actually happens - and
-    /// then fractionally within step 6 as every object placement is spawned from the now fully-
-    /// cached sprites, one placement-grid row at a time, evenly dividing 5-6 by the grid's row
-    /// count. Purely a UI hook; does not affect loading itself.
+    /// Loads a world's settings, layers and object placements together with the sprite assets
+    /// they reference, then spawns every object and resolves switch links. See docs/AssetFormat.md
+    /// for the file formats and the Global/World fallback rule. The optional <paramref name="progress"/>
+    /// callback reports 1-4 after settings, palette/materials, layers and object definitions,
+    /// then fractionally through 4-5 per sprite asset loaded and 5-6 per placement-grid row
+    /// spawned. Purely a UI hook; it does not affect loading itself.
     /// </summary>
     public static async Task<World2D> LoadAsync(IAssetFileProvider fileProvider, string worldName, IProgress<double>? progress = null)
     {
@@ -442,104 +437,31 @@ public class World2D
         var objectsGrid = AssetTextReader.ParseFixedSizeGrid(objectsContentForSizing, width, height, emptyChar);
         progress?.Report(4);
 
+        // Loads every distinct sprite asset once, up front, with the union of clips any object
+        // section needs from it, so the placement loop below never awaits. Reports fractional
+        // progress through step 5 per asset, since this is where the HTTP fetches happen.
         var spriteLoader = new SpriteLoader(fileProvider);
         var spriteCache = new Dictionary<string, SpriteAsset>(StringComparer.OrdinalIgnoreCase);
-
-        // Pre-scan every object definition (not the placement grid) to work out which sprite
-        // assets this world actually needs and, per asset, the full union of clips any section
-        // requests from it - a section only names the clip(s) it itself needs, but two sections
-        // can share one asset while asking for different clips (e.g. a "Spikes" placement using
-        // a hazard asset's "idle" clip and a "FlameTrap" placement using the same asset's "trap"
-        // and "burst" clips), so loading must be driven by the union, not any single section.
-        // A section may instead skip Asset entirely and use Material/Width/Height (see
-        // docs/AssetFormat.md §3.x) - such sections need no on-disk sprite at all, so they are
-        // simply skipped here; their synthesized asset is built on demand in the placement loop
-        // below (cheap enough in-memory work that pre-loading/caching it up front like a real
-        // sprite fetch isn't worth the complexity).
-        var clipNamesByAsset = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
-        foreach (var sectionName in objectsIni.Section("ObjectCodes").Values.Distinct())
-        {
-            var objectSection = objectsIni.Section(sectionName);
-            if (!objectSection.TryGetValue("Asset", out var assetName))
-            {
-                if (objectSection.TryGetValue("Material", out _))
-                {
-                    continue;
-                }
-
-                throw new FormatException($"Section '{sectionName}' of world '{worldName}' is missing required key 'Asset' (or 'Material' for a materials-only object).");
-            }
-
-            var clipName = objectSection.TryGetValue("Clip", out var clip) ? clip : "default";
-            var effectClipName = objectSection.TryGetValue("EffectClip", out var effectClipText) ? effectClipText : null;
-            var hazardHitEffectClipName = objectSection.TryGetValue("HazardHitEffectClip", out var hazardHitEffectClipText) ? hazardHitEffectClipText : null;
-            var checkpointReachedEffectClipName = objectSection.TryGetValue("CheckpointReachedEffectClip", out var checkpointReachedEffectClipText) ? checkpointReachedEffectClipText : null;
-            var levelEndReachedEffectClipName = objectSection.TryGetValue("LevelEndReachedEffectClip", out var levelEndReachedEffectClipText) ? levelEndReachedEffectClipText : null;
-            var diedEffectClipName = objectSection.TryGetValue("DiedEffectClip", out var diedEffectClipText) ? diedEffectClipText : null;
-
-            if (!clipNamesByAsset.TryGetValue(assetName, out var clipNames))
-            {
-                clipNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                clipNamesByAsset[assetName] = clipNames;
-            }
-
-            clipNames.Add(clipName);
-            if (objectSection.TryGetValue("OnClip", out var scanOnClipName) && !string.IsNullOrWhiteSpace(scanOnClipName))
-            {
-                clipNames.Add(scanOnClipName);
-            }
-            if (effectClipName is not null)
-            {
-                clipNames.Add(effectClipName);
-            }
-            if (hazardHitEffectClipName is not null)
-            {
-                clipNames.Add(hazardHitEffectClipName);
-            }
-            if (checkpointReachedEffectClipName is not null)
-            {
-                clipNames.Add(checkpointReachedEffectClipName);
-            }
-            if (levelEndReachedEffectClipName is not null)
-            {
-                clipNames.Add(levelEndReachedEffectClipName);
-            }
-            if (diedEffectClipName is not null)
-            {
-                clipNames.Add(diedEffectClipName);
-            }
-        }
-
-        // Loads every distinct asset once, up front, with the full clip set it needs - so the
-        // placement loop below never awaits mid-loop. Reports fractional progress through step 5
-        // per asset loaded, since this is where the actual HTTP fetches (and so the bulk of load
-        // time) happen.
+        var clipNamesByAsset = CollectClipNamesByAsset(objectsIni, worldName);
         var assetsLoaded = 0;
-        var assetsToLoad = clipNamesByAsset.Count;
-        var assetLoadTasks = clipNamesByAsset.Select(async entry =>
+        await Task.WhenAll(clipNamesByAsset.Select(async entry =>
         {
-            await GetOrLoadSpriteAsync(spriteLoader, spriteCache, entry.Key, [.. entry.Value], worldName);
+            spriteCache[entry.Key] = await spriteLoader.LoadAsync(entry.Key, [.. entry.Value], worldName);
             assetsLoaded++;
-            progress?.Report(4.0 + (double)assetsLoaded / assetsToLoad);
-        }).ToList();
-        await Task.WhenAll(assetLoadTasks);
-        if (assetsToLoad == 0)
+            progress?.Report(4.0 + (double)assetsLoaded / clipNamesByAsset.Count);
+        }));
+        if (clipNamesByAsset.Count == 0)
         {
             progress?.Report(5.0);
         }
 
-        // Materials-only sections (see above) each get their own synthesized asset, keyed by
-        // material name + size so identical placements (e.g. two same-size platforms of the same
-        // material) share one synthesized asset instead of rebuilding an identical grid per
-        // placement.
-        var syntheticAssetCache = new Dictionary<(string Material, char Glyph, int Width, int Height), SpriteAsset>();
+        // Materials-only sections get a synthesized asset, shared between placements with the
+        // same material, glyph and size.
+        var syntheticSpriteCache = new Dictionary<(string Material, char Glyph, int Width, int Height), SpriteAsset>();
 
         for (var row = 0; row < height; row++)
         {
-            // The placement loop itself is now purely synchronous (every sprite it needs was
-            // already loaded above), so it finishes quickly; this reports step 6's progress row
-            // by row for a smooth final crawl to 100%.
-            progress?.Report(height == 0 ? 6.0 : 5.0 + (double)row / height);
+            progress?.Report(5.0 + (double)row / height);
 
             for (var col = 0; col < width; col++)
             {
@@ -549,549 +471,14 @@ public class World2D
                     continue;
                 }
 
-                var codeKey = code.ToString();
-                var sectionName = objectsIni.TryGetValue("ObjectCodes", codeKey);
+                var sectionName = objectsIni.TryGetValue("ObjectCodes", code.ToString());
                 if (sectionName is null)
                 {
                     continue;
                 }
 
-                var objectSection = objectsIni.Section(sectionName);
-                var hasAsset = objectSection.TryGetValue("Asset", out var assetName);
-                var hasMaterial = objectSection.TryGetValue("Material", out var syntheticMaterialName);
-                if (!hasAsset && !hasMaterial)
-                {
-                    throw new FormatException($"Section '{sectionName}' of world '{worldName}' is missing required key 'Asset' (or 'Material' for a materials-only object).");
-                }
-
-                if (!objectSection.TryGetValue("Kind", out var kind))
-                {
-                    throw new FormatException($"Section '{sectionName}' of world '{worldName}' is missing required key 'Kind'.");
-                }
-
-                var repeatCount = objectSection.TryGetValue("Repeat", out var repeatText) && IniValueParser.TryParseInt(repeatText, out var parsedRepeat)
-                    ? parsedRepeat
-                    : 1;
-                var position = new Vector2D(col, row);
-
-                SpriteAsset sprite;
-                string clipName;
-                int frameIndex;
-                string? effectClipName;
-                string? hazardHitEffectClipName;
-                string? checkpointReachedEffectClipName;
-                string? levelEndReachedEffectClipName;
-                string? diedEffectClipName;
-
-                if (hasAsset)
-                {
-                    clipName = objectSection.TryGetValue("Clip", out var clip) ? clip : "default";
-                    effectClipName = objectSection.TryGetValue("EffectClip", out var effectClipText) ? effectClipText : null;
-                    hazardHitEffectClipName = objectSection.TryGetValue("HazardHitEffectClip", out var hazardHitEffectClipText) ? hazardHitEffectClipText : null;
-                    checkpointReachedEffectClipName = objectSection.TryGetValue("CheckpointReachedEffectClip", out var checkpointReachedEffectClipText) ? checkpointReachedEffectClipText : null;
-                    levelEndReachedEffectClipName = objectSection.TryGetValue("LevelEndReachedEffectClip", out var levelEndReachedEffectClipText) ? levelEndReachedEffectClipText : null;
-                    diedEffectClipName = objectSection.TryGetValue("DiedEffectClip", out var diedEffectClipText) ? diedEffectClipText : null;
-
-                    // The sprite
-                    // effect clip if any) was already loaded and cached during the pre-scan above.
-                    sprite = await GetOrLoadSpriteAsync(spriteLoader, spriteCache, assetName!, [clipName], worldName);
-                    frameIndex = sprite.GetClip(clipName).DefaultFrame;
-                }
-                else
-                {
-                    // Materials-only object (see docs/AssetFormat.md §3.x): no Asset/Clip/EffectClip -
-                    // Width/Height give the placement's own size directly, and the material's own
-                    // Character (not an authored sprite grid) supplies every cell's glyph.
-                    if (!objectSection.TryGetValue("Width", out var widthText) || !IniValueParser.TryParseInt(widthText, out var syntheticWidth) || syntheticWidth < 1)
-                    {
-                        throw new FormatException($"Section '{sectionName}' of world '{worldName}' has 'Material' but is missing a valid 'Width'.");
-                    }
-
-                    if (!objectSection.TryGetValue("Height", out var heightText) || !IniValueParser.TryParseInt(heightText, out var syntheticHeight) || syntheticHeight < 1)
-                    {
-                        throw new FormatException($"Section '{sectionName}' of world '{worldName}' has 'Material' but is missing a valid 'Height'.");
-                    }
-
-                    var syntheticMaterial = world.Materials.Get(syntheticMaterialName);
-                    // Character on the placement itself lets it override its own glyph away from
-                    // the material's shared Character (e.g. simulating localized pollution on an
-                    // otherwise-clean Water body) without affecting every other object using
-                    // that material.
-                    var syntheticGlyphOverride = objectSection.TryGetValue("Character", out var syntheticCharText) ? IniValueParser.ParseColorCode(syntheticCharText) : null;
-                    if (syntheticGlyphOverride is null && syntheticMaterial.Character is null)
-                    {
-                        throw new FormatException($"Section '{sectionName}' of world '{worldName}' uses materials-only Material '{syntheticMaterialName}', which has no Character configured in MaterialLibrary.ini (and no 'Character' override was given on this placement).");
-                    }
-
-                    var syntheticGlyph = syntheticGlyphOverride ?? syntheticMaterial.Character!.Value;
-
-                    var syntheticKey = (syntheticMaterialName!, syntheticGlyph, syntheticWidth, syntheticHeight);
-                    if (!syntheticAssetCache.TryGetValue(syntheticKey, out var syntheticSprite))
-                    {
-                        syntheticSprite = SyntheticSpriteFactory.Build(syntheticMaterialName!, syntheticGlyph, syntheticWidth, syntheticHeight);
-                        syntheticAssetCache[syntheticKey] = syntheticSprite;
-                    }
-
-                    sprite = syntheticSprite;
-                    clipName = "default";
-                    frameIndex = 0;
-                    effectClipName = null;
-                    hazardHitEffectClipName = null;
-                    checkpointReachedEffectClipName = null;
-                    levelEndReachedEffectClipName = null;
-                    diedEffectClipName = null;
-                }
-
-
-                var gravityAffected = !objectSection.TryGetValue("GravityAffected", out var gravityText) || !bool.TryParse(gravityText, out var parsedGravity) || parsedGravity;
-                // Restitution is not defaulted here - absent means "use whatever the
-                // spawned body's resolved material provides" (see the post-spawn material
-                // resolution below), only an explicit ini value overrides that.
-                var restitutionOverride = objectSection.TryGetValue("Restitution", out var restitutionText) && IniValueParser.TryParseDouble(restitutionText, out var parsedRestitution)
-                    ? (double?)parsedRestitution
-                    : null;
-                // Friction/Density mirror Restitution above: absent means "use whatever the
-                // spawned body's resolved material/computed footprint provides", only an explicit
-                // ini value overrides that. Friction lets this object type override its
-                // material's default grip independent of any other type sharing that material;
-                // Density lets this object type override its material's default density outright
-                // (e.g. a body whose effective density changes at runtime/per-instance, like
-                // boiling water) while still inheriting that material's Friction/Restitution and
-                // still having Mass (see Body2D.Mass) computed from this overridden Density rather
-                // than the material's own.
-                var frictionOverride = objectSection.TryGetValue("Friction", out var frictionText) && IniValueParser.TryParseDouble(frictionText, out var parsedFriction)
-                    ? (double?)parsedFriction
-                    : null;
-                var densityOverride = objectSection.TryGetValue("Density", out var densityText) && IniValueParser.TryParseDouble(densityText, out var parsedDensity)
-                    ? (double?)parsedDensity
-                    : null;
-                var hardnessOverride = objectSection.TryGetValue("Hardness", out var hardnessText) && IniValueParser.TryParseDouble(hardnessText, out var parsedHardness) && parsedHardness > 0
-                    ? (double?)parsedHardness
-                    : null;
-                // Lets a placement spawn its asset
-                // DefaultMaterial/per-cell material layer (e.g. re-using the one Ball asset to
-                // test Rubber vs. Steel-ball behavior in TestPhysics) without needing a second,
-                // otherwise-identical sprite asset just to carry a different DefaultMaterial.
-                var materialOverride = objectSection.TryGetValue("Material", out var materialOverrideText) ? materialOverrideText : null;
-                // Lets a placement give its own instance a distinct color from its sprite's own
-                // default (e.g. TestPhysics distinguishing its four Ball placements by material)
-                // without needing a separate sprite asset per color - mirrors materialOverride
-                // above, and is inserted into WorldRenderer's fallback chain the same way.
-                var foreColorOverride = IniValueParser.ParseColorCode(objectSection.TryGetValue("ForegroundColor", out var foreColorText) ? foreColorText : null);
-                var backColorOverride = IniValueParser.ParseColorCode(objectSection.TryGetValue("BackgroundColor", out var backColorText) ? backColorText : null);
-                var initialVelocityX = objectSection.TryGetValue("InitialVelocityX", out var velocityXText) && IniValueParser.TryParseDouble(velocityXText, out var parsedVelocityX)
-                    ? parsedVelocityX
-                    : 0.0;
-                var initialVelocityY = objectSection.TryGetValue("InitialVelocityY", out var velocityYText) && IniValueParser.TryParseDouble(velocityYText, out var parsedVelocityY)
-                    ? parsedVelocityY
-                    : 0.0;
-                var initialVelocity = new Vector2D(initialVelocityX, initialVelocityY);
-
-                var killable = objectSection.TryGetValue("Killable", out var killableText) && bool.TryParse(killableText, out var parsedKillable) && parsedKillable;
-                var effectPersists = objectSection.TryGetValue("EffectPersists", out var effectPersistsText) && bool.TryParse(effectPersistsText, out var parsedEffectPersists) && parsedEffectPersists;
-                var lockName = objectSection.TryGetValue("Lock", out var lockNameText) && !string.IsNullOrWhiteSpace(lockNameText) ? lockNameText : null;
-                var linkName = objectSection.TryGetValue("Link", out var linkNameText) && !string.IsNullOrWhiteSpace(linkNameText) ? linkNameText : null;
-                var onClipName = objectSection.TryGetValue("OnClip", out var onClipText) && !string.IsNullOrWhiteSpace(onClipText) ? onClipText : null;
-                var initialOn = objectSection.TryGetValue("InitialState", out var initialStateText) && string.Equals(initialStateText, "On", StringComparison.OrdinalIgnoreCase);
-                var killSoundName = objectSection.TryGetValue("KillSound", out var killSoundNameText) ? killSoundNameText : null;
-                var hazardDamage = objectSection.TryGetValue("Damage", out var damageText) && IniValueParser.TryParseDouble(damageText, out var parsedDamage) && parsedDamage >= 0
-                    ? parsedDamage
-                    : GameDefaults.DefaultHazardDamage;
-
-                // Patrol (Kind = DynamicHazard only, see below) - PatrolMinX/PatrolMaxX let a
-                // placement author a custom back-and-forth range; when Patrol is enabled without
-                // an explicit range, it defaults to the entire width of the world (this body's
-                // left edge sweeping from the world's left edge to its right edge), so "patrol
-                // this hazard" works with zero extra authoring for the common full-level case.
-                var patrol = objectSection.TryGetValue("Patrol", out var patrolText) && bool.TryParse(patrolText, out var parsedPatrol) && parsedPatrol;
-                var patrolMinXOverride = objectSection.TryGetValue("PatrolMinX", out var patrolMinXText) && IniValueParser.TryParseDouble(patrolMinXText, out var parsedPatrolMinX)
-                    ? (double?)parsedPatrolMinX
-                    : null;
-                var patrolMaxXOverride = objectSection.TryGetValue("PatrolMaxX", out var patrolMaxXText) && IniValueParser.TryParseDouble(patrolMaxXText, out var parsedPatrolMaxX)
-                    ? (double?)parsedPatrolMaxX
-                    : null;
-                // PatrolForceMultiplierX/Y tune how strongly (and so how quickly it reaches its
-                // cruising speed, mass-scaled like gravity) this hazard patrols on each axis,
-                // defaulting to GameDefaults.PatrolForceMultiplier when unset. PatrolCruiseSpeedX/Y set the actual
-                // steady-state patrol speed the force converges to and holds, also defaulting to
-                // GameDefaults.PatrolCruiseSpeed when unset. PatrolInitialDirectionX ("Left"/"Right") -
-                // named to match KinematicObject's own per-axis PatrolInitialDirectionX/Y below,
-                // since a future vertically-patrolling hazard would need the same X/Y distinction -
-                // overrides which way it starts heading, instead of the default inference toward
-                // whichever bound is farther.
-                var patrolForceXOverride = objectSection.TryGetValue("PatrolForceMultiplierX", out var patrolForceXText) && IniValueParser.TryParseDouble(patrolForceXText, out var parsedPatrolForceX)
-                    ? (double?)parsedPatrolForceX
-                    : null;
-                var patrolForceYOverride = objectSection.TryGetValue("PatrolForceMultiplierY", out var patrolForceYText) && IniValueParser.TryParseDouble(patrolForceYText, out var parsedPatrolForceY)
-                    ? (double?)parsedPatrolForceY
-                    : null;
-                var patrolCruiseSpeedOverride = objectSection.TryGetValue("PatrolCruiseSpeedX", out var patrolCruiseSpeedText) && IniValueParser.TryParseDouble(patrolCruiseSpeedText, out var parsedPatrolCruiseSpeed)
-                    ? (double?)parsedPatrolCruiseSpeed
-                    : null;
-                // PatrolCruiseSpeedY lets a DynamicHazard's vertical patrol cruise at a different
-                // speed than its horizontal one (PatrolCruiseSpeedX); each axis falls back to
-                // the global default independently.
-                var patrolCruiseSpeedYOverride = objectSection.TryGetValue("PatrolCruiseSpeedY", out var patrolCruiseSpeedYText) && IniValueParser.TryParseDouble(patrolCruiseSpeedYText, out var parsedPatrolCruiseSpeedY)
-                    ? (double?)parsedPatrolCruiseSpeedY
-                    : null;
-                var patrolInitialDirectionRight = objectSection.TryGetValue("PatrolInitialDirectionX", out var patrolDirectionText)
-                    ? (bool?)string.Equals(patrolDirectionText, "Right", StringComparison.OrdinalIgnoreCase)
-                    : null;
-                // PatrolMaxForceX/Y cap the patrol force per axis in multiples of g (see
-                // DynamicObject2D.PatrolMaxForceX/Y); unset uses GameDefaults.DefaultPatrolMaxForceX/Y.
-                var patrolMaxForceXOverride = objectSection.TryGetValue("PatrolMaxForceX", out var maxForceXText) && IniValueParser.TryParseDouble(maxForceXText, out var parsedMaxForceX)
-                    ? (double?)parsedMaxForceX
-                    : null;
-                var patrolMaxForceYOverride = objectSection.TryGetValue("PatrolMaxForceY", out var maxForceYText) && IniValueParser.TryParseDouble(maxForceYText, out var parsedMaxForceY)
-                    ? (double?)parsedMaxForceY
-                    : null;
-                // PatrolStayOnPlatform makes a DynamicHazard's horizontal range follow the platform it
-                // stands on (see DynamicObject2D.PatrolStayOnPlatform) instead of fixed columns.
-                var patrolStayOnPlatform = objectSection.TryGetValue("PatrolStayOnPlatform", out var stayOnPlatformText) && bool.TryParse(stayOnPlatformText, out var parsedStayOnPlatform) && parsedStayOnPlatform;
-                // PatrolInitialDirectionY ("Up"/"Down") overrides which way a DynamicHazard starts
-                // heading on its vertical patrol, mirroring PatrolInitialDirectionX for the
-                // horizontal axis - see DynamicHazard2D.SetPatrol.
-                var patrolInitialDirectionDownHazard = objectSection.TryGetValue("PatrolInitialDirectionY", out var patrolDirectionYTextHazard)
-                    ? (bool?)string.Equals(patrolDirectionYTextHazard, "Down", StringComparison.OrdinalIgnoreCase)
-                    : null;
-
-                // Patrol range/speed keys shared by both Kind = DynamicHazard and Kind = KinematicObject:
-                // PatrolMinY/PatrolMaxY let a body patrol vertically instead of (or as well as)
-                // horizontally - both DynamicHazard2D and KinematicObject2D support independent
-                // per-axis patrol (a body configured with both X and Y bounds patrols diagonally,
-                // each axis bouncing between its own bounds on its own schedule). An axis with no
-                // min/max pair configured simply isn't patrolled on that axis.
-                var patrolMinYOverride = objectSection.TryGetValue("PatrolMinY", out var patrolMinYText) && IniValueParser.TryParseDouble(patrolMinYText, out var parsedPatrolMinY)
-                    ? (double?)parsedPatrolMinY
-                    : null;
-                var patrolMaxYOverride = objectSection.TryGetValue("PatrolMaxY", out var patrolMaxYText) && IniValueParser.TryParseDouble(patrolMaxYText, out var parsedPatrolMaxY)
-                    ? (double?)parsedPatrolMaxY
-                    : null;
-                var patrolSpeedX = objectSection.TryGetValue("PatrolSpeedX", out var patrolSpeedXText) && IniValueParser.TryParseDouble(patrolSpeedXText, out var parsedPatrolSpeedX)
-                    ? parsedPatrolSpeedX
-                    : 0.0;
-                var patrolSpeedY = objectSection.TryGetValue("PatrolSpeedY", out var patrolSpeedYText) && IniValueParser.TryParseDouble(patrolSpeedYText, out var parsedPatrolSpeedY)
-                    ? parsedPatrolSpeedY
-                    : 0.0;
-                // PatrolInitialDirectionX ("Left"/"Right") / PatrolInitialDirectionY ("Up"/"Down")
-                // let a placement explicitly pin which way a KinematicObject starts heading on
-                // that axis, instead of the default inference toward whichever bound is farther
-                // from the spawn position - e.g. so two platforms sharing the same range can be
-                // made to start in opposite phase. Expressed the same intuitive way as
-                // DynamicHazard's own PatrolInitialDirectionX. Remember Y increases downward (see docs/Architecture.md's
-                // Coordinate System), so "Down" means toward PatrolMaxY.
-                var patrolInitialDirectionTowardMaxX = objectSection.TryGetValue("PatrolInitialDirectionX", out var patrolDirectionXText)
-                    ? (bool?)string.Equals(patrolDirectionXText, "Right", StringComparison.OrdinalIgnoreCase)
-                    : null;
-                var patrolInitialDirectionTowardMaxY = objectSection.TryGetValue("PatrolInitialDirectionY", out var patrolDirectionYText)
-                    ? (bool?)string.Equals(patrolDirectionYText, "Down", StringComparison.OrdinalIgnoreCase)
-                    : null;
-
-                // Passable/Climbable/Hangable are plain per-instance flags on Body2D (see its own
-                // doc comments) rather than anything gated by Kind - any static placement can set
-                // any combination of them. Passable defaults to true for hazards/collectables
-                // (never blocking today, matching prior hardcoded behavior) and false otherwise
-                // (an ordinary wall/platform still blocks unless explicitly overridden).
-                var defaultPassable = kind is "StaticHazard" or "KinematicHazard" or "Collectable" or "Switch" or "FlowZone";
-                var passable = objectSection.TryGetValue("Passable", out var passableText) && bool.TryParse(passableText, out var parsedPassable)
-                    ? parsedPassable
-                    : defaultPassable;
-                var climbable = objectSection.TryGetValue("Climbable", out var climbableText) && bool.TryParse(climbableText, out var parsedClimbable) && parsedClimbable;
-                var hangable = objectSection.TryGetValue("Hangable", out var hangableText) && bool.TryParse(hangableText, out var parsedHangable) && parsedHangable;
-                var mediumCandidate = objectSection.TryGetValue("Medium", out var mediumText) && bool.TryParse(mediumText, out var parsedMedium) && parsedMedium;
-
-                // ConveyorDirection/ConveyorSpeed give any placement a moving surface while the body
-                // itself stays put (see Body2D.ConveyorVelocity). Y increases downward, so "Up" is -Y.
-                var conveyorVelocity = default(Vector2D);
-                if (objectSection.TryGetValue("ConveyorDirection", out var conveyorDirectionText))
-                {
-                    var conveyorDirection = conveyorDirectionText.Trim().ToLowerInvariant() switch
-                    {
-                        "left" => new Vector2D(-1, 0),
-                        "right" => new Vector2D(1, 0),
-                        "up" => new Vector2D(0, -1),
-                        "down" => new Vector2D(0, 1),
-                        _ => throw new FormatException($"Section '{sectionName}' of world '{worldName}' needs a 'ConveyorDirection' of Left, Right, Up or Down.")
-                    };
-                    var conveyorSpeed = objectSection.TryGetValue("ConveyorSpeed", out var conveyorSpeedText) && IniValueParser.TryParseDouble(conveyorSpeedText, out var parsedConveyorSpeed) && parsedConveyorSpeed >= 0
-                        ? parsedConveyorSpeed
-                        : throw new FormatException($"Section '{sectionName}' of world '{worldName}' has 'ConveyorDirection' but needs a non-negative numeric 'ConveyorSpeed'.");
-                    conveyorVelocity = new Vector2D(conveyorDirection.X * conveyorSpeed, conveyorDirection.Y * conveyorSpeed);
-                }
-
-                // X defaults to the entire world width (this body's left edge sweeping from the
-                // world's left edge to its right edge) when Patrol is enabled without any explicit
-                // range - unless the placement configured a vertical-only patrol via
-                // PatrolMinY/PatrolMaxY with no X override at all, in which case this body patrols
-                // vertically only rather than also silently sweeping the full world width.
-                void ConfigureDynamicPatrol(DynamicObject2D body)
-                {
-                    if (!patrol)
-                    {
-                        return;
-                    }
-
-                    var hasExplicitX = patrolMinXOverride.HasValue || patrolMaxXOverride.HasValue;
-                    var hasExplicitY = patrolMinYOverride.HasValue || patrolMaxYOverride.HasValue;
-                    double? bodyPatrolMinX = null;
-                    double? bodyPatrolMaxX = null;
-                    if (hasExplicitX || !hasExplicitY)
-                    {
-                        bodyPatrolMinX = patrolMinXOverride ?? 0.0;
-                        bodyPatrolMaxX = patrolMaxXOverride ?? world.WidthCells - body.Size.X;
-                    }
-
-                    body.SetPatrol(
-                        bodyPatrolMinX, bodyPatrolMaxX,
-                        patrolCruiseSpeedOverride ?? Constants.GameDefaults.PatrolCruiseSpeed,
-                        patrolMinYOverride, patrolMaxYOverride,
-                        patrolCruiseSpeedYOverride ?? Constants.GameDefaults.PatrolCruiseSpeed,
-                        patrolForceXOverride ?? Constants.GameDefaults.PatrolForceMultiplier,
-                        patrolForceYOverride ?? Constants.GameDefaults.PatrolForceMultiplier,
-                        patrolInitialDirectionRight,
-                        patrolInitialDirectionDownHazard,
-                        patrolMaxForceXOverride ?? Constants.GameDefaults.DefaultPatrolMaxForceX,
-                        patrolMaxForceYOverride ?? Constants.GameDefaults.DefaultPatrolMaxForceY,
-                        patrolStayOnPlatform);
-                }
-
-                IPhysicsBody? movingBody = null;
-                Body2D spawnedBody;
-
-                switch (kind)
-                {
-                    case "Player":
-                        world.Player.Spawn(sprite);
-                        world.Player.Position = position;
-                        world.PlayerSpawnPosition = position;
-                        world.Player.HazardHitEffectClipName = hazardHitEffectClipName;
-                        world.Player.CheckpointReachedEffectClipName = checkpointReachedEffectClipName;
-                        world.Player.LevelEndReachedEffectClipName = levelEndReachedEffectClipName;
-                        world.Player.DiedEffectClipName = diedEffectClipName;
-                        world.Player.Lives = world.StartingLives;
-                        world.Player.Health = GameDefaults.PlayerFullHealth;
-                        var playerMaterial = world.Materials.Get(materialOverride ?? world.Player.MaterialName);
-                        world.Player.Density = densityOverride ?? playerMaterial.Density;
-                        world.Player.Friction = frictionOverride ?? playerMaterial.Friction;
-                        world.Player.Restitution = restitutionOverride ?? playerMaterial.Restitution;
-                        world.Player.Hardness = hardnessOverride ?? playerMaterial.Hardness;
-                        world.Player.Viscosity = playerMaterial.Viscosity;
-                        // Player-only "muscle power"/cruising-speed overrides - default to
-                        // PhysicsSystem's own constants (see Player2D.WalkForceMultiplier/WalkSpeed/
-                        // CrawlSpeed) unless this world's Player section sets its own.
-                        if (objectSection.TryGetValue("WalkForceMultiplier", out var walkForceMultiplierText) && IniValueParser.TryParseDouble(walkForceMultiplierText, out var parsedWalkForceMultiplier))
-                        {
-                            world.Player.WalkForceMultiplier = parsedWalkForceMultiplier;
-                        }
-                        if (objectSection.TryGetValue("WalkSpeed", out var walkSpeedOverrideText) && IniValueParser.TryParseDouble(walkSpeedOverrideText, out var parsedWalkSpeedOverride))
-                        {
-                            world.Player.WalkSpeed = parsedWalkSpeedOverride;
-                        }
-                        if (objectSection.TryGetValue("CrawlSpeed", out var crawlSpeedOverrideText) && IniValueParser.TryParseDouble(crawlSpeedOverrideText, out var parsedCrawlSpeedOverride))
-                        {
-                            world.Player.CrawlSpeed = parsedCrawlSpeedOverride;
-                        }
-                        if (IsCameraTarget(objectSection))
-                        {
-                            world.CameraTarget = world.Player;
-                        }
-                        continue;
-
-                    case "StaticObject":
-                        var platform = new StaticObject2D();
-                        platform.Spawn(sprite, clipName, frameIndex, position, repeatCount);
-                        world.Objects.Add(platform);
-                        spawnedBody = platform;
-                        break;
-
-                    case "Gate":
-                        if (lockName is not null && linkName is not null)
-                        {
-                            throw new FormatException($"Gate section '{sectionName}' of world '{worldName}' has both 'Lock' and 'Link'; a gate is opened by either a key or a switch, not both.");
-                        }
-
-                        var gate = new Gate2D { LockName = lockName, LinkName = linkName };
-                        gate.SpawnTwoState(sprite, clipName, onClipName, initialOn, position, repeatCount);
-                        world.Objects.Add(gate);
-                        spawnedBody = gate;
-                        break;
-
-                    case "Switch":
-                        var latching = objectSection.TryGetValue("Latching", out var latchingText) && bool.TryParse(latchingText, out var parsedLatching) && parsedLatching;
-                        var switchObject = new Switch2D { Latching = latching, LinkName = linkName };
-                        switchObject.SpawnTwoState(sprite, clipName, onClipName, initialOn, position, repeatCount);
-                        world.Objects.Add(switchObject);
-                        spawnedBody = switchObject;
-                        break;
-
-                    case "Device":
-                        var device = new Device2D { LinkName = linkName };
-                        device.SpawnTwoState(sprite, clipName, onClipName, initialOn, position, repeatCount);
-                        world.Objects.Add(device);
-                        spawnedBody = device;
-                        break;
-
-                    case "FlowZone":
-                        // Y increases downward (see docs/Architecture.md's Coordinate System), so "Up" is -Y.
-                        var flowDirection = (objectSection.TryGetValue("FlowDirection", out var flowDirectionText) ? flowDirectionText.Trim().ToLowerInvariant() : null) switch
-                        {
-                            "left" => new Vector2D(-1, 0),
-                            "right" => new Vector2D(1, 0),
-                            "up" => new Vector2D(0, -1),
-                            "down" => new Vector2D(0, 1),
-                            _ => throw new FormatException($"FlowZone section '{sectionName}' of world '{worldName}' needs a 'FlowDirection' of Left, Right, Up or Down.")
-                        };
-                        var flowStrength = objectSection.TryGetValue("FlowStrength", out var flowStrengthText) && IniValueParser.TryParseDouble(flowStrengthText, out var parsedFlowStrength)
-                            ? parsedFlowStrength
-                            : throw new FormatException($"FlowZone section '{sectionName}' of world '{worldName}' needs a numeric 'FlowStrength'.");
-                        var flowZone = new FlowZone2D { LinkName = linkName, FlowDirection = flowDirection, FlowStrength = flowStrength };
-                        flowZone.SpawnTwoState(sprite, clipName, onClipName, initialOn, position, repeatCount);
-                        world.Objects.Add(flowZone);
-                        spawnedBody = flowZone;
-                        break;
-
-                    case "DynamicObject":
-                        var dynamicObject = new DynamicObject2D();
-                        dynamicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, repeatCount);
-                        ConfigureDynamicPatrol(dynamicObject);
-                        world.Objects.Add(dynamicObject);
-                        movingBody = dynamicObject;
-                        spawnedBody = dynamicObject;
-                        break;
-
-                    case "KinematicObject":
-                        var kinematicObject = new KinematicObject2D();
-                        kinematicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, repeatCount);
-                        if (patrol)
-                        {
-                            kinematicObject.SetPatrol(
-                                patrolMinXOverride, patrolMaxXOverride, patrolSpeedX,
-                                patrolMinYOverride, patrolMaxYOverride, patrolSpeedY,
-                                patrolInitialDirectionTowardMaxX, patrolInitialDirectionTowardMaxY);
-                        }
-                        world.Objects.Add(kinematicObject);
-                        kinematicObject.LinkName = linkName;
-                        movingBody = kinematicObject;
-                        spawnedBody = kinematicObject;
-                        break;
-
-                    case "KinematicHazard":
-                        var kinematicHazard = new KinematicHazard2D();
-                        kinematicHazard.Spawn(sprite, clipName, frameIndex, position, initialVelocity, repeatCount);
-                        kinematicHazard.EffectClipName = effectClipName;
-                        kinematicHazard.IsKillable = killable;
-                        kinematicHazard.EffectPersists = effectPersists;
-                        kinematicHazard.KillSoundName = killSoundName;
-                        kinematicHazard.Damage = hazardDamage;
-                        if (patrol)
-                        {
-                            kinematicHazard.SetPatrol(
-                                patrolMinXOverride, patrolMaxXOverride, patrolSpeedX,
-                                patrolMinYOverride, patrolMaxYOverride, patrolSpeedY,
-                                patrolInitialDirectionTowardMaxX, patrolInitialDirectionTowardMaxY);
-                        }
-                        world.Objects.Add(kinematicHazard);
-                        movingBody = kinematicHazard;
-                        spawnedBody = kinematicHazard;
-                        break;
-
-                    case "DynamicHazard":
-                        var dynamicHazard = new DynamicHazard2D();
-                        dynamicHazard.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, repeatCount);
-                        dynamicHazard.EffectClipName = effectClipName;
-                        dynamicHazard.IsKillable = killable;
-                        dynamicHazard.EffectPersists = effectPersists;
-                        dynamicHazard.KillSoundName = killSoundName;
-                        dynamicHazard.Damage = hazardDamage;
-                        ConfigureDynamicPatrol(dynamicHazard);
-                        world.Objects.Add(dynamicHazard);
-                        movingBody = dynamicHazard;
-                        spawnedBody = dynamicHazard;
-                        break;
-
-                    case "StaticHazard":
-                        var staticHazard = new StaticHazard2D();
-                        staticHazard.Spawn(sprite, clipName, frameIndex, position, repeatCount);
-                        staticHazard.EffectClipName = effectClipName;
-                        staticHazard.IsKillable = killable;
-                        staticHazard.EffectPersists = effectPersists;
-                        staticHazard.KillSoundName = killSoundName;
-                        staticHazard.Damage = hazardDamage;
-                        world.Objects.Add(staticHazard);
-                        spawnedBody = staticHazard;
-                        break;
-
-                    case "Collectable":
-                        // Type distinguishes what picking this up actually does (see
-                        // CollectableType). Required per-placement: an absent/unrecognized Type is
-                        // left null so the collectable does nothing on pickup, rather than
-                        // silently falling back to some default variant.
-                        var collectableType = objectSection.TryGetValue("Type", out var collectableTypeText) && Enum.TryParse<CollectableType>(collectableTypeText, ignoreCase: true, out var parsedCollectableType)
-                            ? parsedCollectableType
-                            : (CollectableType?)null;
-                        var collectable = collectableType == CollectableType.Key ? new Key2D() : new Collectable2D();
-                        collectable.Spawn(sprite, clipName, frameIndex, position, collectableType, repeatCount);
-                        if (collectable is Key2D key)
-                        {
-                            key.LockName = lockName;
-                        }
-
-                        collectable.EffectClipName = effectClipName;
-                        collectable.EffectPersists = effectPersists;
-                        world.Objects.Add(collectable);
-                        spawnedBody = collectable;
-                        break;
-
-                    default:
-                        throw new FormatException($"Unknown object Kind '{kind}' in section '{sectionName}' of world '{worldName}'.");
-                }
-
-                if (spawnedBody is not Gate2D)
-                {
-                    spawnedBody.IsPassable = passable;
-                }
-
-                spawnedBody.SoundName = objectSection.TryGetValue("Sound", out var soundNameText) ? soundNameText : null;
-                spawnedBody.IsClimbable = climbable;
-                spawnedBody.IsHangable = hangable;
-                spawnedBody.ConveyorVelocity = conveyorVelocity;
-                spawnedBody.IsMediumCandidate = mediumCandidate;
-                spawnedBody.ForeColorOverride = foreColorOverride;
-                spawnedBody.BackColorOverride = backColorOverride;
-
-                // Density/Friction always come from the spawned body's own resolved material
-                // (see Body2D.MaterialName/ApplyFrame) unless this object type's ini section
-                // overrides it via Material (e.g. TestPhysics re-using the Ball asset with
-                // different materials); Restitution/Friction/Density can each be independently
-                // overridden too - Restitution (e.g. TestMovement's "weightless, perfectly
-                // elastic" placeholder ball tuning), Friction (grip independent of the shared
-                // material), Density (this one object type's density independent of the shared
-                // material, e.g. a body whose effective density changes per-instance/at runtime).
-                // Mass itself (see Body2D.Mass) is always computed from Density times footprint -
-                // a body whose real-world mass shouldn't just fall out of its footprint size (e.g.
-                // a snake much lighter than a human despite a similar bounding box) should use a
-                // dedicated, appropriately-calibrated material instead (see Global/MaterialLibrary.ini).
-                var material = world.Materials.Get(materialOverride ?? spawnedBody.MaterialName);
-                spawnedBody.Density = densityOverride ?? material.Density;
-                spawnedBody.Friction = frictionOverride ?? material.Friction;
-                spawnedBody.Restitution = restitutionOverride ?? material.Restitution;
-                spawnedBody.Hardness = hardnessOverride ?? material.Hardness;
-                spawnedBody.Viscosity = material.Viscosity;
-                if (materialOverride is not null)
-                {
-                    // Keep MaterialName consistent with the material this override just resolved,
-                    // not just Density/Friction/Restitution above - otherwise WorldRenderer's own
-                    // material color resolution (which reads MaterialName) would keep using the
-                    // sprite's own baked-in material (e.g. Ball's DefaultMaterial = Rubber) even
-                    // for a placement that overrode Material to something else (e.g. Plastic),
-                    // silently ignoring that override's own ForegroundColor/BackgroundColor.
-                    spawnedBody.MaterialName = materialOverride;
-                }
-
-                if (movingBody is not null && IsCameraTarget(objectSection))
-                {
-                    world.CameraTarget = movingBody;
-                }
+                var section = new ObjectSection(objectsIni.Section(sectionName), sectionName, worldName);
+                SpawnPlacement(world, section, new Vector2D(col, row), spriteCache, syntheticSpriteCache);
             }
         }
 
@@ -1105,6 +492,438 @@ public class World2D
         progress?.Report(6);
 
         return world;
+    }
+
+    /// <summary>Clip used by a placement with no <c>Clip</c> key, and by every materials-only object.</summary>
+    private const string DefaultClipName = "default";
+
+    /// <summary>
+    /// Scans every object definition (not the placement grid) for the sprite assets this world
+    /// needs and, per asset, the union of clips any section requests from it - two sections can
+    /// share one asset while asking for different clips, so loading is driven by the union.
+    /// Materials-only sections need no sprite file and are skipped.
+    /// </summary>
+    private static Dictionary<string, HashSet<string>> CollectClipNamesByAsset(IniDocument objectsIni, string worldName)
+    {
+        var clipNamesByAsset = new Dictionary<string, HashSet<string>>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var sectionName in objectsIni.Section("ObjectCodes").Values.Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            var section = new ObjectSection(objectsIni.Section(sectionName), sectionName, worldName);
+            var assetName = section.Text("Asset");
+            if (assetName is null)
+            {
+                if (section.Text("Material") is null)
+                {
+                    throw section.Error("is missing required key 'Asset' (or 'Material' for a materials-only object)");
+                }
+
+                continue;
+            }
+
+            if (!clipNamesByAsset.TryGetValue(assetName, out var clipNames))
+            {
+                clipNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                clipNamesByAsset[assetName] = clipNames;
+            }
+
+            clipNames.Add(section.Text("Clip") ?? DefaultClipName);
+            if (section.Text("OnClip") is { } onClipName)
+            {
+                clipNames.Add(onClipName);
+            }
+
+            clipNames.UnionWith(EffectClips.Read(section).Names);
+        }
+
+        return clipNamesByAsset;
+    }
+
+    /// <summary>
+    /// Resolves a placement's sprite, starting clip/frame and effect clips: either from its
+    /// (already loaded) <c>Asset</c>, or - for a materials-only object - a sprite synthesized from
+    /// <c>Material</c>, <c>Width</c>, <c>Height</c> and the material's (or placement's own)
+    /// <c>Character</c>.
+    /// </summary>
+    private static (SpriteAsset Sprite, string ClipName, int FrameIndex, EffectClips Effects) ResolveSprite(
+        World2D world,
+        ObjectSection section,
+        Dictionary<string, SpriteAsset> spriteCache,
+        Dictionary<(string Material, char Glyph, int Width, int Height), SpriteAsset> syntheticSpriteCache)
+    {
+        if (section.Text("Asset") is { } assetName)
+        {
+            var sprite = spriteCache[assetName];
+            var clipName = section.Text("Clip") ?? DefaultClipName;
+            return (sprite, clipName, sprite.GetClip(clipName).DefaultFrame, EffectClips.Read(section));
+        }
+
+        var materialName = section.Text("Material")
+            ?? throw section.Error("is missing required key 'Asset' (or 'Material' for a materials-only object)");
+        if (!world.Materials.Contains(materialName))
+        {
+            throw section.Error($"uses Material '{materialName}', which is not defined in MaterialLibrary.ini");
+        }
+
+        var syntheticWidth = section.PositiveInt("Width") ?? throw section.Error("has 'Material' but no 'Width'");
+        var syntheticHeight = section.PositiveInt("Height") ?? throw section.Error("has 'Material' but no 'Height'");
+
+        // A Character on the placement overrides the material's shared Character for this
+        // placement only (e.g. localized pollution on otherwise-clean water).
+        var glyphOverride = section.Values.TryGetValue("Character", out var characterText) ? IniValueParser.ParseColorCode(characterText) : null;
+        var glyph = glyphOverride
+            ?? world.Materials.Get(materialName).Character
+            ?? throw section.Error($"uses materials-only Material '{materialName}', which has no Character in MaterialLibrary.ini (and no 'Character' override was given)");
+
+        var key = (materialName, glyph, syntheticWidth, syntheticHeight);
+        if (!syntheticSpriteCache.TryGetValue(key, out var syntheticSprite))
+        {
+            syntheticSprite = SyntheticSpriteFactory.Build(materialName, glyph, syntheticWidth, syntheticHeight);
+            syntheticSpriteCache[key] = syntheticSprite;
+        }
+
+        return (syntheticSprite, DefaultClipName, 0, EffectClips.None);
+    }
+
+    /// <summary>
+    /// Spawns one object placement: builds the body for its <c>Kind</c>, applies the settings
+    /// every body shares (passability, climbing, conveyor, sound, colors, material) and adds it to
+    /// <see cref="Objects"/>. The player is configured in place instead (see <see cref="SpawnPlayer"/>).
+    /// </summary>
+    private static void SpawnPlacement(
+        World2D world,
+        ObjectSection section,
+        Vector2D position,
+        Dictionary<string, SpriteAsset> spriteCache,
+        Dictionary<(string Material, char Glyph, int Width, int Height), SpriteAsset> syntheticSpriteCache)
+    {
+        var kind = section.Required("Kind");
+        var span = section.PositiveInt("Span") ?? 0;
+        var (sprite, clipName, frameIndex, effects) = ResolveSprite(world, section, spriteCache, syntheticSpriteCache);
+
+        if (kind == "Player")
+        {
+            SpawnPlayer(world, section, sprite, position, effects);
+            return;
+        }
+
+        var linkName = section.Text("Link");
+        var lockName = section.Text("Lock");
+        var onClipName = section.Text("OnClip");
+        var initialOn = string.Equals(section.Text("InitialState"), "On", StringComparison.OrdinalIgnoreCase);
+        var initialVelocity = new Vector2D(section.Number("InitialVelocityX") ?? 0.0, section.Number("InitialVelocityY") ?? 0.0);
+        var gravityAffected = section.Flag("GravityAffected", fallback: true);
+        var killable = section.Flag("Killable");
+        var effectPersists = section.Flag("EffectPersists");
+        var killSoundName = section.Text("KillSound");
+        var damage = section.Number("Damage") is { } parsedDamage && parsedDamage >= 0 ? parsedDamage : GameDefaults.DefaultHazardDamage;
+
+        T SpawnTwoState<T>(T body) where T : TwoStateObject2D
+        {
+            body.SpawnTwoState(sprite, clipName, onClipName, initialOn, position, span);
+            return body;
+        }
+
+        Body2D body;
+        switch (kind)
+        {
+            case "StaticObject":
+                var staticObject = new StaticObject2D();
+                staticObject.Spawn(sprite, clipName, frameIndex, position, span);
+                body = staticObject;
+                break;
+
+            case "Gate":
+                if (lockName is not null && linkName is not null)
+                {
+                    throw section.Error("has both 'Lock' and 'Link'; a gate is opened by either a key or a switch, not both");
+                }
+
+                body = SpawnTwoState(new Gate2D { LockName = lockName, LinkName = linkName });
+                break;
+
+            case "Switch":
+                body = SpawnTwoState(new Switch2D { Latching = section.Flag("Latching"), LinkName = linkName });
+                break;
+
+            case "Device":
+                body = SpawnTwoState(new Device2D { LinkName = linkName });
+                break;
+
+            case "FlowZone":
+                var flowDirection = section.Direction("FlowDirection")
+                    ?? DirectionFromClipName(clipName)
+                    ?? throw section.Error("needs a 'FlowDirection' of Left, Right, Up or Down (or a clip name ending in _left, _right, _up or _down)");
+                var flowSpeed = section.NonNegativeNumber("FlowSpeed") ?? GameDefaults.DefaultFlowSpeed;
+                body = SpawnTwoState(new FlowZone2D { LinkName = linkName, FlowDirection = flowDirection, FlowSpeed = flowSpeed });
+                break;
+
+            case "DynamicObject":
+                var dynamicObject = new DynamicObject2D();
+                dynamicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, span);
+                ConfigureDynamicPatrol(world, dynamicObject, section);
+                body = dynamicObject;
+                break;
+
+            case "DynamicHazard":
+                var dynamicHazard = new DynamicHazard2D
+                {
+                    EffectClipName = effects.Effect,
+                    IsKillable = killable,
+                    EffectPersists = effectPersists,
+                    KillSoundName = killSoundName,
+                    Damage = damage,
+                };
+                dynamicHazard.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, span);
+                ConfigureDynamicPatrol(world, dynamicHazard, section);
+                body = dynamicHazard;
+                break;
+
+            case "KinematicObject":
+                var kinematicObject = new KinematicObject2D { LinkName = linkName };
+                kinematicObject.Spawn(sprite, clipName, frameIndex, position, initialVelocity, span);
+                ConfigureKinematicPatrol(world, kinematicObject, section);
+                body = kinematicObject;
+                break;
+
+            case "KinematicHazard":
+                var kinematicHazard = new KinematicHazard2D
+                {
+                    EffectClipName = effects.Effect,
+                    IsKillable = killable,
+                    EffectPersists = effectPersists,
+                    KillSoundName = killSoundName,
+                    Damage = damage,
+                };
+                kinematicHazard.Spawn(sprite, clipName, frameIndex, position, initialVelocity, span);
+                ConfigureKinematicPatrol(world, kinematicHazard, section);
+                body = kinematicHazard;
+                break;
+
+            case "StaticHazard":
+                var staticHazard = new StaticHazard2D
+                {
+                    EffectClipName = effects.Effect,
+                    IsKillable = killable,
+                    EffectPersists = effectPersists,
+                    KillSoundName = killSoundName,
+                    Damage = damage,
+                };
+                staticHazard.Spawn(sprite, clipName, frameIndex, position, span);
+                body = staticHazard;
+                break;
+
+            case "Collectable":
+                // An absent or unrecognized Type leaves the collectable without an effect on
+                // pickup rather than silently falling back to some default variant.
+                CollectableType? collectableType = Enum.TryParse<CollectableType>(section.Text("Type"), ignoreCase: true, out var parsedType)
+                    ? parsedType
+                    : null;
+                var collectable = collectableType == CollectableType.Key ? new Key2D { LockName = lockName } : new Collectable2D();
+                collectable.Spawn(sprite, clipName, frameIndex, position, collectableType, span);
+                collectable.EffectClipName = effects.Effect;
+                collectable.EffectPersists = effectPersists;
+                body = collectable;
+                break;
+
+            default:
+                throw section.Error($"has unknown Kind '{kind}'");
+        }
+
+        // A gate's passability follows its open/closed state instead. Hazards, collectables,
+        // switches and flow zones never block unless explicitly set to.
+        if (body is not Gate2D)
+        {
+            body.IsPassable = section.Flag("Passable", fallback: kind is "StaticHazard" or "KinematicHazard" or "Collectable" or "Switch" or "FlowZone");
+        }
+
+        body.SoundName = section.Text("Sound");
+        body.IsClimbable = section.Flag("Climbable");
+        body.IsHangable = section.Flag("Hangable");
+        body.IsMediumCandidate = section.Flag("Medium");
+        body.ConveyorVelocity = ReadConveyorVelocity(section, clipName);
+        body.ForeColorOverride = IniValueParser.ParseColorCode(section.Values.TryGetValue("ForegroundColor", out var foreColorText) ? foreColorText : null);
+        body.BackColorOverride = IniValueParser.ParseColorCode(section.Values.TryGetValue("BackgroundColor", out var backColorText) ? backColorText : null);
+        ApplyMaterial(world, body, section);
+        world.Objects.Add(body);
+
+        if (body is IPhysicsBody physicsBody && section.Flag("CameraTarget"))
+        {
+            world.CameraTarget = physicsBody;
+        }
+    }
+
+    /// <summary>
+    /// Configures <see cref="Player"/> from its placement: spawn position, effect clips, lives,
+    /// health, material and the player-only movement overrides.
+    /// </summary>
+    private static void SpawnPlayer(World2D world, ObjectSection section, SpriteAsset sprite, Vector2D position, EffectClips effects)
+    {
+        var player = world.Player;
+        player.Spawn(sprite);
+        player.Position = position;
+        world.PlayerSpawnPosition = position;
+        player.HazardHitEffectClipName = effects.HazardHit;
+        player.CheckpointReachedEffectClipName = effects.CheckpointReached;
+        player.LevelEndReachedEffectClipName = effects.LevelEndReached;
+        player.DiedEffectClipName = effects.Died;
+        player.Lives = world.StartingLives;
+        player.Health = GameDefaults.PlayerFullHealth;
+        ApplyMaterial(world, player, section);
+        player.WalkForceMultiplier = section.Number("WalkForceMultiplier") ?? player.WalkForceMultiplier;
+        player.WalkSpeed = section.Number("WalkSpeed") ?? player.WalkSpeed;
+        player.CrawlSpeed = section.Number("CrawlSpeed") ?? player.CrawlSpeed;
+
+        if (section.Flag("CameraTarget"))
+        {
+            world.CameraTarget = player;
+        }
+    }
+
+    /// <summary>
+    /// Resolves a body's physical properties from its material - the placement's <c>Material</c>
+    /// if set, otherwise the material its sprite provides - with <c>Density</c>, <c>Friction</c>,
+    /// <c>Restitution</c> and <c>Hardness</c> each independently overridable by the placement.
+    /// Mass (see <see cref="Body2D.Mass"/>) always follows from Density times footprint.
+    /// </summary>
+    private static void ApplyMaterial(World2D world, Body2D body, ObjectSection section)
+    {
+        var materialOverride = section.Text("Material");
+        var materialName = materialOverride ?? body.MaterialName;
+        if (materialName is not null && !world.Materials.Contains(materialName))
+        {
+            throw section.Error(materialOverride is not null
+                ? $"uses Material '{materialName}', which is not defined in MaterialLibrary.ini"
+                : $"uses an asset whose DefaultMaterial '{materialName}' is not defined in MaterialLibrary.ini");
+        }
+
+        var material = world.Materials.Get(materialName);
+        body.Density = section.Number("Density") ?? material.Density;
+        body.Friction = section.Number("Friction") ?? material.Friction;
+        body.Restitution = section.Number("Restitution") ?? material.Restitution;
+        body.Hardness = section.Number("Hardness") is { } hardness && hardness > 0 ? hardness : material.Hardness;
+        body.Viscosity = material.Viscosity;
+
+        // Keeps the renderer's material colors in line with the overriding material.
+        if (materialOverride is not null)
+        {
+            body.MaterialName = materialOverride;
+        }
+    }
+
+    /// <summary>
+    /// The surface velocity from <c>ConveyorDirection</c>/<c>ConveyorSpeed</c> (see
+    /// <see cref="Body2D.ConveyorVelocity"/>), or zero for a placement with neither. A direction
+    /// without a speed uses <see cref="GameDefaults.DefaultConveyorSpeed"/>; a speed without a
+    /// direction takes the direction from the clip name's <c>_left</c>/<c>_right</c>/<c>_up</c>/<c>_down</c> suffix.
+    /// </summary>
+    private static Vector2D ReadConveyorVelocity(ObjectSection section, string clipName)
+    {
+        var speed = section.NonNegativeNumber("ConveyorSpeed");
+        var direction = section.Direction("ConveyorDirection");
+        if (direction is null && speed is not null)
+        {
+            direction = DirectionFromClipName(clipName)
+                ?? throw section.Error("has 'ConveyorSpeed' but no 'ConveyorDirection', and its clip name does not end in _left, _right, _up or _down");
+        }
+
+        if (direction is not { } conveyorDirection)
+        {
+            return default;
+        }
+
+        var conveyorSpeed = speed ?? GameDefaults.DefaultConveyorSpeed;
+        return new Vector2D(conveyorDirection.X * conveyorSpeed, conveyorDirection.Y * conveyorSpeed);
+    }
+
+    /// <summary>Configures a dynamic body's patrol from its placement, if it patrols (see <see cref="ReadPatrolRoute"/>).</summary>
+    private static void ConfigureDynamicPatrol(World2D world, DynamicObject2D body, ObjectSection section)
+    {
+        if (ReadPatrolRoute(world, body, section) is not { } route)
+        {
+            return;
+        }
+
+        body.SetPatrol(
+            route.MinX, route.MaxX, section.Number("PatrolCruiseSpeedX") ?? GameDefaults.PatrolCruiseSpeed,
+            route.MinY, route.MaxY, section.Number("PatrolCruiseSpeedY") ?? GameDefaults.PatrolCruiseSpeed,
+            section.Number("PatrolForceMultiplierX") ?? GameDefaults.PatrolForceMultiplier,
+            section.Number("PatrolForceMultiplierY") ?? GameDefaults.PatrolForceMultiplier,
+            route.TowardMaxX, route.TowardMaxY,
+            section.Number("PatrolMaxForceX") ?? GameDefaults.DefaultPatrolMaxForceX,
+            section.Number("PatrolMaxForceY") ?? GameDefaults.DefaultPatrolMaxForceY,
+            section.Flag("PatrolStayOnPlatform"));
+    }
+
+    /// <summary>Configures a kinematic body's patrol from its placement, if it patrols (see <see cref="ReadPatrolRoute"/>).</summary>
+    private static void ConfigureKinematicPatrol(World2D world, KinematicObject2D body, ObjectSection section)
+    {
+        if (ReadPatrolRoute(world, body, section) is not { } route)
+        {
+            return;
+        }
+
+        body.SetPatrol(
+            route.MinX, route.MaxX, section.Number("PatrolSpeedX") ?? GameDefaults.PatrolCruiseSpeed,
+            route.MinY, route.MaxY, section.Number("PatrolSpeedY") ?? GameDefaults.PatrolCruiseSpeed,
+            route.TowardMaxX, route.TowardMaxY);
+    }
+
+    /// <summary>
+    /// Reads a placement's patrol route, or null if it doesn't patrol. A placement patrols when
+    /// <c>Patrol = true</c>, or when it sets any of <c>PatrolMinX</c>/<c>PatrolMaxX</c>/<c>PatrolMinY</c>/<c>PatrolMaxY</c>
+    /// without <c>Patrol = false</c>. An axis with either bound set is patrolled, a missing bound
+    /// defaulting to that world edge; with no bounds at all the body patrols the full world width.
+    /// </summary>
+    private static PatrolRoute? ReadPatrolRoute(World2D world, Body2D body, ObjectSection section)
+    {
+        var minX = section.Number("PatrolMinX");
+        var maxX = section.Number("PatrolMaxX");
+        var minY = section.Number("PatrolMinY");
+        var maxY = section.Number("PatrolMaxY");
+        var hasX = minX is not null || maxX is not null;
+        var hasY = minY is not null || maxY is not null;
+
+        if (!(section.OptionalFlag("Patrol") ?? (hasX || hasY)))
+        {
+            return null;
+        }
+
+        if (!hasX && !hasY)
+        {
+            hasX = true;
+        }
+
+        return new PatrolRoute(
+            hasX ? minX ?? 0.0 : null,
+            hasX ? maxX ?? world.WidthCells - body.Size.X : null,
+            hasY ? minY ?? 0.0 : null,
+            hasY ? maxY ?? world.HeightCells - body.Size.Y : null,
+            section.TowardMax("PatrolInitialDirectionX", "Left", "Right"),
+            section.TowardMax("PatrolInitialDirectionY", "Up", "Down"));
+    }
+
+    /// <summary>
+    /// The direction a <c>Left</c>/<c>Right</c>/<c>Up</c>/<c>Down</c> value names, as a unit vector.
+    /// Y increases downward (see docs/Architecture.md's Coordinate System), so "Up" is -Y.
+    /// </summary>
+    private static Vector2D? ParseDirection(string text) => text.ToLowerInvariant() switch
+    {
+        "left" => new Vector2D(-1, 0),
+        "right" => new Vector2D(1, 0),
+        "up" => new Vector2D(0, -1),
+        "down" => new Vector2D(0, 1),
+        _ => null,
+    };
+
+    /// <summary>
+    /// The direction a clip name's <c>_left</c>/<c>_right</c>/<c>_up</c>/<c>_down</c> suffix names,
+    /// or null if it has none - the same suffixes sprite poses use for facing.
+    /// </summary>
+    private static Vector2D? DirectionFromClipName(string clipName)
+    {
+        var separator = clipName.LastIndexOf('_');
+        return separator < 0 ? null : ParseDirection(clipName[(separator + 1)..]);
     }
 
     /// <summary>
@@ -1130,31 +949,103 @@ public class World2D
         return resolved;
     }
 
-    private static async Task<SpriteAsset> GetOrLoadSpriteAsync(
-        SpriteLoader spriteLoader,
-        Dictionary<string, SpriteAsset> cache,
-        string assetName,
-        IReadOnlyList<string> clipNames,
-        string worldName)
-    {
-        if (cache.TryGetValue(assetName, out var cached))
-        {
-            return cached;
-        }
+    /// <summary>A patrol route as passed to <c>SetPatrol</c>: per-axis bounds (null = not patrolled) and optional starting directions.</summary>
+    private readonly record struct PatrolRoute(double? MinX, double? MaxX, double? MinY, double? MaxY, bool? TowardMaxX, bool? TowardMaxY);
 
-        var sprite = await spriteLoader.LoadAsync(assetName, clipNames, worldName);
-        cache[assetName] = sprite;
-        return sprite;
+    /// <summary>The effect clips a placement names; all null for a materials-only object.</summary>
+    private sealed record EffectClips(string? Effect, string? HazardHit, string? CheckpointReached, string? LevelEndReached, string? Died)
+    {
+        public static readonly EffectClips None = new(null, null, null, null, null);
+
+        public static EffectClips Read(ObjectSection section) => new(
+            section.Text("EffectClip"),
+            section.Text("HazardHitEffectClip"),
+            section.Text("CheckpointReachedEffectClip"),
+            section.Text("LevelEndReachedEffectClip"),
+            section.Text("DiedEffectClip"));
+
+        public IEnumerable<string> Names => new[] { Effect, HazardHit, CheckpointReached, LevelEndReached, Died }.OfType<string>();
     }
 
     /// <summary>
-    /// Whether an object's ini section explicitly opts in as the body the camera should follow
-    /// (<c>CameraTarget = true</c>). Absent or unparsable values default to false, i.e. "leave
-    /// the camera target as whatever it already is" (ultimately the player, unless some other
-    /// object claims it).
+    /// One object section of a world's objects.ini with typed key readers. Optional flags and
+    /// tuning numbers fall back to their default when absent or unreadable; keys whose value
+    /// decides an object's shape or direction (Span, Width, Height, directions, conveyor and flow
+    /// speeds) reject an unreadable value with an error naming the section and world.
     /// </summary>
-    private static bool IsCameraTarget(IReadOnlyDictionary<string, string> objectSection) =>
-        objectSection.TryGetValue("CameraTarget", out var cameraTargetText)
-        && bool.TryParse(cameraTargetText, out var isCameraTarget)
-        && isCameraTarget;
+    private readonly record struct ObjectSection(IReadOnlyDictionary<string, string> Values, string Name, string WorldName)
+    {
+        /// <summary>The trimmed value of <paramref name="key"/>, or null when absent or blank.</summary>
+        public string? Text(string key) =>
+            Values.TryGetValue(key, out var value) && !string.IsNullOrWhiteSpace(value) ? value.Trim() : null;
+
+        public string Required(string key) => Text(key) ?? throw Error($"is missing required key '{key}'");
+
+        public bool Flag(string key, bool fallback = false) => OptionalFlag(key) ?? fallback;
+
+        public bool? OptionalFlag(string key) => bool.TryParse(Text(key), out var value) ? value : null;
+
+        public double? Number(string key) => IniValueParser.TryParseDouble(Text(key), out var value) ? value : null;
+
+        public double? NonNegativeNumber(string key)
+        {
+            var text = Text(key);
+            if (text is null)
+            {
+                return null;
+            }
+
+            return IniValueParser.TryParseDouble(text, out var value) && value >= 0
+                ? value
+                : throw Error($"has invalid '{key}' value '{text}' (expected a number, 0 or more)");
+        }
+
+        public int? PositiveInt(string key)
+        {
+            var text = Text(key);
+            if (text is null)
+            {
+                return null;
+            }
+
+            return IniValueParser.TryParseInt(text, out var value) && value >= 1
+                ? value
+                : throw Error($"has invalid '{key}' value '{text}' (expected a whole number, 1 or more)");
+        }
+
+        public Vector2D? Direction(string key)
+        {
+            var text = Text(key);
+            if (text is null)
+            {
+                return null;
+            }
+
+            return ParseDirection(text) ?? throw Error($"has invalid '{key}' value '{text}' (expected Left, Right, Up or Down)");
+        }
+
+        /// <summary>
+        /// Reads a starting-direction key: true for <paramref name="maxWord"/>, false for
+        /// <paramref name="minWord"/>, null when absent.
+        /// </summary>
+        public bool? TowardMax(string key, string minWord, string maxWord)
+        {
+            var text = Text(key);
+            if (text is null)
+            {
+                return null;
+            }
+
+            if (string.Equals(text, maxWord, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            return string.Equals(text, minWord, StringComparison.OrdinalIgnoreCase)
+                ? false
+                : throw Error($"has invalid '{key}' value '{text}' (expected {minWord} or {maxWord})");
+        }
+
+        public FormatException Error(string problem) => new($"Section '{Name}' of world '{WorldName}' {problem}.");
+    }
 }

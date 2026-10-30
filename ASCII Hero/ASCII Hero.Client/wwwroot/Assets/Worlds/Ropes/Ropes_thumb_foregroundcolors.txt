@@ -4,7 +4,7 @@
   B             
   A BBB    BBB  
   A             
-  B             
+DCBDCDECDDCDDCED
 BBBBBBBBBBBBBBBB
 //end
                 
@@ -13,7 +13,7 @@ BBBBBBBBBBBBBBBB
   B             
   A BBB    BBB  
   B             
-  A             
+DCADCDECDDCDDCED
 BBBBBBBBBBBBBBBB
 //end
                 
@@ -22,5 +22,5 @@ BBBBBBBBBBBBBBBB
   B             
   B BBB    BBB  
   A             
-  A             
+DCADCDECDDCDDCED
 BBBBBBBBBBBBBBBB

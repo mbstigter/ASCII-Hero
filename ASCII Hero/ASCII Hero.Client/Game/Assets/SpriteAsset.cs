@@ -3,9 +3,9 @@ namespace ASCII_Hero.Client.Game.Assets;
 /// <summary>
 /// Whether a sprite asset's art represents a single tileable unit that placements can repeat to
 /// build up an arbitrary-length platform/wall, instead of a single fixed shape. A
-/// <see cref="Horizontal"/> asset is authored one cell wide (any height) and repeats
-/// column-wise; a <see cref="Vertical"/> asset is authored one cell tall (any width) and
-/// repeats row-wise.
+/// <see cref="Horizontal"/> asset's unit (any width and height) repeats column-wise; a
+/// <see cref="Vertical"/> asset's unit repeats row-wise. A placement's <c>Span</c> sets the
+/// total length in cells.
 /// </summary>
 public enum TileAxis
 {

@@ -1,4 +1,4 @@
-namespace ASCII_Hero.Client.Game.World;
+﻿namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>
 /// A passable ambient-medium volume (water, air and the like) whose medium moves in a fixed
@@ -14,11 +14,11 @@ public class FlowZone2D : TwoStateObject2D, ILinkTarget
     /// <summary>Unit vector the medium flows along, from the placement's <c>FlowDirection</c> key.</summary>
     public Vector2D FlowDirection { get; set; }
 
-    /// <summary>Speed the medium flows at, from the placement's <c>FlowStrength</c> key.</summary>
-    public double FlowStrength { get; set; }
+    /// <summary>Speed the medium flows at in cells/second, from the placement's <c>FlowSpeed</c> key.</summary>
+    public double FlowSpeed { get; set; }
 
-    /// <summary>The velocity of the medium: <see cref="FlowDirection"/> times <see cref="FlowStrength"/> while on, zero while off.</summary>
+    /// <summary>The velocity of the medium: <see cref="FlowDirection"/> times <see cref="FlowSpeed"/> while on, zero while off.</summary>
     public Vector2D Flow => IsOn
-        ? new Vector2D(FlowDirection.X * FlowStrength, FlowDirection.Y * FlowStrength)
+        ? new Vector2D(FlowDirection.X * FlowSpeed, FlowDirection.Y * FlowSpeed)
         : new Vector2D(0, 0);
 }

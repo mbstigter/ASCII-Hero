@@ -133,9 +133,9 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     }
 
     /// <summary>Assigns the loaded sprite asset/clip/frame, initial position and velocity.</summary>
-    public void Spawn(SpriteAsset sprite, string clipName, int frameIndex, Vector2D position, Vector2D velocity, bool gravityAffected, int repeatCount = 1)
+    public void Spawn(SpriteAsset sprite, string clipName, int frameIndex, Vector2D position, Vector2D velocity, bool gravityAffected, int span = 0)
     {
-        SetFrame(sprite, clipName, frameIndex, repeatCount);
+        SetFrame(sprite, clipName, frameIndex, span);
         Position = position;
         Velocity = velocity;
         GravityAffected = gravityAffected;

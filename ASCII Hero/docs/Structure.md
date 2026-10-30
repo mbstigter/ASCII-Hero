@@ -64,11 +64,18 @@ palettes, materials) from disk/HTTP into in-memory game objects.
   `Global/Sprites/` for every other sprite it uses.
 - **`ColorPalette`** - the resolved single-character color code -> CSS color
   lookup, merging a world's own optional `ColorPalette.ini` over `Global/ColorPalette.ini`.
+- **`InterfaceColors`** - the named interface colors (green/amber/red/blue tints
+  plus black) from `Global/InterfaceColors.ini`, loaded once in
+  `GameLoop.StartAsync` and passed to the HUD/overlay widgets, end-screen boxes,
+  `WorldSelectRenderer` and `WorldLoadingRenderer`. Separate from `ColorPalette`,
+  which is for world/sprite assets only. Every name is required.
 - **`MaterialLibrary`** - the resolved material-name -> `Material` (`Density`,
   `Friction`, `Restitution`, optional `ForegroundColor`/`BackgroundColor`/
   `Character`) lookup, merging a world's own optional `MaterialLibrary.ini` over
-  `Global/MaterialLibrary.ini`. An unknown/absent material name resolves to a
-  zeroed `Material.Undefined` fallback rather than throwing.
+  `Global/MaterialLibrary.ini`. A body with no material at all (a sprite with
+  no `DefaultMaterial`) resolves to a zeroed `Material.Undefined` fallback; a
+  material name that is set but not defined is rejected by `World2D.LoadAsync`
+  as a load error (checked via `MaterialLibrary.Contains`).
 - **`IniOverrideLoader`** - the shared Global-then-World ini load/merge
   routine used by both `ColorPalette` and `MaterialLibrary` (and any future
   asset needing the same fallback rule): reads `Global/{file}`, then merges an
@@ -104,8 +111,8 @@ palettes, materials) from disk/HTTP into in-memory game objects.
   index rather than copying frame data, so many placements of the same asset
   (e.g. many identical platform tiles) share the one loaded `SpriteAsset`.
 - **`SpriteFrameTiler`** - repeats a tileable frame's authored unit along its
-  declared axis (horizontal or vertical) to build an arbitrary-length
-  platform or wall from one small authored unit, at spawn time.
+  declared axis (horizontal or vertical) to fill a placement's `Span` (cells)
+  exactly, cutting the last unit short when needed, at spawn time.
 - **`SyntheticSpriteFactory`** - builds a one-clip, one-frame `SpriteAsset` in
   memory from a material name/glyph/width/height, for "materials-only" world
   objects (see docs/AssetFormat.md §3.4) that name a `Material`+`Width`+
@@ -139,7 +146,13 @@ The live game state and the entity types that make it up.
   the resulting `Restitution` via `Restitution`), computes `Mass` from
   the resolved `Density` and the body's spawn footprint (fixed afterwards,
   independent of pose changes), and assembles the
-  finished world. Also owns deferred removal (`QueueRemoval`/`ApplyPendingRemovals`),
+  finished world. Its object stage is split into helpers: `CollectClipNamesByAsset`
+  (pre-scan of the union of clips per sprite asset), `ResolveSprite` (asset or
+  materials-only sprite), `SpawnPlacement`/`SpawnPlayer` (body per `Kind`),
+  `ApplyMaterial`, `ReadConveyorVelocity` and `ReadPatrolRoute` with
+  `ConfigureDynamicPatrol`/`ConfigureKinematicPatrol`. Every key is read through the
+  private `ObjectSection` reader, which applies the shared default/error rules.
+  Also owns deferred removal (`QueueRemoval`/`ApplyPendingRemovals`),
   so nothing mutates the `Objects` list mid-iteration.
 - **`Body2D`** - the base class for anything living in the world at a
   floating-point position, backed by a loaded sprite frame. Derives its size
@@ -172,7 +185,7 @@ The live game state and the entity types that make it up.
     state to all its `Targets`; operated via `World2D.TryOperateSwitch`),
     `Device2D` (a machine-like object - fan, lamp - that only swaps its off/on clip) and
     `FlowZone2D` (a passable medium volume - water, air - whose medium flows in a
-    `FlowDirection` at a `FlowStrength` while on; read by `PhysicsSystem.ResolveCurrentMedium`).
+    `FlowDirection` at a `FlowSpeed` while on;
   - `ILinkTarget` - capability of an object a switch can drive (`LinkName`,
     `SetState`), implemented by `Gate2D`, `Device2D`, `FlowZone2D` and `KinematicObject2D` (which stops while
     off). `World2D.ResolveLinks` enforces one-switch-to-many-targets `Link` matching at load time.
@@ -607,30 +620,42 @@ The live game state and the entity types that make it up.
   glyph construction, and box-drawing-border helpers used by `WorldRenderer`,
   `WorldSelectRenderer`, and `UIRenderer` alike, since all three need the
   same few small operations just with different precedence chains/coordinate
-  spaces/placements. Also defines `DefaultForeColor`, the single app-wide
-  fallback color used whenever no more specific color is resolved.
-- **`UIBox`** / **`UIText`** - the two independent screen-space drawable
+  spaces/placements. `RenderConstants.DefaultForeColor` is the fallback for
+  world content (and any glyph built without a color); interface colors come
+  from `InterfaceColors`. `game-interop.js` keeps its own single green
+  fallback only for the canvas before the first real frame.
+- **`UIFrame`** / **`UILabel`** / **`UIBar`** - the independent screen-space drawable
   primitives, laid out directly in viewport cell coordinates, unaffected by
-  the camera: a box-drawing border, and one or more lines of text.
+  the camera: a box-drawing border, one or more lines of text, and a gauge.
   Deliberately separate types rather than one bundled "panel" object, since
   neither requires the other (a plain decorative frame needs no text; a
   centered message needs no box) - any screen (world HUD, world-select, or a
-  future screen) can draw just one, or both side by side. Each has its own
-  optional foreground/background color, falling back to
-  `GlyphBuilder.DefaultForeColor` when unset; `UIText`'s width/line-count
+  future screen) can draw just one, or several side by side. Each has its own
+  optional foreground/background color (callers pass `InterfaceColors` values),
+  falling back to `RenderConstants.DefaultForeColor` when unset; `UILabel`'s width/line-count
   caps are fixed rather than auto-sized to its current content, so a
   reserved screen area keeps a stable footprint frame to frame even as the
   text updates (e.g. a live score) - an overly long line or an overflowing
   line count is simply truncated.
-- **`UIRenderer`** - turns a `UIBox` or `UIText` into glyphs, reusing
+- **`UIRenderer`** - turns a `UIFrame`, `UILabel` or `UIBar` into glyphs, reusing
   `GlyphBuilder.AddBox`/`BuildGlyph`; used by `GameLoop`'s HUD overlay and
-  available to any future screen-space overlay.
+  available to any future screen-space overlay. A label with a `HighlightColor`
+  draws text wrapped in `{}` in that color (braces not drawn, no space taken;
+  `GetVisibleLength` measures such a line); used for the HUD numbers and the
+  menu's control keys, both in `GreenDark`.
 - **`WorldSelectRenderer`** - builds the world-selection screen's glyph list
   (thumbnails, titles, selector box). Unlike `WorldRenderer` it has no camera
   and no `World2D` - it lays out directly in viewport cell coordinates, since
   the selection screen exists before any world is loaded. Titles wider than a
   thumbnail are truncated, except the selected one, which slides back and
   forth (equal pause at each end) driven by `WorldSelectScreen.TitleScrollSeconds`.
+  The logo is drawn per glyph with a vertical green gradient (light top two
+  rows, normal middle two, dark bottom row), and the scroll chevrons likewise
+  (light top row, normal middle, dark bottom row). The selector box is drawn
+  `GreenDark` for a moment after the selection moves, so it appears to fade in.
+  While `WorldSelectScreen.IsIntroComplete` is false only the logo is drawn,
+  with "ASCII" sliding in from the left and "Hero" from the right
+  (`WorldSelectScreen.IntroSeconds`; menu input is ignored until it finishes).
 
 - **`AnimationSystem`** - advances every body's animation timer once per
   frame (bodies with no animation configured, or a single frame, no-op

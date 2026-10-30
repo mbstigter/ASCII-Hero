@@ -13,6 +13,7 @@ Assets/
 		Settings.ini
 		ColorPalette.ini
 		ColorPalette.htm
+		InterfaceColors.ini
 		MaterialLibrary.ini
 		Worlds.ini
 		Sprites/
@@ -197,7 +198,7 @@ DefaultForegroundColor = F
 DefaultBackgroundColor = D
 
 [Physics]
-DefaultMaterial = Flesh
+DefaultMaterial = Snake
 
 [Animation]
 FrameDurationSeconds = 0.5
@@ -300,16 +301,14 @@ TileAxis = Horizontal
 ```
 
 - **`TileAxis = Horizontal`** — the asset's `_characters.txt` (and matching
-  `_foregroundcolors.txt`/`_backgroundcolors.txt`) is authored
-  **one unit wide** (usually one cell, any height). A placement's `Repeat` count (see §3.4)
-  repeats that unit side-by-side to build up the actual platform
-  length at spawn time.
-- **`TileAxis = Vertical`** — the mirror case: the asset is authored **one
-  unit tall** (usually one cell, any width), and `Repeat` stacks that unit to build up the
-  actual wall/column height.
+  `_foregroundcolors.txt`/`_backgroundcolors.txt`) is authored as **one unit**
+  (any number of cells wide, any height). A placement's `Span` (see §3.4) sets the
+  total width in cells; the unit is repeated side-by-side to fill it at spawn time.
+- **`TileAxis = Vertical`** — the mirror case: the unit (any number of cells tall,
+  any width) is stacked to fill the placement's `Span` in rows.
 - **`TileAxis = None`** (the default, and the only option when the key is
   omitted) — the asset is not tileable; it is always used exactly as
-  authored, `Repeat` has no effect, and every other asset (`Player`, `Ball`,
+  authored, `Span` has no effect, and every other asset (`Player`, `Ball`,
   ...) is entirely unaffected by this feature.
 
 The axis can also be set per clip in a `[Layout.{clipName}]` section, which
@@ -338,8 +337,7 @@ work identically either way; only the small authored asset files on disk and
 the loading step differ.
 
 `SteelPlatform` and `BrickWall` are the reference tileable assets: `SteelPlatform`
-is authored one cell wide with `TileAxis = Horizontal`, `BrickWall` is authored
-one cell tall with `TileAxis = Vertical`.
+uses `TileAxis = Horizontal`, `BrickWall` uses `TileAxis = Vertical`.
 
 ### 2.6 Poses and facing (`[Poses]`)
 
@@ -723,17 +721,17 @@ ForegroundColor = G
 Materials-only objects are meant for simple, uniformly-filled shapes only
 (a solid slab of one material) - they have no `Clip`/`EffectClip`, no tiling
 (`Width`/`Height` already give the placement's final size directly, so
-`Repeat`/`TileAxis` do not apply), and no per-cell layering (e.g. a strip of
+`Span`/`TileAxis` do not apply), and no per-cell layering (e.g. a strip of
 grass on top of brick needs an authored sprite, not a materials-only object).
 The table below summarizes what each style supports:
 
 | Capability | `Asset`-based object | Materials-only object |
 | --- | --- | --- |
 | Requires authored sprite files | Yes | No |
-| Size source | Sprite's own `_characters.txt` (optionally tiled via `Repeat`) | `Width`/`Height` keys |
+| Size source | Sprite's own `_characters.txt` (optionally tiled via `Span`) | `Width`/`Height` keys |
 | Per-cell character/color layering | Yes | No (one glyph/color for the whole shape) |
 | `Clip`/`EffectClip` | Yes | No |
-| `Repeat`/`TileAxis` tiling | Yes (if the asset is tileable) | No (not applicable) |
+| `Span`/`TileAxis` tiling | Yes (if the asset is tileable) | No (not applicable) |
 | `Character`/`ForegroundColor`/`BackgroundColor` overrides | `ForegroundColor`/`BackgroundColor` only (glyphs come from the sprite) | All three (`Character` overrides the material's own `Character`) |
 | Glyph source | Sprite's authored characters | Material's `Character` |
 | Color source | Sprite defaults, then `Material` override, then world default | Material's `ForegroundColor`/`BackgroundColor` |
@@ -765,24 +763,27 @@ always controlled asset-wide via `[Animation] DefaultFrame` in the asset's own
 settings.ini (see §2.4), not per-placement. This keeps starting frame a purely
 asset-level concern rather than something every placement needs to repeat.
 
-An optional `Repeat` key (default `1`) selects how many times a tileable
-asset's authored unit (see §2.5, `TileAxis`) is repeated along its declared
-axis for this placed instance. It has no effect on non-tileable assets. This
-lets one small authored unit produce platforms/walls of whatever length each
-placement actually needs, without hand-authoring a separate asset per length:
+An optional `Span` key sets the total length, in cells, of a tileable asset
+(see §2.5, `TileAxis`) along its declared axis for this placed instance: width
+for a horizontal asset, height for a vertical one. The authored unit is repeated
+to fill it; when the span is not a whole multiple of the unit, the last unit is
+cut off. Omitting `Span` uses the unit exactly as authored. It has no effect on
+non-tileable assets. This lets one small authored unit produce
+platforms/walls of whatever length each placement actually needs, without
+hand-authoring a separate asset per length:
 
 ```ini
 [SteelPlatform]
 Asset = SteelPlatform
 Clip = default
 Kind = StaticObject
-Repeat = 8
+Span = 8
 
 [BrickWall]
 Asset = BrickWall
 Clip = default
 Kind = StaticObject
-Repeat = 6
+Span = 6
 ```
 
 A `Kind` value of `DynamicObject` marks a placement as a body that moves
@@ -852,17 +853,15 @@ configured patrols diagonally, each axis bouncing between its own bounds on
 its own schedule, with no separate "diagonal mode" needed:
 
 - `PatrolMinX`/`PatrolMaxX` (world-space X, in cells) bound horizontal
-  patrol. If `Patrol = true` and neither is set (and no vertical-only patrol
-  is configured either - see below), the range defaults to the entire width
-  of the world (this body's left edge sweeping from the world's left edge to
-  its right edge) - enough to "just patrol the level" with no further
+  patrol, `PatrolMinY`/`PatrolMaxY` (world-space Y, in cells) vertical patrol.
+  Setting either bound of an axis patrols that axis; a missing bound defaults
+  to that edge of the world.
+- Setting any patrol bound also switches patrol on, so `Patrol = true` is only
+  needed when no bound is given. `Patrol = false` keeps the object still even
+  when bounds are set.
+- With `Patrol = true` and no bounds at all, the object patrols the entire
+  width of the world - enough to "just patrol the level" with no further
   authoring.
-- `PatrolMinY`/`PatrolMaxY` (world-space Y, in cells) bound vertical patrol.
-  Unlike the X axis, there is no "entire world height" default - a hazard
-  patrols vertically only once both are explicitly set. Setting only
-  `PatrolMinY`/`PatrolMaxY` (no `PatrolMinX`/`PatrolMaxX`) makes this hazard
-  patrol vertically only, rather than also silently sweeping the full world
-  width on X.
 
 ```ini
 [CautiousGoblin]
@@ -942,14 +941,11 @@ time.
 
 A `Kind = KinematicObject` or `Kind = KinematicHazard` placement (e.g. a moving
 platform or saw blade) may likewise set
-`Patrol = true`, with the same independent-per-axis bounds as `DynamicHazard`
-above: `PatrolMinX`/`PatrolMaxX`/`PatrolSpeedX` (world-space X, in cells, and
-cells/second) patrol it horizontally,
-`PatrolMinY`/`PatrolMaxY`/`PatrolSpeedY` patrol it vertically, and either or
-both axes may be configured (an axis left unconfigured simply never moves on
-its own) - unlike `DynamicHazard`, `KinematicObject`'s horizontal axis has no
-"entire world width" default; both axes are opt-in via explicit bounds only.
-`PatrolSpeedX`/`PatrolSpeedY` are always a positive magnitude, never a
+patrol, switched on and bounded by exactly the same rules as `DynamicHazard`
+above: `PatrolMinX`/`PatrolMaxX` patrol it horizontally,
+`PatrolMinY`/`PatrolMaxY` vertically, and an axis without bounds never moves
+on its own. `PatrolSpeedX`/`PatrolSpeedY` (cells/second, default `6`) set the
+speed per axis and are always a positive magnitude, never a
 direction - the initial heading is inferred automatically (toward whichever
 bound is farther from the spawn position) unless overridden by
 `PatrolInitialDirectionX` (`Left` or `Right`) / `PatrolInitialDirectionY`
@@ -1040,7 +1036,7 @@ passage: solid while closed, passable while open. It has two clips of its sprite
 asset - `Clip` (closed) and `OnClip` (open) - and swaps between them. The clip
 names are free (conventionally `closed`/`open` for gates and `off`/`on` for
 switches); `Clip` defaults to
-`default` when omitted. `Repeat`, `ForegroundColor` etc. work as for any sprite
+`default` when omitted. `Span`, `ForegroundColor` etc. work as for any sprite
 placement. A gate is opened in one of two ways, never both (a gate with both
 `Lock` and `Link` is a load error):
 
@@ -1114,8 +1110,8 @@ zones should be avoided; the level designer is responsible for that.
 
 | Key             | Meaning |
 |-----------------|---------|
-| `FlowDirection` | Required. `Left`, `Right`, `Up` or `Down`. |
-| `FlowStrength`  | Required. How fast the medium moves, in cells per second. |
+| `FlowDirection` | `Left`, `Right`, `Up` or `Down`. When absent, taken from the clip name ending in `_left`, `_right`, `_up` or `_down`; a flow zone with neither cannot be loaded. |
+| `FlowSpeed`     | How fast the medium moves, in cells per second. Default `12`. |
 | `Link`          | Optional. A switch with the same `Link` turns the flow on and off. |
 | `InitialState`  | `On` to flow from the start. Default off. |
 | `OnClip`        | Optional clip shown while flowing (as for a gate or switch). |
@@ -1128,7 +1124,7 @@ Height = 3
 Kind = FlowZone
 Medium = true
 FlowDirection = Right
-FlowStrength = 6
+FlowSpeed = 6
 InitialState = On
 ```
 
@@ -1276,8 +1272,10 @@ moving bodies, independent of its `Kind`:
 - **`ConveyorDirection`** / **`ConveyorSpeed`** — give the object a moving
   surface while the object itself stays in place, like a conveyor or a rope
   (horizontal or vertical). `ConveyorDirection` is `Left`,
-  `Right`, `Up` or `Down`; `ConveyorSpeed` is in cells/second and is required
-  whenever `ConveyorDirection` is set. Anything holding on, or standing,
+  `Right`, `Up` or `Down`; `ConveyorSpeed` is in cells/second (default `3`).
+  Setting either key makes the surface move: a speed without a direction takes
+  the direction from the clip name ending in `_left`, `_right`, `_up` or
+  `_down`. Anything holding on, or standing,
   crawling or resting on top, is carried along at that speed (a walking player can walk with or
   against it).
   in which case both movements add up. When the surface carries the player
@@ -1336,10 +1334,34 @@ world-local `MaterialLibrary.ini`** for any material whose `ForegroundColor`/
 material's default color silently resolves against the unrelated global
 meaning of that same code rather than the world's own repurposed one.
 
+### 4.1a `Global/InterfaceColors.ini`
+
+Defines the named colors of the game interface (menu, HUD, overlays and
+message boxes), separate from the world/sprite palette in §4.1. One
+`[Colors]` section mapping a fixed name to a `#RRGGBB` hex value. Global
+only (no world-local override). Every name is required; a missing one is a
+startup error:
+
+- `Black` - message box text background.
+- `GreenDark`, `Green`, `GreenLight` - `Green` is the standard interface
+  color; the menu logo is shaded vertically from `GreenLight` (top) through
+  `Green` to `GreenDark` (bottom).
+- `AmberDark`, `Amber`, `AmberLight` - `Amber` colors the exit confirmation box.
+- `RedDark`, `Red`, `RedLight` - `Red` colors the Game Over box.
+- `BlueDark`, `Blue`, `BlueLight` - spare tints for future interface use.
+
 ### 4.2 `Global/MaterialLibrary.ini`
 
 Defines the shared material library, referenced by `DefaultMaterial` in any
-`settings.ini`.
+`settings.ini` and by a placement's `Material` key. A material name that is not
+defined here (globally or in the world's own `MaterialLibrary.ini`) is a world
+load error naming the offending placement, so typos are caught immediately.
+
+The file is grouped into things you move through (e.g. air, water), building
+materials used without a sprite, materials for specific objects, and living
+things. Each creature gets its own material, so it weighs the same wherever it
+is placed. Materials only ever used underneath a sprite need no `Character`,
+and need a color only where that sprite leaves cells uncolored.
 
 ```ini
 [Glass]
@@ -1392,7 +1414,7 @@ Fields:
   Describes how much energy this material gives back when it is the one
   squashed on impact; very gentle impacts never bounce.
 - **Hardness** (optional, defaults to `1`) — impact stiffness on a smooth
-  scale: about `0.1` = very soft (foam, mud), `1` = medium (rubber, flesh),
+  `1` = medium (rubber, a creature's body),
   `10` = very hard (stone, steel). When two materials collide, the softer
   one's Restitution counts more (each side weighted by `1 / Hardness`), so a
   rubber ball bounces well on concrete and a little less on wood. A placement

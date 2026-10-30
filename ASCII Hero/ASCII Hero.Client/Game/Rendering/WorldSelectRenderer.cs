@@ -27,6 +27,9 @@ public static class WorldSelectRenderer
     private const double TitleScrollCharsPerSecond = 4.0;
     private const double TitleScrollPauseSeconds = 1.0;
 
+    // After the selection moves, the selector box is drawn dim for this long before turning normal.
+    private const double SelectionFadeInSeconds = 0.12;
+
     // ---------------------------------------------------------------------------------------
     // Logo and controls hint
     // ---------------------------------------------------------------------------------------
@@ -43,10 +46,16 @@ public static class WorldSelectRenderer
     private const int LogoHeight = 5;
     private const int LogoGapRows = 1;
 
+    // Per logo row, the column where "Hero" starts; everything left of it is "ASCII". The two
+    // halves slide in from opposite sides during the opening animation.
+    private static readonly int[] LogoSplitColumns = [33, 32, 31, 30, 29];
+
+    // Keys wrapped in {} are drawn one tint darker than the rest of the text; the braces themselves
+    // are not drawn and take no space.
     private static readonly string[] ControlsLines =
     [
-        "           ↑                        W",
-        "Controls: ←↓→ + Space + Enter  or: ASD + Left Control + E",
+        "           {↑}                        {W}",
+        "Controls: {←↓→} + {Space} + {Enter}  or: {ASD} + {Left Control} + {E}",
     ];
 
     // ---------------------------------------------------------------------------------------
@@ -96,7 +105,7 @@ public static class WorldSelectRenderer
     }
 
     public static List<Glyph> BuildFrame(
-        WorldSelectScreen screen, double viewportWidthCells, double viewportHeightCells,
+        WorldSelectScreen screen, InterfaceColors colors, double viewportWidthCells, double viewportHeightCells,
         double cellWidthPixels, double cellHeightPixels)
     {
         var glyphs = new List<Glyph>();
@@ -105,8 +114,13 @@ public static class WorldSelectRenderer
         var startCol = (viewportWidthCells - totalRowWidth) / 2;
         var startRow = (viewportHeightCells - BlockHeight) / 2;
 
-        AddLogo(glyphs, viewportWidthCells, startRow, cellWidthPixels, cellHeightPixels);
-        AddControls(glyphs, viewportWidthCells, startRow + BlockHeight, cellWidthPixels, cellHeightPixels);
+        AddLogo(glyphs, colors, screen.IntroSeconds, viewportWidthCells, startRow, cellWidthPixels, cellHeightPixels);
+        if (!screen.IsIntroComplete)
+        {
+            return glyphs;
+        }
+
+        AddControls(glyphs, colors, viewportWidthCells, startRow + BlockHeight, cellWidthPixels, cellHeightPixels);
 
         for (var slot = 0; slot < screen.VisibleSlotCount; slot++)
         {
@@ -123,23 +137,23 @@ public static class WorldSelectRenderer
             var thumbRow = startRow + TitleRowCount + SlotVerticalPadding;
 
             var titleScrollSeconds = worldIndex == screen.SelectedIndex ? screen.TitleScrollSeconds : (double?)null;
-            AddTitle(glyphs, world, titleScrollSeconds, thumbCol, titleRow, cellWidthPixels, cellHeightPixels);
+            AddTitle(glyphs, colors, world, titleScrollSeconds, thumbCol, titleRow, cellWidthPixels, cellHeightPixels);
 
             if (worldIndex == screen.SelectedIndex)
             {
-                AddSelectionBox(glyphs, slotOriginCol, thumbRow, cellWidthPixels, cellHeightPixels);
+                AddSelectionBox(glyphs, colors, screen.TitleScrollSeconds, slotOriginCol, thumbRow, cellWidthPixels, cellHeightPixels);
             }
 
             AddThumbnail(glyphs, world, thumbCol, thumbRow, cellWidthPixels, cellHeightPixels);
 
             if (slot == 0 && screen.ScrollOffset > 0)
             {
-                AddScrollArrow(glyphs, LeftScrollArrow, thumbCol - ScrollArrowGap - ScrollArrowWidth, thumbRow, cellWidthPixels, cellHeightPixels);
+                AddScrollArrow(glyphs, colors, LeftScrollArrow, thumbCol - ScrollArrowGap - ScrollArrowWidth, thumbRow, cellWidthPixels, cellHeightPixels);
             }
 
             if (slot == screen.VisibleSlotCount - 1 && screen.ScrollOffset + screen.VisibleSlotCount < screen.Worlds.Count)
             {
-                AddScrollArrow(glyphs, RightScrollArrow, thumbCol + WorldCatalog.ThumbnailWidth + ScrollArrowGap, thumbRow, cellWidthPixels, cellHeightPixels);
+                AddScrollArrow(glyphs, colors, RightScrollArrow, thumbCol + WorldCatalog.ThumbnailWidth + ScrollArrowGap, thumbRow, cellWidthPixels, cellHeightPixels);
             }
         }
 
@@ -150,30 +164,61 @@ public static class WorldSelectRenderer
     // Drawing helpers
     // ---------------------------------------------------------------------------------------
 
-    /// <summary>Adds the logo, centered horizontally and placed above the thumbnail block.</summary>
+    /// <summary>
+    /// Adds the logo, centered horizontally and placed above the thumbnail block, shaded with a
+    /// vertical gradient (light top two rows, normal middle two, dark bottom row). During the
+    /// opening animation "ASCII" slides in from the left and "Hero" from the right, easing out
+    /// into place.
+    /// </summary>
     private static void AddLogo(
-        List<Glyph> glyphs, double viewportWidthCells, double blockStartRow,
+        List<Glyph> glyphs, InterfaceColors colors, double introSeconds, double viewportWidthCells, double blockStartRow,
         double cellWidthPixels, double cellHeightPixels)
     {
-        var label = new UILabel((viewportWidthCells - LogoWidth) / 2, blockStartRow - LogoGapRows - LogoHeight, width: LogoWidth, height: LogoHeight, foreColor: RenderConstants.DefaultForeColor);
-        label.Lines.AddRange(LogoLines);
-        UIRenderer.AddLabel(glyphs, label, cellWidthPixels, cellHeightPixels);
+        var remaining = 1 - Math.Clamp(introSeconds / WorldSelectScreen.IntroDurationSeconds, 0, 1);
+        var slideCells = remaining * remaining * (viewportWidthCells + LogoWidth) / 2;
+
+        var logoCol = (viewportWidthCells - LogoWidth) / 2;
+        var logoRow = blockStartRow - LogoGapRows - LogoHeight;
+
+        for (var row = 0; row < LogoLines.Length; row++)
+        {
+            var line = LogoLines[row];
+            var color = row < 2 ? colors.GreenLight : row < 4 ? colors.Green : colors.GreenDark;
+            for (var col = 0; col < line.Length; col++)
+            {
+                var character = line[col];
+                if (character == ' ')
+                {
+                    continue;
+                }
+
+                var offset = col < LogoSplitColumns[row] ? -slideCells : slideCells;
+                glyphs.Add(GlyphBuilder.BuildGlyph(
+                    (logoCol + col + offset) * cellWidthPixels, (logoRow + row) * cellHeightPixels, character, color, null));
+            }
+        }
     }
 
-    /// <summary>Adds the controls hint, centered horizontally at the given row.</summary>
+    /// <summary>
+    /// Adds the controls hint, centered horizontally at the given row. Keys wrapped in {} are
+    /// highlighted one tint darker.
+    /// </summary>
     private static void AddControls(
-        List<Glyph> glyphs, double viewportWidthCells, double row,
+        List<Glyph> glyphs, InterfaceColors colors, double viewportWidthCells, double row,
         double cellWidthPixels, double cellHeightPixels)
     {
-        var width = ControlsLines.Max(line => line.Length);
-        var label = new UILabel((viewportWidthCells - width) / 2, row, width: width, height: ControlsLines.Length, foreColor: RenderConstants.DefaultForeColor);
+        var width = ControlsLines.Max(UIRenderer.GetVisibleLength);
+        var label = new UILabel((viewportWidthCells - width) / 2, row, width: width, height: ControlsLines.Length, foreColor: colors.Green)
+        {
+            HighlightColor = colors.GreenDark,
+        };
         label.Lines.AddRange(ControlsLines);
         UIRenderer.AddLabel(glyphs, label, cellWidthPixels, cellHeightPixels);
     }
 
     /// <summary>Adds a scroll chevron outside a thumbnail's edge, vertically centered on it.</summary>
     private static void AddScrollArrow(
-        List<Glyph> glyphs, string[] arrowLines, double arrowCol, double thumbRow,
+        List<Glyph> glyphs, InterfaceColors colors, string[] arrowLines, double arrowCol, double thumbRow,
         double cellWidthPixels, double cellHeightPixels)
     {
         var arrowRow = thumbRow + (WorldCatalog.ThumbnailHeight - ScrollArrowHeight) / 2.0;
@@ -181,6 +226,8 @@ public static class WorldSelectRenderer
         for (var row = 0; row < arrowLines.Length; row++)
         {
             var line = arrowLines[row];
+            // Light top row, normal middle rows, dark bottom row.
+            var color = row == 0 ? colors.GreenLight : row == arrowLines.Length - 1 ? colors.GreenDark : colors.Green;
             for (var col = 0; col < line.Length; col++)
             {
                 var character = line[col];
@@ -190,7 +237,7 @@ public static class WorldSelectRenderer
                 }
 
                 glyphs.Add(GlyphBuilder.BuildGlyph(
-                    (arrowCol + col) * cellWidthPixels, (arrowRow + row) * cellHeightPixels, character, RenderConstants.DefaultForeColor, null));
+                    (arrowCol + col) * cellWidthPixels, (arrowRow + row) * cellHeightPixels, character, color, null));
             }
         }
     }
@@ -201,7 +248,7 @@ public static class WorldSelectRenderer
     /// case a thumbnail-wide window slides back and forth along it.
     /// </summary>
     private static void AddTitle(
-        List<Glyph> glyphs, WorldSummary world, double? scrollSeconds, double thumbCol, double titleRow,
+        List<Glyph> glyphs, InterfaceColors colors, WorldSummary world, double? scrollSeconds, double thumbCol, double titleRow,
         double cellWidthPixels, double cellHeightPixels)
     {
         var overflow = world.Title.Length - WorldCatalog.ThumbnailWidth;
@@ -211,7 +258,7 @@ public static class WorldSelectRenderer
             : world.Title;
         var titleStartCol = thumbCol + (WorldCatalog.ThumbnailWidth - title.Length) / 2.0;
 
-        var label = new UILabel(titleStartCol, titleRow, width: title.Length, height: 1, foreColor: RenderConstants.DefaultForeColor);
+        var label = new UILabel(titleStartCol, titleRow, width: title.Length, height: 1, foreColor: colors.Green);
         label.Lines.Add(title);
         UIRenderer.AddLabel(glyphs, label, cellWidthPixels, cellHeightPixels);
     }
@@ -248,13 +295,17 @@ public static class WorldSelectRenderer
         return Math.Clamp((int)Math.Round(position), 0, overflow);
     }
 
-    /// <summary>Adds the selector box around a slot's thumbnail.</summary>
+    /// <summary>
+    /// Adds the selector box around a slot's thumbnail. Right after the selection moves it is drawn
+    /// dim for a moment, so it appears to fade in.
+    /// </summary>
     private static void AddSelectionBox(
-        List<Glyph> glyphs, double slotOriginCol, double thumbRow,
+        List<Glyph> glyphs, InterfaceColors colors, double selectedSeconds, double slotOriginCol, double thumbRow,
         double cellWidthPixels, double cellHeightPixels)
     {
         var top = thumbRow - SlotVerticalPadding;
-        var frame = new UIFrame(slotOriginCol, top, SlotPitch, WorldCatalog.ThumbnailHeight + SlotVerticalPadding + 1, foreColor: RenderConstants.DefaultForeColor);
+        var color = selectedSeconds < SelectionFadeInSeconds ? colors.GreenDark : colors.Green;
+        var frame = new UIFrame(slotOriginCol, top, SlotPitch, WorldCatalog.ThumbnailHeight + SlotVerticalPadding + 1, foreColor: color);
         UIRenderer.AddFrame(glyphs, frame, cellWidthPixels, cellHeightPixels);
     }
 

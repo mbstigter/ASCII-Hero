@@ -38,7 +38,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         /// <summary>Same as <see cref="LevelComplete"/>, but shown when the player lost their last life.</summary>
         GameOver,
 
-        /// <summary>Gameplay is frozen and an "Exit game?" message is shown; confirming returns to <see cref="WorldSelecting"/>, Escape resumes <see cref="Playing"/>.</summary>
+        /// <summary>Gameplay is frozen and an "Exit Game?" message is shown; confirming returns to <see cref="WorldSelecting"/>, Escape resumes <see cref="Playing"/>.</summary>
         ConfirmExit,
     }
 
@@ -102,9 +102,9 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private bool _endScreenKeysReleased;
 
     /// <summary>Message of the active <see cref="GameMode.LevelComplete"/>/<see cref="GameMode.GameOver"/> screen; one text row (with a space either side) inside the final ripple box, on a solid background so it stays readable over the world.</summary>
-    private readonly UILabel _endScreenLabel = new(col: 0, row: 0, width: 20, height: 1, backColor: EndScreenTextBackColor);
+    private readonly UILabel _endScreenLabel = new(col: 0, row: 0, width: 20, height: 1);
 
-    /// <summary>Border around the end screen message; redrawn at several sizes while the ripple animation plays.</summary>
+    /// <summary>Border around the end screen
     private readonly UIFrame _endScreenFrame = new(col: 0, row: 0, width: 0, height: 0);
 
     /// <summary>Time since the end screen opened; drives the ripple animation.</summary>
@@ -122,32 +122,28 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// <summary>Per step, the box shrinks by this many cells on each axis (1 per side).</summary>
     private const int EndScreenStepCells = 2;
 
-    private const string EndScreenTextBackColor = "#000000";
-
-    // Per-screen message box color and woosh sound (played as the ripple opens; see Global/SoundLibrary.ini).
-    private const string LevelCompleteColor = RenderConstants.DefaultForeColor;
+    // Per-screen woosh sound (played as the ripple opens; see Global/SoundLibrary.ini).
     private const string LevelCompleteWooshSoundName = "LevelCompleteWoosh";
-
-    private const string GameOverColor = "#ff0000";
     private const string GameOverWooshSoundName = "GameOverWoosh";
-
-    private const string ConfirmExitColor = "#ffb000";
     private const string ConfirmExitWooshSoundName = "ConfirmExitWoosh";
+
+    /// <summary>Interface colors (Global/InterfaceColors.ini), loaded in <see cref="StartAsync"/>.</summary>
+    private InterfaceColors _colors = null!;
 
     // ---------------------------------------------------------------------------------------
     // HUD (top-left): frame, text row, health bar and key icon
     // ---------------------------------------------------------------------------------------
 
-    private readonly UIFrame _hudBox = new(col: 1, row: 1, width: 36, height: 4, foreColor: RenderConstants.DefaultForeColor);
+    private readonly UIFrame _hudBox = new(col: 1, row: 1, width: 36, height: 4);
 
     /// <summary>Lives/Rings/Score on the first row and the "Health:" caption on the second.</summary>
-    private readonly UILabel _hudText = new(col: 3, row: 2, width: 32, height: 2, foreColor: RenderConstants.DefaultForeColor);
+    private readonly UILabel _hudText = new(col: 3, row: 2, width: 32, height: 2);
 
     /// <summary>Health gauge (0-1) right of the "Health:" caption.</summary>
-    private readonly UIBar _hudBar = new(col: 11, row: 3, width: 20, height: 1, minValue: 0, maxValue: GameDefaults.PlayerFullHealth, foreColor: RenderConstants.DefaultForeColor) { CurrentValue = GameDefaults.PlayerFullHealth };
+    private readonly UIBar _hudBar = new(col: 11, row: 3, width: 20, height: 1, minValue: 0, maxValue: GameDefaults.PlayerFullHealth) { CurrentValue = GameDefaults.PlayerFullHealth };
 
     /// <summary>Key icon right of the health bar; shown while the player holds at least one key.</summary>
-    private readonly UILabel _hudKeyLabel = new(col: 33, row: 3, width: 3, height: 1, foreColor: RenderConstants.DefaultForeColor);
+    private readonly UILabel _hudKeyLabel = new(col: 33, row: 3, width: 3, height: 1);
 
     // ---------------------------------------------------------------------------------------
     // Debug overlays (top-right) and debug keys
@@ -156,10 +152,10 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private const double FpsSmoothingFactor = 0.1;
 
     /// <summary>FPS overlay, toggled by <see cref="InputState.IsFpsToggleKeyPressed"/>.</summary>
-    private readonly UILabel _fpsLabel = new(col: 0, row: 0, width: 12, height: 1, foreColor: RenderConstants.DefaultForeColor);
+    private readonly UILabel _fpsLabel = new(col: 0, row: 0, width: 12, height: 1);
 
     /// <summary>World object-count overlay, toggled by <see cref="InputState.IsObjectCounterToggleKeyPressed"/>; sits under the FPS overlay.</summary>
-    private readonly UILabel _objectCounterLabel = new(col: 0, row: 1, width: 12, height: 1, foreColor: RenderConstants.DefaultForeColor);
+    private readonly UILabel _objectCounterLabel = new(col: 0, row: 1, width: 12, height: 1);
 
     private bool _showFpsOverlay;
     private bool _showObjectCounterOverlay;
@@ -183,6 +179,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     public async Task StartAsync(string canvasElementId)
     {
         var worlds = await WorldCatalog.LoadAllAsync(assetFileProvider);
+        ApplyInterfaceColors(await InterfaceColors.LoadAsync(assetFileProvider));
 
         var globalSettingsContent = await assetFileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/Settings.ini");
         var globalSettings = IniDocument.Parse(globalSettingsContent ?? string.Empty);
@@ -220,6 +217,22 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         var visibleSlotCount = WorldSelectRenderer.ComputeVisibleSlotCount(_viewportWidthCells, worlds.Count);
         _worldSelect = new WorldSelectScreen(worlds, visibleSlotCount);
         _mode = GameMode.WorldSelecting;
+    }
+
+    /// <summary>Stores the interface colors and applies them to the fixed HUD/overlay widgets.</summary>
+    private void ApplyInterfaceColors(InterfaceColors colors)
+    {
+        _colors = colors;
+
+        _hudBox.ForeColor = colors.Green;
+        _hudText.ForeColor = colors.Green;
+        _hudText.HighlightColor = colors.GreenDark;
+        _hudBar.ForeColor = colors.Green;
+        _hudKeyLabel.ForeColor = colors.Green;
+        _hudKeyLabel.HighlightColor = colors.GreenDark;
+        _fpsLabel.ForeColor = colors.Green;
+        _objectCounterLabel.ForeColor = colors.Green;
+        _endScreenLabel.BackColor = colors.Black;
     }
 
     private void ApplyCellMetrics(CellMetrics cellMetrics, int viewportColumns, int viewportRows)
@@ -357,7 +370,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
             // Start the load without awaiting it, so frames keep being drawn while it runs.
             _mode = GameMode.LoadingWorld;
-            _loadingBar = WorldLoadingRenderer.CreateLoadingBar(_worldSelect, _viewportWidthCells, _viewportHeightCells, World2D.LoadStepCount);
+            _loadingBar = WorldLoadingRenderer.CreateLoadingBar(_colors, _viewportWidthCells, _viewportHeightCells, World2D.LoadStepCount);
             _loadWorldTask = LoadWorldAsync(_worldSelect.SelectedWorld.WorldName);
 
             await OnLoadingWorldFrameAsync();
@@ -365,7 +378,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
 
         var glyphs = WorldSelectRenderer.BuildFrame(
-            _worldSelect, _viewportWidthCells, _viewportHeightCells,
+            _worldSelect, _colors, _viewportWidthCells, _viewportHeightCells,
             _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         await DrawAsync(glyphs);
     }
@@ -406,7 +419,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
 
         var glyphs = WorldLoadingRenderer.BuildLoadingFrame(
-            _worldSelect, _loadingBar, _viewportWidthCells, _viewportHeightCells,
+            _worldSelect, _colors, _loadingBar, _viewportWidthCells, _viewportHeightCells,
             _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         await DrawAsync(glyphs);
 
@@ -589,7 +602,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         UIRenderer.AddFrame(glyphs, _hudBox, cellWidth, cellHeight);
 
         _hudText.Lines.Clear();
-        _hudText.Lines.Add($"Lives:{_world.Player.Lives,3}  Rings:{_world.Player.Rings,3}  Score:{_world.Player.Score,4}");
+        _hudText.Lines.Add($"Lives:{{{_world.Player.Lives,3}}}  Rings:{{{_world.Player.Rings,3}}}  Score:{{{_world.Player.Score,4}}}");
         _hudText.Lines.Add("Health:");
         UIRenderer.AddLabel(glyphs, _hudText, cellWidth, cellHeight);
 
@@ -599,7 +612,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         if (_world.Player.Keys.Count > 0)
         {
             _hudKeyLabel.Lines.Clear();
-            _hudKeyLabel.Lines.Add("o╤" + ToSuperscriptDigit(_world.Player.Keys.Count));
+            _hudKeyLabel.Lines.Add("o╤{" + ToSuperscriptDigit(_world.Player.Keys.Count) + "}");
             UIRenderer.AddLabel(glyphs, _hudKeyLabel, cellWidth, cellHeight);
         }
     }
@@ -656,7 +669,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     }
 
     /// <summary>
-    /// Draws the frozen frame with an "Exit game?"
+    /// Draws the frozen frame with an "Exit Game?"
     /// selection; a fresh Escape press cancels and resumes play.
     /// </summary>
     private async Task OnConfirmExitFrameAsync(double deltaSeconds)
@@ -693,15 +706,16 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// <summary>
     /// Draws the end screen message in a centered box: a short trail
     /// onto the final box (just big enough for the message), then the message appears inside it.
-    /// Colored per screen (see <see cref="LevelCompleteColor"/>, <see cref="GameOverColor"/> and
-    /// <see cref="ConfirmExitColor"/>). Only adds glyphs on top of the world.
+    /// Colored per screen (green, red or amber tints from <see cref="InterfaceColors"/>). Only adds glyphs on top of the world.
     /// </summary>
     private void AddEndScreenMessage(List<Glyph> glyphs)
     {
         var isLevelComplete = _mode == GameMode.LevelComplete;
         var isConfirmExit = _mode == GameMode.ConfirmExit;
-        var text = isConfirmExit ? "Exit game?" : isLevelComplete ? "Level Complete!" : "Game Over!";
-        var color = isConfirmExit ? ConfirmExitColor : isLevelComplete ? LevelCompleteColor : GameOverColor;
+        var text = isConfirmExit ? "Exit Game?" : isLevelComplete ? "Level Complete!" : "Game Over!";
+        var (darkColor, color, lightColor) = isConfirmExit ? (_colors.AmberDark, _colors.Amber, _colors.AmberLight)
+            : isLevelComplete ? (_colors.GreenDark, _colors.Green, _colors.GreenLight)
+            : (_colors.RedDark, _colors.Red, _colors.RedLight);
 
         var finalWidth = text.Length + 4;
         var finalHeight = 3;
@@ -710,9 +724,10 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         var level = Math.Max(0, EndScreenRippleSteps - (int)(_endScreenElapsedSeconds / EndScreenStepSeconds));
         var outermostLevel = level == 0 ? 0 : Math.Min(level + EndScreenRippleTrail - 1, EndScreenRippleSteps);
 
-        _endScreenFrame.ForeColor = color;
         for (var frameLevel = outermostLevel; frameLevel >= level; frameLevel--)
         {
+            // While rippling, the leading box is bright and the trail behind it dim; the final box uses the normal tint.
+            _endScreenFrame.ForeColor = level == 0 ? color : frameLevel == level ? lightColor : darkColor;
             _endScreenFrame.Width = finalWidth + EndScreenStepCells * frameLevel;
             _endScreenFrame.Height = finalHeight + EndScreenStepCells * frameLevel;
             _endScreenFrame.Col = Math.Floor((_viewportWidthCells - _endScreenFrame.Width) / 2);

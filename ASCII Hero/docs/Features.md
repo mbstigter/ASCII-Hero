@@ -29,7 +29,7 @@ This page is a tour of what the engine lets you build. For exact syntax, see
 - **Reusable object types.** A world can define up to 36 object types (one per code), and each
   can be placed any number of times. Every placement shares its type's tuning. Give one
   instance its own code to make it special, for example a faster enemy.
-- **Tileable pieces.** Author one small unit and use `Repeat` to build platforms and walls of any
+- **Tileable pieces.** Author one small unit and use `Span` (total length in cells) to build platforms and walls of any
   length.
 - **Materials-only objects.** Declare a `Material`, `Width` and `Height` to get a solid block
   with no sprite files.

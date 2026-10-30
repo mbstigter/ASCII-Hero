@@ -2,37 +2,38 @@ namespace ASCII_Hero.Client.Game.Assets;
 
 /// <summary>
 /// Repeats a tileable sprite frame's grids along its declared <see cref="TileAxis"/> to build up
-/// an arbitrary-length platform/wall from one small authored unit. A <see cref="TileAxis.Horizontal"/>
-/// unit (authored one cell wide) is repeated column-wise; a <see cref="TileAxis.Vertical"/> unit
-/// (authored one cell tall) is repeated row-wise.
+/// an arbitrary-length platform/wall/beam from one small authored unit (any number of cells
+/// long). A <see cref="TileAxis.Horizontal"/> unit is repeated column-wise; a
+/// <see cref="TileAxis.Vertical"/> unit is repeated row-wise. The result is exactly the requested
+/// span in cells, so a span that isn't a whole multiple of the unit ends with a partial unit.
 /// </summary>
 public static class SpriteFrameTiler
 {
     /// <summary>
-    /// Returns a new frame with the source frame's unit repeated <paramref name="count"/> times
-    /// along <paramref name="axis"/>. Returns the original frame unchanged when the axis is
-    /// <see cref="TileAxis.None"/> or count is 1 or less.
+    /// Returns a new frame whose length along <paramref name="axis"/> is exactly
+    /// <paramref name="span"/> cells, filled by repeating the source frame's unit (cell
+    /// <c>i</c> copies unit cell <c>i % unitLength</c>). Returns the original frame unchanged when
+    /// the axis is <see cref="TileAxis.None"/> or span is 0 or less (no span set).
     /// </summary>
-    public static SpriteFrame Tile(SpriteFrame frame, TileAxis axis, int count)
+    public static SpriteFrame Tile(SpriteFrame frame, TileAxis axis, int span)
     {
-        if (axis == TileAxis.None || count <= 1)
+        if (axis == TileAxis.None || span <= 0)
         {
             return frame;
         }
 
         return axis switch
         {
-            TileAxis.Horizontal => TileHorizontal(frame, count),
-            TileAxis.Vertical => TileVertical(frame, count),
+            TileAxis.Horizontal => TileHorizontal(frame, span),
+            TileAxis.Vertical => TileVertical(frame, span),
             _ => frame,
         };
     }
 
-    private static SpriteFrame TileHorizontal(SpriteFrame frame, int count)
+    private static SpriteFrame TileHorizontal(SpriteFrame frame, int width)
     {
         var unitWidth = frame.Width;
         var height = frame.Height;
-        var width = unitWidth * count;
 
         var chars = new char[height, width];
         var fore = new char[height, width];
@@ -41,45 +42,38 @@ public static class SpriteFrameTiler
 
         for (var row = 0; row < height; row++)
         {
-            for (var repeat = 0; repeat < count; repeat++)
+            for (var col = 0; col < width; col++)
             {
-                var colOffset = repeat * unitWidth;
-                for (var col = 0; col < unitWidth; col++)
-                {
-                    chars[row, colOffset + col] = frame.Chars[row, col];
-                    fore[row, colOffset + col] = frame.Fore[row, col];
-                    back[row, colOffset + col] = frame.Back[row, col];
-                    materials[row, colOffset + col] = frame.Materials[row, col];
-                }
+                var unitCol = col % unitWidth;
+                chars[row, col] = frame.Chars[row, unitCol];
+                fore[row, col] = frame.Fore[row, unitCol];
+                back[row, col] = frame.Back[row, unitCol];
+                materials[row, col] = frame.Materials[row, unitCol];
             }
         }
 
         return new SpriteFrame { Chars = chars, Fore = fore, Back = back, Materials = materials };
     }
 
-    private static SpriteFrame TileVertical(SpriteFrame frame, int count)
+    private static SpriteFrame TileVertical(SpriteFrame frame, int height)
     {
         var unitHeight = frame.Height;
         var width = frame.Width;
-        var height = unitHeight * count;
 
         var chars = new char[height, width];
         var fore = new char[height, width];
         var back = new char[height, width];
         var materials = new string?[height, width];
 
-        for (var repeat = 0; repeat < count; repeat++)
+        for (var row = 0; row < height; row++)
         {
-            var rowOffset = repeat * unitHeight;
-            for (var row = 0; row < unitHeight; row++)
+            var unitRow = row % unitHeight;
+            for (var col = 0; col < width; col++)
             {
-                for (var col = 0; col < width; col++)
-                {
-                    chars[rowOffset + row, col] = frame.Chars[row, col];
-                    fore[rowOffset + row, col] = frame.Fore[row, col];
-                    back[rowOffset + row, col] = frame.Back[row, col];
-                    materials[rowOffset + row, col] = frame.Materials[row, col];
-                }
+                chars[row, col] = frame.Chars[unitRow, col];
+                fore[row, col] = frame.Fore[unitRow, col];
+                back[row, col] = frame.Back[unitRow, col];
+                materials[row, col] = frame.Materials[unitRow, col];
             }
         }
 
