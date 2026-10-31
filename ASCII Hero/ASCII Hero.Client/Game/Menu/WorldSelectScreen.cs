@@ -57,9 +57,9 @@ public class WorldSelectScreen(IReadOnlyList<WorldSummary> worlds, int visibleSl
     /// </summary>
     public void Update(InputState input, double deltaSeconds)
     {
-        var leftPressed = input.IsLeftPressed;
-        var rightPressed = input.IsRightPressed;
-        var confirmPressed = input.IsConfirmPressed;
+        var leftPressed = input.IsLeftKeyDown;
+        var rightPressed = input.IsRightKeyDown;
+        var confirmPressed = input.IsConfirmKeyDown;
         var previousIndex = SelectedIndex;
 
         // During the opening logo animation input is ignored, so the hidden menu can't be operated.

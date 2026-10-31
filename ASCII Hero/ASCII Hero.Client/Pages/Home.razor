@@ -43,6 +43,8 @@
 
     public async ValueTask DisposeAsync()
     {
+        _gameLoop?.Stop();
+
         if (_canvasBridge is not null)
         {
             await _canvasBridge.DisposeAsync();

@@ -174,11 +174,20 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
         IsStatic = false;
     }
 
+    /// <summary>Every pose <see cref="UpdatePose"/> can resolve; a posed player sprite must declare all of them.</summary>
+    public static readonly IReadOnlyList<string> RequiredPoses = ["Walk", "Crawl", "Jump", "Climb", "Hang", "Clamber", "Swim"];
+
     /// <summary>Assigns the loaded Player sprite asset and activates its default pose/idle facing.</summary>
     public void Spawn(SpriteAsset sprite)
     {
         if (sprite.Poses is not null)
         {
+            var missingPoses = RequiredPoses.Where(pose => !sprite.Poses.ContainsKey(pose)).ToList();
+            if (missingPoses.Count > 0)
+            {
+                throw new InvalidDataException($"Player sprite '{sprite.Name}' is missing required pose(s): {string.Join(", ", missingPoses)}.");
+            }
+
             Stance = sprite.DefaultPose ?? "Walk";
             SetPose(sprite, Stance, Facing.Idle);
         }
@@ -237,7 +246,7 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
 
     /// <summary>
     /// The pose actually being shown after <see cref="UpdatePose"/> resolved it ("Walk", "Crawl",
-    /// "Jump", "Climb", "Hang", "Clamber" or "Swim"), as opposed to <see cref="Pose"/>, which only ever
+    /// "Jump", "Climb", "Hang", "Clamber" or "Swim"), as opposed to <see cref="Stance"/>, which only ever
     /// holds "Walk"/"Crawl". Used to pick the pose's own movement sound.
     /// </summary>
     public string ResolvedPose { get; private set; } = "Walk";

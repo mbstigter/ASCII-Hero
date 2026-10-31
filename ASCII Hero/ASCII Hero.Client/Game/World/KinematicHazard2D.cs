@@ -32,4 +32,7 @@ public class KinematicHazard2D : KinematicObject2D, IHazardBody, IEffectTrigger,
 
     /// <inheritdoc />
     public string? KillSoundName { get; set; }
+
+    /// <inheritdoc />
+    public double KillImpactSpeed { get; set; } = GameDefaults.DefaultKillImpactSpeed;
 }

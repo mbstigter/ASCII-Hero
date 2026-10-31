@@ -32,4 +32,7 @@ public class DynamicHazard2D : DynamicObject2D, IHazardBody, IEffectTrigger, IKi
 
     /// <inheritdoc />
     public string? KillSoundName { get; set; }
+
+    /// <inheritdoc />
+    public double KillImpactSpeed { get; set; } = GameDefaults.DefaultKillImpactSpeed;
 }

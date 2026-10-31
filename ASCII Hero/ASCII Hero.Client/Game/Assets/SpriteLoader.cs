@@ -27,7 +27,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         var defaultFrameDurationSeconds = ParseFrameDurationSeconds(settings.TryGetValue("Animation", "FrameDurationSeconds"));
         var defaultAnimationMode = ParseAnimationMode(settings.TryGetValue("Animation", "Mode"));
         var defaultDefaultFrame = ParseDefaultFrame(settings.TryGetValue("Animation", "DefaultFrame"));
-        var (poses, defaultPose) = ParsePoses(settings.Section("Poses"));
+        var (poses, defaultPose) = ParsePoses(assetName, settings.Section("Poses"));
         var clipFolders = ParseClipFolders(settings.Section("ClipFolders"));
 
         var allClipNames = new List<string>(clipNames);
@@ -68,7 +68,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             var clipFolder = ResolveClipFolder(folder, clipName, clipFolders);
 
             clips[clipName] = await LoadClipAsync(
-                clipFolder, assetName, clipName, emptyChar, defaultMaterial,
+                clipFolder, assetName, clipName, emptyChar,
                 frameDurationSeconds, animationMode, clipDefaultFrame ?? 0, effectDurationSeconds, clipTileAxis);
         }
 
@@ -84,6 +84,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
                 StringComparer.OrdinalIgnoreCase),
             DefaultForeColor = defaultForeColor,
             DefaultBackColor = defaultBackColor,
+            DefaultMaterial = defaultMaterial,
         };
     }
 
@@ -92,7 +93,6 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         string assetName,
         string clipName,
         char emptyChar,
-        string? defaultMaterial,
         double? frameDurationSeconds,
         AnimationMode animationMode,
         int defaultFrame,
@@ -123,7 +123,6 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
                 Chars = charFrames[i],
                 Fore = foreFrames[i],
                 Back = backFrames[i],
-                Materials = ResolveMaterials(charFrames[i], emptyChar, defaultMaterial),
             });
         }
 
@@ -137,31 +136,6 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             EffectDurationSeconds = effectDurationSeconds,
             TileAxis = tileAxis,
         };
-    }
-
-    private static string?[,] ResolveMaterials(
-        char[,] chars,
-        char emptyChar,
-        string? defaultMaterial)
-    {
-        var height = chars.GetLength(0);
-        var width = chars.GetLength(1);
-        var result = new string?[height, width];
-
-        for (var row = 0; row < height; row++)
-        {
-            for (var col = 0; col < width; col++)
-            {
-                if (chars[row, col] == emptyChar)
-                {
-                    continue;
-                }
-
-                result[row, col] = defaultMaterial;
-            }
-        }
-
-        return result;
     }
 
     /// <summary>
@@ -206,6 +180,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
     }
 
     private static (IReadOnlyDictionary<string, PoseDefinition>? Poses, string? DefaultPose) ParsePoses(
+        string assetName,
         IReadOnlyDictionary<string, string> posesSection)
     {
         if (posesSection.Count == 0)
@@ -260,6 +235,16 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
                 IdleClip = idleClip,
                 DirectionalClips = directionalClips,
             };
+        }
+
+        if (string.IsNullOrWhiteSpace(defaultPose))
+        {
+            throw new InvalidDataException($"Sprite '{assetName}' declares [Poses] but no Default pose.");
+        }
+
+        if (!poses.ContainsKey(defaultPose))
+        {
+            throw new InvalidDataException($"Sprite '{assetName}' [Poses] Default '{defaultPose}' is not a declared pose.");
         }
 
         return (poses, defaultPose);

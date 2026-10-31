@@ -29,6 +29,9 @@ public class CollisionSystem
     /// </summary>
     private HashSet<(Body2D Hazard, IPhysicsBody Body)> _activeHazardContacts = [];
 
+    /// <summary>Forgets hazard contacts carried between frames, so a newly loaded world starts fresh.</summary>
+    public void Reset() => _activeHazardContacts.Clear();
+
     // ---------------------------------------------------------------------------------------
     // Per-frame orchestration
     // ---------------------------------------------------------------------------------------
@@ -316,7 +319,8 @@ public class CollisionSystem
     // ---------------------------------------------------------------------------------------
 
     /// <summary>
-    /// Any <see cref="IPhysicsBody"/> overlapping any <see cref="IHazardBody"/> is a hazard hit.
+    /// Any <see cref="IPhysicsBody"/> touching any <see cref="IHazardBody"/> (see
+    /// <see cref="IsTouchingHazard"/>) is a hazard hit.
     /// Collectable pickup requires the moving side to implement <see cref="ICollectorBody"/>, so
     /// non-player bodies (e.g. the bouncing ball, hazards) never consume collectables. Killing a
     /// hazard requires the moving side to implement <see cref="IKillerBody"/>; a non-killer moving
@@ -346,64 +350,33 @@ public class CollisionSystem
 
             foreach (var hazard in hazards)
             {
-                if (ReferenceEquals(body, hazard) || !Overlaps(movingBody, hazard))
+                if (ReferenceEquals(body, hazard) || !IsTouchingHazard(movingBody, hazard))
                 {
                     continue;
                 }
 
-                // A killable hazard contacted from the top ("landed on") is a kill: it is queued
-                // for removal and its own effect (if configured) persists as a permanent husk when
-                // EffectPersists is set. Any other contact direction, or a non-killable hazard,
-                // falls through to the ordinary hazard-contact handling below. A hazard's own
-                // effect and the moving body's own effect are mutually exclusive with kill-vs-
-                // ordinary-hit: a hazard's EffectClipName is reserved for its kill reaction, while
-                // a moving body's EffectClipName (e.g. a player's hit spark) is reserved for
-                // ordinary, non-fatal hazard contact.
-                if (movingBody is IKillerBody && hazard is IKillableBody { IsKillable: true } killable && IsApproachingFromTop(movingBody, hazard))
+                // A killable hazard landed on hard enough (closing speed at or above its
+                // KillImpactSpeed) is a kill: it is queued for removal and its own effect (if
+                // configured) persists as a permanent husk when EffectPersists is set. Any other
+                // contact direction, a gentler landing, or a non-killable hazard falls through to
+                // the ordinary hazard-contact handling below. A hazard's own effect and the moving
+                // body's own effect are mutually exclusive with kill-vs-ordinary-hit: a hazard's
+                // EffectClipName is reserved for its kill reaction, while a moving body's
+                // EffectClipName (e.g. a player's hit spark) is reserved for ordinary, non-fatal
+                // hazard contact.
+                if (movingBody is IKillerBody && hazard is IKillableBody { IsKillable: true } killable && IsKillingImpact(movingBody, hazard, killable))
                 {
-                    SpawnEffectIfConfigured(hazard, world, killable.EffectPersists);
-                    world.PlaySound(killable.KillSoundName);
-                    world.QueueRemoval(hazard);
+                    InteractionHandler.OnHazardKilled(world, hazard, killable);
                     continue;
                 }
 
-                // Ordinary (non-killing) hazard contact: the moving body's own effect plays and,
-                // if the moving body is the player, 1 health is deducted - both gated to the
-                // first frame of a fresh contact so a sustained overlap doesn't repeat every frame.
-                // If that deduction is what brings health to exactly 0 (a fresh death, not an
-                // already-dead player standing in a hazard), a Death transition starts: it costs a
-                // life, and GameLoop respawns (or ends the game) once the death effect has played.
+                // Ordinary (non-killing) hazard contact: consequences are gated to the first
+                // frame of a fresh contact so a sustained contact doesn't repeat every frame.
                 var contact = (hazard, movingBody);
                 currentHazardContacts.Add(contact);
                 if (!_activeHazardContacts.Contains(contact))
                 {
-                    if (body is Player2D { Health: > 0 })
-                    {
-                        world.PlaySound(hazard.SoundName);
-                    }
-
-                    if (body is Player2D { HazardHitEffectClipName: { } hazardHitClipName })
-                    {
-                        SpawnEffect(body, hazardHitClipName, world);
-                    }
-                    else
-                    {
-                        SpawnEffectIfConfigured(body, world);
-                    }
-
-                    if (body is Player2D player && player.Health > 0)
-                    {
-                        player.Health = Math.Max(0, player.Health - ((IHazardBody)hazard).Damage);
-                        if (player.Health <= 0)
-                        {
-                            player.Lives = Math.Max(0, player.Lives - 1);
-                            world.PendingTransition = PendingTransition.Death;
-                            if (player.DiedEffectClipName is { } diedEffectClipName)
-                            {
-                                SpawnEffect(player, diedEffectClipName, world);
-                            }
-                        }
-                    }
+                    InteractionHandler.OnHazardHit(world, body, hazard);
                 }
             }
 
@@ -414,108 +387,7 @@ public class CollisionSystem
                     continue;
                 }
 
-                // Only the collectable's own effect fires here (e.g. a ring's pickup fade) -
-                // the collector side is deliberately left silent so a collector's own
-                // EffectClipName (e.g. a player's hazard-hit spark) never fires on an
-                // unrelated pickup.
-                if (collectable is not Collectable2D typedCollectable)
-                {
-                    world.PlaySound(collectable.SoundName);
-                    SpawnEffectIfConfigured(collectable, world);
-                    world.QueueRemoval(collectable);
-                    continue;
-                }
-
-                if (typedCollectable.Type is not null)
-                {
-                    world.PlaySound(typedCollectable.SoundName);
-                }
-
-                // Every variant below is removed on pickup and spawns its own effect (if
-                // configured), honoring EffectPersists the same way a killed hazard's
-                // effect can persist as a husk in the hazard's place - so any collectable
-                // variant can be turned into a permanent "used" marker via its placement's own
-                // EffectPersists key, not just Checkpoint/LevelEnd.
-                switch (typedCollectable.Type)
-                {
-                    case CollectableType.Diamond:
-                        SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
-                        world.QueueRemoval(collectable);
-                        if (movingBody is Player2D diamondPlayer)
-                        {
-                            diamondPlayer.Score += GameDefaults.DiamondScore;
-                        }
-                        break;
-
-                    case CollectableType.Ring:
-                        SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
-                        world.QueueRemoval(collectable);
-                        if (movingBody is Player2D ringPlayer)
-                        {
-                            ringPlayer.Score += GameDefaults.RingScore;
-                            ringPlayer.Rings++;
-                            if (ringPlayer.Rings >= world.RingsPerLife)
-                            {
-                                ringPlayer.Rings = 0;
-                                ringPlayer.Lives++;
-                            }
-                        }
-                        break;
-
-                    case CollectableType.Checkpoint:
-                        // Same as Diamond/Ring, but records the respawn point instead of
-                        // adjusting a player stat, and - if the collector is the player - also
-                        // plays the player's own checkpoint-reached effect clip (e.g. "checkpointreached")
-                        // as a second, independent effect.
-                        SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
-                        world.QueueRemoval(collectable);
-                        if (movingBody is Player2D checkpointPlayer)
-                        {
-                            world.RespawnPoint = collectable.Position;
-                            if (checkpointPlayer.CheckpointReachedEffectClipName is { } checkpointReachedEffectClipName)
-                            {
-                                SpawnEffect(checkpointPlayer, checkpointReachedEffectClipName, world);
-                            }
-                        }
-                        break;
-
-                    case CollectableType.LevelEnd:
-                        // Same as Diamond/Ring, but starts a LevelEnd transition instead of
-                        // adjusting a player stat: GameLoop lets the player's level-end effect and
-                        // the sound play before completing the level.
-                        SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
-                        world.QueueRemoval(collectable);
-                        if (movingBody is Player2D levelEndPlayer)
-                        {
-                            if (levelEndPlayer.LevelEndReachedEffectClipName is { } levelEndReachedEffectClipName)
-                            {
-                                SpawnEffect(levelEndPlayer, levelEndReachedEffectClipName, world);
-                            }
-
-                            world.PendingTransition = PendingTransition.LevelEnd;
-                        }
-                        break;
-
-                    case CollectableType.Key:
-                        // Only the player can carry a key, and a key needs its Lock name (see
-                        // Key2D.LockName) - without either it is left in place, inert.
-                        if (collectable is not Key2D { LockName: { Length: > 0 } keyLockName } || movingBody is not Player2D keyPlayer)
-                        {
-                            break;
-                        }
-
-                        keyPlayer.Keys.Add(keyLockName);
-                        SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
-                        world.QueueRemoval(collectable);
-                        break;
-
-                    case null:
-                        // This placement's Type key was omitted/unrecognized in {World}_objects.ini -
-                        // deliberately inert (no effect, not removed, no player state changed) so a
-                        // missing Type is visibly "broken" during testing rather than silently
-                        // behaving like some default variant.
-                        break;
-                }
+                InteractionHandler.OnCollected(world, movingBody, collectable);
             }
         }
 
@@ -523,36 +395,33 @@ public class CollisionSystem
     }
 
     /// <summary>
-    /// Spawns a cosmetic <see cref="EffectInstance2D"/> at <paramref name="body"/>'s current
-    /// position if it implements <see cref="IEffectTrigger"/> with a non-null clip name
-    /// configured; no-ops otherwise. <paramref name="persists"/> controls whether the spawned
-    /// effect remains as a permanent decorative body after its clip finishes playing (used for a
-    /// killed hazard's husk) instead of self-removing like an ordinary effect.
+    /// A solid hazard is touched when the solver resolved a contact between the two this frame -
+    /// it is never left overlapping, so overlap alone would miss a resting/sliding contact. A
+    /// passable hazard gets no resolved contact and is touched by plain overlap.
     /// </summary>
-    private static void SpawnEffectIfConfigured(Body2D body, World2D world, bool persists = false)
-    {
-        if (body is IEffectTrigger { EffectClipName: { } clipName })
-        {
-            SpawnEffect(body, clipName, world, persists);
-        }
-    }
+    private static bool IsTouchingHazard(IPhysicsBody body, Body2D hazard) =>
+        body.HasContactWith(hazard) || Overlaps(body, hazard);
 
     /// <summary>
-    /// Spawns a cosmetic <see cref="EffectInstance2D"/> playing <paramref name="clipName"/> (on
-    /// <paramref name="body"/>'s own <see cref="Body2D.Sprite"/>) at <paramref name="body"/>'s
-    /// current position - the same underlying spawn as <see cref="SpawnEffectIfConfigured"/>, but
-    /// for an explicit, call-site-chosen clip rather than a body's own single configured
-    /// <see cref="IEffectTrigger.EffectClipName"/>. Lets one body (e.g. the player) play
-    /// different effects for different situations (e.g. a hazard-hit "hurt" clip vs. a
-    /// checkpoint-reached clip) as independent, possibly-overlapping
-    /// <see cref="EffectInstance2D"/> instances, instead of being limited to one fixed,
-    /// ini-configured clip.
+    /// Whether <paramref name="body"/> landed on top of <paramref name="hazard"/> at a closing
+    /// speed of at least its <see cref="IKillableBody.KillImpactSpeed"/>. A solid hazard uses the
+    /// resolved top contact and its recorded impact speed; a passable hazard uses the overlap
+    /// direction and the body's downward speed relative to the hazard.
     /// </summary>
-    private static void SpawnEffect(Body2D body, string clipName, World2D world, bool persists = false)
+    private static bool IsKillingImpact(IPhysicsBody body, Body2D hazard, IKillableBody killable)
     {
-        var effect = new EffectInstance2D();
-        effect.Spawn(body.Sprite, clipName, body.Position, persists);
-        world.Objects.Add(effect);
+        if (body.GetContactingBodies(ContactType.SurfaceBottom).Contains(hazard))
+        {
+            return body.GetContactImpactSpeed(hazard) >= killable.KillImpactSpeed;
+        }
+
+        if (body.HasContactWith(hazard) || !IsApproachingFromTop(body, hazard))
+        {
+            return false;
+        }
+
+        var hazardVelocityY = hazard is IPhysicsBody movingHazard ? movingHazard.Velocity.Y : 0.0;
+        return body.Velocity.Y - hazardVelocityY >= killable.KillImpactSpeed;
     }
 
     private static bool Overlaps(IPhysicsBody a, Body2D b)
@@ -932,11 +801,11 @@ public class CollisionSystem
             ((Body2D)other).UndoFrictionDisplacement(tangent.X * tangentialDelta * otherShare);
         }
 
-        RecordContact(body, otherContactTarget, contact.Normal);
+        RecordContact(body, otherContactTarget, contact.Normal, -normalRelativeSpeed);
     }
 
     /// <summary>
-    /// Whether <paramref name="body"/> is the player moving by foot (walking/crawling), whose
+    /// Whether <paramref name="body"/> is the player
     /// ground friction is already its traction-limited walk force - see
     /// <see cref="World.Player2D.UsesFeetLocomotion"/>.
     /// </summary>
@@ -949,29 +818,30 @@ public class CollisionSystem
     /// <paramref name="normal"/>'s sign - e.g. <paramref name="normal"/> pointing up
     /// (<c>(0, -1)</c>, body moves up to separate) means <paramref name="other"/> is below
     /// <paramref name="body"/>: <see cref="ContactType.SurfaceBottom"/> on <paramref name="body"/>,
-    /// <see cref="ContactType.SurfaceTop"/> on <paramref name="other"/>.
+    /// <see cref="ContactType.SurfaceTop"/> on <paramref name="other"/>. Both sides also record
+    /// <paramref name="impactSpeed"/>, the pre-response closing speed along the normal.
     /// </summary>
-    private static void RecordContact(IPhysicsBody body, Body2D other, Vector2D normal)
+    private static void RecordContact(IPhysicsBody body, Body2D other, Vector2D normal, double impactSpeed = 0.0)
     {
         if (normal.Y < 0)
         {
-            body.AddContact(ContactType.SurfaceBottom, other);
-            other.AddContact(ContactType.SurfaceTop, (Body2D)body);
+            body.AddContact(ContactType.SurfaceBottom, other, impactSpeed);
+            other.AddContact(ContactType.SurfaceTop, (Body2D)body, impactSpeed);
         }
         else if (normal.Y > 0)
         {
-            body.AddContact(ContactType.SurfaceTop, other);
-            other.AddContact(ContactType.SurfaceBottom, (Body2D)body);
+            body.AddContact(ContactType.SurfaceTop, other, impactSpeed);
+            other.AddContact(ContactType.SurfaceBottom, (Body2D)body, impactSpeed);
         }
         else if (normal.X < 0)
         {
-            body.AddContact(ContactType.SurfaceRight, other);
-            other.AddContact(ContactType.SurfaceLeft, (Body2D)body);
+            body.AddContact(ContactType.SurfaceRight, other, impactSpeed);
+            other.AddContact(ContactType.SurfaceLeft, (Body2D)body, impactSpeed);
         }
         else if (normal.X > 0)
         {
-            body.AddContact(ContactType.SurfaceLeft, other);
-            other.AddContact(ContactType.SurfaceRight, (Body2D)body);
+            body.AddContact(ContactType.SurfaceLeft, other, impactSpeed);
+            other.AddContact(ContactType.SurfaceRight, (Body2D)body, impactSpeed);
         }
     }
 

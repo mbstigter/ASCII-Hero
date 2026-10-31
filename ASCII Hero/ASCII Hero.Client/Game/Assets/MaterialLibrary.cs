@@ -49,7 +49,7 @@ public readonly record struct Material(
 /// MaterialLibrary.ini: world entries override same-named sections, sections only defined
 /// globally still apply). Maps a material name (as found in a sprite's <c>DefaultMaterial</c>
 /// setting, resolved
-/// by <see cref="SpriteLoader"/> into <see cref="SpriteFrame.Materials"/>) to its physical
+/// by <see cref="SpriteLoader"/> into <see cref="SpriteAsset.DefaultMaterial"/>) to its physical
 /// properties. Loading/merging is handled by the shared <see cref="IniOverrideLoader"/>.
 /// </summary>
 public class MaterialLibrary
@@ -92,10 +92,10 @@ public class MaterialLibrary
         foreach (var sectionName in ini.SectionNames)
         {
             var section = ini.Section(sectionName);
-            var density = IniValueParser.ParseDouble(section.GetValueOrDefault("Density"));
-            var friction = IniValueParser.ParseDouble(section.GetValueOrDefault("Friction"));
-            var restitution = IniValueParser.ParseDouble(section.GetValueOrDefault("Restitution"));
-            var viscosity = IniValueParser.ParseDouble(section.GetValueOrDefault("Viscosity"));
+            var density = IniValueParser.ParseDoubleOrDefault(section.GetValueOrDefault("Density"));
+            var friction = IniValueParser.ParseDoubleOrDefault(section.GetValueOrDefault("Friction"));
+            var restitution = IniValueParser.ParseDoubleOrDefault(section.GetValueOrDefault("Restitution"));
+            var viscosity = IniValueParser.ParseDoubleOrDefault(section.GetValueOrDefault("Viscosity"));
             var hardness = section.TryGetValue("Hardness", out var hardnessText) && IniValueParser.TryParseDouble(hardnessText, out var parsedHardness) && parsedHardness > 0
                 ? parsedHardness
                 : 1.0;

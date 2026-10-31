@@ -26,4 +26,12 @@ public interface IKillableBody
     /// <see cref="Body2D.SoundName"/>. Null means silent.
     /// </summary>
     string? KillSoundName { get; }
+
+    /// <summary>
+    /// Minimum downward closing speed (cells/second) at which landing on this hazard kills it,
+    /// from the placement's <c>KillImpactSpeed</c> key (default
+    /// <see cref="Constants.GameDefaults.DefaultKillImpactSpeed"/>). A gentler touch from above is
+    /// an ordinary hazard hit.
+    /// </summary>
+    double KillImpactSpeed { get; }
 }

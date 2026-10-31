@@ -854,7 +854,12 @@ its own schedule, with no separate "diagonal mode" needed:
 - `PatrolMinX`/`PatrolMaxX` (world-space X, in cells) bound horizontal
   patrol, `PatrolMinY`/`PatrolMaxY` (world-space Y, in cells) vertical patrol.
   Setting either bound of an axis patrols that axis; a missing bound defaults
-  to that edge of the world.
+  to that edge of the world. Bounds must be numbers of 0 or more, and an
+  axis's minimum may not exceed its maximum (equal bounds hold that position).
+  Patrol speeds and force multipliers must also be numbers of 0 or more; a
+  maximum patrol force may additionally be `Infinity` (no cap). An unreadable
+  or out-of-range patrol value stops the world from loading with an error
+  naming the section.
 - Setting any patrol bound also switches patrol on, so `Patrol = true` is only
   needed when no bound is given. `Patrol = false` keeps the object still even
   when bounds are set.
@@ -1147,6 +1152,13 @@ Sound = RingPickup    ; Played when the player picks it up
 full health bar one hit removes (default 1, a whole bar, so the player loses a
 life at once). For example `Damage = 0.2` takes a fifth of the bar and
 `Damage = 0.5` half of it. A hit costing the last of the bar costs one life.
+
+**`KillImpactSpeed` on killable hazards.** Optional, on any `*Hazard`
+placement with `Killable = true`: the minimum downward speed (cells per
+second, relative to the hazard) at which the player landing on top squashes
+it (default 5). A gentler touch from above - stepping or resting onto it - is
+an ordinary hit instead. For example `KillImpactSpeed = 0` makes any touch
+from above a squash, even standing on it; a high value requires a long fall.
 
 The `Player` section may additionally override its own "muscle power" and
 target speeds, the same "force gain converging toward a target speed" concept

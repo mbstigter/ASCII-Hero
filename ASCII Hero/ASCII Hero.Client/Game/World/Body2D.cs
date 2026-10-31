@@ -20,223 +20,6 @@ public abstract class Body2D
     private int _animationDirection = 1;
     private int _span;
 
-    /// <summary>
-    /// This frame's resolved contacts, keyed by <see cref="Physics.ContactType"/> flag with the
-    /// set of other bodies contacted for that flag (e.g. <see cref="Physics.ContactType.SurfaceBottom"/>
-    /// maps to whichever solid(s) this body is currently resting on). Rebuilt from scratch every
-    /// frame by <see cref="Physics.CollisionSystem"/> as contacts are resolved - never mutated by
-    /// any other system, and never carried forward as "still true until told otherwise": a stale
-    /// entry from a contact that stopped applying is removed the same frame, not left to linger.
-    /// See docs/Decisions.md for why contacts are recorded per side rather than inferred from
-    /// overlap depth alone, and why <see cref="IPhysicsBody.IsGrounded"/> is derived from them.
-    /// </summary>
-    private readonly Dictionary<Physics.ContactType, List<Body2D>> _contacts = [];
-
-    /// <summary>
-    /// A read-only snapshot of <see cref="_contacts"/> as it stood at the end of the *previous*
-    /// frame, taken by <see cref="SnapshotContactsForNextFrame"/> right before this frame's
-    /// contacts are cleared and rebuilt. Used purely to disambiguate direction/approach (e.g. "was
-    /// a moving platform already remembered as what this body rests on" for vertical/horizontal
-    /// carry)
-    /// resolved fresh.
-    /// </summary>
-    private IReadOnlyDictionary<Physics.ContactType, List<Body2D>> _previousContacts =
-        new Dictionary<Physics.ContactType, List<Body2D>>();
-
-    /// <summary>
-    /// Whether this body's current-frame contacts include the given <paramref name="type"/> with
-    /// any other body at all (an OR across every set flag if <paramref name="type"/> is a
-    /// combination). The single source of truth other systems should query instead of reading a
-    /// separately maintained flag - e.g. <see cref="IPhysicsBody.IsGrounded"/> is simply
-    /// <c>HasContact(ContactType.SurfaceBottom)</c>.
-    /// </summary>
-    public bool HasContact(Physics.ContactType type)
-    {
-        foreach (var flag in EnumerateFlags(type))
-        {
-            if (_contacts.TryGetValue(flag, out var bodies) && bodies.Count > 0)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>
-    /// Whether this body's contacts *as of the end of last frame* included the given
-    /// <paramref name="type"/> with <paramref name="other"/> specifically (or with anything, if
-    /// <paramref name="other"/> is null). Used only for direction/approach disambiguation - see
-    /// <see cref="_previousContacts"/>.
-    /// </summary>
-    public bool HadContactLastFrame(Physics.ContactType type, Body2D? other = null)
-    {
-        foreach (var flag in EnumerateFlags(type))
-        {
-            if (!_previousContacts.TryGetValue(flag, out var bodies))
-            {
-                continue;
-            }
-
-            if (other is null ? bodies.Count > 0 : bodies.Contains(other))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>The other bodies currently contacted for the given single <paramref name="type"/> flag, or empty if none.</summary>
-    public IReadOnlyList<Body2D> GetContactingBodies(Physics.ContactType type) =>
-        _contacts.TryGetValue(type, out var bodies) ? bodies : [];
-
-    /// <summary>
-    /// Removes a recorded contact for the given (single-flag) <paramref name="type"/> - either
-    /// just with <paramref name="other"/>, or every body recorded for that flag if
-    /// <paramref name="other"/> is null. Used sparingly, only when a system needs this frame's
-    /// derived state (e.g. <see cref="IsGrounded"/>) to reflect a change immediately rather than
-    /// waiting for the next frame's contact resolution - e.g. <see cref="Physics.PhysicsSystem"/>
-    /// clearing a just-jumped player's <see cref="Physics.ContactType.SurfaceBottom"/> contact so
-    /// its pose immediately shows airborne instead of grounded for the one frame before collision
-    /// re-resolves. This is still just editing this frame's contact set, not reintroducing a
-    /// separately mutable flag.
-    /// </summary>
-    public void RemoveContact(Physics.ContactType type, Body2D? other = null)
-    {
-        if (!_contacts.TryGetValue(type, out var bodies))
-        {
-            return;
-        }
-
-        if (other is null)
-        {
-            bodies.Clear();
-        }
-        else
-        {
-            bodies.Remove(other);
-        }
-    }
-
-    /// <summary>
-    /// Records that <paramref name="other"/> is contacted for the given (single-flag)
-    /// <paramref name="type"/> this frame. Called by <see cref="Physics.CollisionSystem"/> as
-    /// contacts are resolved each frame - never by a body on itself.
-    /// </summary>
-    public void AddContact(Physics.ContactType type, Body2D other)
-    {
-        if (!_contacts.TryGetValue(type, out var bodies))
-        {
-            bodies = [];
-            _contacts[type] = bodies;
-        }
-
-        if (!bodies.Contains(other))
-        {
-            bodies.Add(other);
-        }
-    }
-
-    /// <summary>
-    /// Clears every recorded contact for this frame, first preserving the current set as
-    /// "previous frame" (see <see cref="_previousContacts"/>) for the next frame's direction
-    /// disambiguation. Called once per body at the start of <see cref="Physics.CollisionSystem.Resolve"/>,
-    /// before any contact for the new frame is resolved/recorded. <paramref name="stepSeconds"/> is
-    /// the length of the (sub)step just integrated, used to turn displacement into
-    /// <see cref="ReferenceVelocityX"/> and friction velocity changes into distance.
-    /// </summary>
-    public void SnapshotContactsForNextFrame(double stepSeconds)
-    {
-        var snapshot = new Dictionary<Physics.ContactType, List<Body2D>>(_contacts.Count);
-        foreach (var (type, bodies) in _contacts)
-        {
-            snapshot[type] = [.. bodies];
-        }
-
-        _previousContacts = snapshot;
-        _contacts.Clear();
-
-        // Measured from the position recorded after the previous frame's collision pass (see
-        // MarkResolvedPosition), so it is this body's own motion over the physics step only -
-        // positional pushes from collision corrections are not mistaken for movement.
-        LastStepDisplacementX = _hasSnapshotPosition ? Position.X - _positionAtLastSnapshotX : 0.0;
-        _lastStepSeconds = stepSeconds > 0 ? stepSeconds : PhysicsConstants.FixedPhysicsStepSeconds;
-    }
-
-    /// <summary>
-    /// Records this body's position
-    /// the next step's <see cref="LastStepDisplacementX"/>.
-    /// </summary>
-    public void MarkResolvedPosition()
-    {
-        _positionAtLastSnapshotX = Position.X;
-        _hasSnapshotPosition = true;
-    }
-
-    private double _positionAtLastSnapshotX;
-    private bool _hasSnapshotPosition;
-    private double _lastStepSeconds = PhysicsConstants.FixedPhysicsStepSeconds;
-
-    /// <summary>
-    /// Horizontal distance this body travelled during this step's force integration that contact
-    /// friction may still take back. Set by <see cref="Physics.PhysicsSystem"/> after integrating;
-    /// friction removes velocity after the body has already moved, so without undoing the matching
-    /// distance a body held by sufficient grip would still creep by one step's worth whenever it is
-    /// pushed.
-    /// </summary>
-    public double FrictionUndoBudgetX { get; set; }
-
-    /// <summary>
-    /// Takes back the distance travelled with velocity that friction just removed
-    /// (<paramref name="velocityChangeX"/>), limited to what was actually travelled this step.
-    /// </summary>
-    public void UndoFrictionDisplacement(double velocityChangeX)
-    {
-        var correction = velocityChangeX * _lastStepSeconds;
-        if (correction == 0 || Math.Sign(correction) == Math.Sign(FrictionUndoBudgetX))
-        {
-            return;
-        }
-
-        correction = Math.Sign(correction) * Math.Min(Math.Abs(correction), Math.Abs(FrictionUndoBudgetX));
-        Position = new Vector2D(Position.X + correction, Position.Y);
-        FrictionUndoBudgetX += correction;
-    }
-
-    /// <summary>How far this body moved horizontally under its own motion over the last physics step, excluding collision position corrections.</summary>
-    public double LastStepDisplacementX { get; private set; }
-
-    /// <summary>
-    /// The horizontal speed other bodies in contact with this one should be judged against (for
-    /// carry and surface friction): its actual movement over the last step, which - unlike a
-    /// finite-mass body's <see cref="IPhysicsBody.Velocity"/> - is not cancelled by the contact
-    /// response itself.
-    /// </summary>
-    public double ReferenceVelocityX => LastStepDisplacementX / _lastStepSeconds;
-
-    /// <summary>
-    /// Whether this body currently rests on something solid, be it a platform's top surface, the
-    /// world's own floor, or the top of another moving body. Derived fresh from this frame's
-    /// resolved contacts (<c>HasContact(ContactType.SurfaceBottom)</c>) rather than a stored,
-    /// mutable flag - there is nothing to reset each frame and no risk of stale state from a
-    /// missed reset/set ordering (see docs/Decisions.md). Any future hysteresis/game-feel exception (e.g. coyote-time jump
-    /// forgiveness) must be its own separately named field - never reusing this property's name
-    /// or storage.
-    /// </summary>
-    public bool IsGrounded => HasContact(Physics.ContactType.SurfaceBottom);
-
-    private static IEnumerable<Physics.ContactType> EnumerateFlags(Physics.ContactType type)
-    {
-        foreach (Physics.ContactType flag in Enum.GetValues<Physics.ContactType>())
-        {
-            if (flag != Physics.ContactType.None && type.HasFlag(flag))
-            {
-                yield return flag;
-            }
-        }
-    }
-
     /// <summary>Position of the body's top-left corner, in world cells (not pixels).</summary>
     public Vector2D Position { get; set; }
 
@@ -259,8 +42,8 @@ public abstract class Body2D
     /// <summary>
     /// This frame's raw horizontal move/patrol intent (-1 = left, 0 = none/holding position,
     /// +1 = right), owned and set by whatever drives this body's own movement decisions - the
-    /// player's input (<see cref="Player2D"/>, from <c>InputState.IsLeftPressed</c>/
-    /// <c>IsRightPressed</c>) or an AI's patrol direction (<see cref="DynamicHazard2D"/>, from its
+    /// player's input (<see cref="Player2D"/>, from <c>InputState.IsLeftKeyDown</c>/
+    /// <c>IsRightKeyDown</c>) or an AI's patrol direction (<see cref="DynamicHazard2D"/>, from its
     /// own patrol-direction flag) - and read generically by <see cref="ResolveHorizontalFacing()"/>.
     /// Deliberately independent of <see cref="IPhysicsBody.Velocity"/>: velocity is downstream of
     /// physics (platform carry, residual momentum, impulses) and is not a reliable proxy for
@@ -352,14 +135,10 @@ public abstract class Body2D
     public SpriteAsset Sprite { get; private set; } = null!;
 
     /// <summary>
-    /// The dominant material name found among the active frame's non-empty cells (see
-    /// <see cref="Assets.SpriteFrame.Materials"/>) - the single most common resolved material
-    /// name across the frame's cells, or null if the frame has no material data at all. Recomputed
-    /// whenever <see cref="ApplyFrame"/> runs (spawn, or a later frame/clip switch). A frame
-    /// authored from a mix of materials (e.g. a composite sprite) is deliberately reduced to one
-    /// representative name rather than tracked per-cell for collision purposes - simplest rule
-    /// that still lets every existing single-material asset resolve exactly as authored; revisit
-    /// only if a concrete asset genuinely needs per-cell-granular collision response.
+    /// This body's material name: its placement's <c>Material</c> if set, otherwise its sprite's
+    /// <see cref="Assets.SpriteAsset.DefaultMaterial"/>. Set once at spawn (the first
+    /// <see cref="SetFrame"/>, then overridden by the placement) and never changed by later
+    /// frame, clip or pose switches. Null if neither names a material.
     /// </summary>
     public string? MaterialName { get; set; }
 
@@ -501,6 +280,7 @@ public abstract class Body2D
     protected void SetFrame(SpriteAsset sprite, string clipName, int frameIndex = 0, int span = 0)
     {
         Sprite = sprite;
+        MaterialName ??= sprite.DefaultMaterial;
         Clip = sprite.GetClip(clipName);
         _animationFrameIndex = frameIndex;
         _span = span;
@@ -579,15 +359,21 @@ public abstract class Body2D
     /// docs/AssetFormat.md §2.6), re-deriving Size and collision rectangles from that clip's
     /// active frame exactly like <see cref="SetFrame"/> - a pose with a different silhouette
     /// (e.g. a shorter "Crawl" pose) is picked up automatically, with no separate pre-transition
-    /// collision check required. No-ops if <paramref name="sprite"/> declares no matching pose
-    /// (preserving single-clip behavior for assets without <c>[Poses]</c>), or if the resolved
-    /// clip is already active (avoiding resetting that clip's own animation timer every call).
+    /// collision check required. No-ops if <paramref name="sprite"/> has no <c>[Poses]</c> at all
+    /// (preserving single-clip behavior), or if the resolved clip is already active (avoiding
+    /// resetting that clip's own animation timer every call). Throws if the sprite has poses but
+    /// not the requested one.
     /// </summary>
     public void SetPose(SpriteAsset sprite, string pose, Facing facing)
     {
-        if (sprite.Poses is null || !sprite.Poses.TryGetValue(pose, out var poseDef))
+        if (sprite.Poses is null)
         {
             return;
+        }
+
+        if (!sprite.Poses.TryGetValue(pose, out var poseDef))
+        {
+            throw new InvalidOperationException($"Sprite '{sprite.Name}' declares no '{pose}' pose.");
         }
 
         var clipName = poseDef.GetClipName(facing);
@@ -694,51 +480,246 @@ public abstract class Body2D
         Frame = SpriteFrameTiler.Tile(sourceFrame, Clip.TileAxis, _span);
         Size = new Vector2D(Frame.Width, Frame.Height);
         _localCollisionRects = CollisionShapeBuilder.DeriveRectangles(Frame.Chars, Sprite.EmptyChar);
-        MaterialName = ResolveDominantMaterial(Frame.Materials);
     }
 
     /// <summary>
-    /// Reduces a frame's per-cell material grid to one representative name: the most common
-    /// non-null value among its cells, ties broken by first-encountered (row-major) order for a
-    /// stable, deterministic result. Returns null if every cell is null (no material data at all,
-    /// e.g. an asset with no <c>DefaultMaterial</c>).
+    /// This frame's resolved contacts, keyed by <see cref="Physics.ContactType"/> flag with the
+    /// set of other bodies contacted for that flag (e.g. <see cref="Physics.ContactType.SurfaceBottom"/>
+    /// maps to whichever solid(s) this body is currently resting on). Rebuilt from scratch every
+    /// frame by <see cref="Physics.CollisionSystem"/> as contacts are resolved - never mutated by
+    /// any other system, and never carried forward as "still true until told otherwise": a stale
+    /// entry from a contact that stopped applying is removed the same frame, not left to linger.
+    /// See docs/Decisions.md for why contacts are recorded per side rather than inferred from
+    /// overlap depth alone, and why <see cref="IPhysicsBody.IsGrounded"/> is derived from them.
     /// </summary>
-    private static string? ResolveDominantMaterial(string?[,] materials)
+    private readonly Dictionary<Physics.ContactType, List<Body2D>> _contacts = [];
+
+    /// <summary>
+    /// A read-only snapshot of <see cref="_contacts"/> as it stood at the end of the *previous*
+    /// frame, taken by <see cref="SnapshotContactsForNextFrame"/> right before this frame's
+    /// contacts are cleared and rebuilt. Used purely to disambiguate direction/approach (e.g. "was
+    /// a moving platform already remembered as what this body rests on" for vertical/horizontal
+    /// carry); this frame's contacts themselves are always
+    /// resolved fresh.
+    /// </summary>
+    private IReadOnlyDictionary<Physics.ContactType, List<Body2D>> _previousContacts =
+        new Dictionary<Physics.ContactType, List<Body2D>>();
+
+    /// <summary>
+    /// This frame's highest closing (approach) speed along the contact normal per contacted body,
+    /// in cells/second, measured before the collision response. Cleared together with
+    /// <see cref="_contacts"/>; see <see cref="GetContactImpactSpeed"/>.
+    /// </summary>
+    private readonly Dictionary<Body2D, double> _contactImpactSpeeds = [];
+
+    /// <summary>
+    /// Whether this body's current-frame contacts include the given <paramref name="type"/> with
+    /// any other body at all (an OR across every set flag if <paramref name="type"/> is a
+    /// combination). The single source of truth other systems should query instead of reading a
+    /// separately maintained flag - e.g. <see cref="IPhysicsBody.IsGrounded"/> is simply
+    /// <c>HasContact(ContactType.SurfaceBottom)</c>.
+    /// </summary>
+    public bool HasContact(Physics.ContactType type)
     {
-        var counts = new Dictionary<string, int>();
-        var height = materials.GetLength(0);
-        var width = materials.GetLength(1);
-
-        for (var row = 0; row < height; row++)
+        foreach (var flag in EnumerateFlags(type))
         {
-            for (var col = 0; col < width; col++)
+            if (_contacts.TryGetValue(flag, out var bodies) && bodies.Count > 0)
             {
-                var name = materials[row, col];
-                if (name is null)
-                {
-                    continue;
-                }
-
-                counts[name] = counts.GetValueOrDefault(name) + 1;
+                return true;
             }
         }
 
-        if (counts.Count == 0)
-        {
-            return null;
-        }
+        return false;
+    }
 
-        var best = default(KeyValuePair<string, int>);
-        var bestCount = -1;
-        foreach (var entry in counts)
+    /// <summary>
+    /// Whether this body's contacts *as of the end of last frame* included the given
+    /// <paramref name="type"/> with <paramref name="other"/> specifically (or with anything, if
+    /// <paramref name="other"/> is null). Used only for direction/approach disambiguation - see
+    /// <see cref="_previousContacts"/>.
+    /// </summary>
+    public bool HadContactLastFrame(Physics.ContactType type, Body2D? other = null)
+    {
+        foreach (var flag in EnumerateFlags(type))
         {
-            if (entry.Value > bestCount)
+            if (!_previousContacts.TryGetValue(flag, out var bodies))
             {
-                best = entry;
-                bestCount = entry.Value;
+                continue;
+            }
+
+            if (other is null ? bodies.Count > 0 : bodies.Contains(other))
+            {
+                return true;
             }
         }
 
-        return best.Key;
+        return false;
+    }
+
+    /// <summary>The other bodies currently contacted for the given single <paramref name="type"/> flag, or empty if none.</summary>
+    public IReadOnlyList<Body2D> GetContactingBodies(Physics.ContactType type) =>
+        _contacts.TryGetValue(type, out var bodies) ? bodies : [];
+
+    /// <summary>
+    /// Removes a recorded contact for the given (single-flag) <paramref name="type"/> - either
+    /// just with <paramref name="other"/>, or every body recorded for that flag if
+    /// <paramref name="other"/> is null. Used sparingly, only when a system needs this frame's
+    /// derived state (e.g. <see cref="IsGrounded"/>) to reflect a change immediately rather than
+    /// waiting for the next frame's contact resolution - e.g. <see cref="Physics.PhysicsSystem"/>
+    /// clearing a just-jumped player's <see cref="Physics.ContactType.SurfaceBottom"/> contact so
+    /// its pose immediately shows airborne instead of grounded for the one frame before collision
+    /// re-resolves. This is still just editing this frame's contact set, not reintroducing a
+    /// separately mutable flag.
+    /// </summary>
+    public void RemoveContact(Physics.ContactType type, Body2D? other = null)
+    {
+        if (!_contacts.TryGetValue(type, out var bodies))
+        {
+            return;
+        }
+
+        if (other is null)
+        {
+            bodies.Clear();
+        }
+        else
+        {
+            bodies.Remove(other);
+        }
+    }
+
+    /// <summary>
+    /// Records that <paramref name="other"/> is contacted for the given (single-flag)
+    /// <paramref name="type"/> this frame, at the given closing <paramref name="impactSpeed"/>
+    /// (see <see cref="GetContactImpactSpeed"/>). Called by <see cref="Physics.CollisionSystem"/> as
+    /// contacts are resolved each frame - never by a body on itself.
+    /// </summary>
+    public void AddContact(Physics.ContactType type, Body2D other, double impactSpeed = 0.0)
+    {
+        if (impactSpeed > GetContactImpactSpeed(other))
+        {
+            _contactImpactSpeeds[other] = impactSpeed;
+        }
+
+        if (!_contacts.TryGetValue(type, out var bodies))
+        {
+            bodies = [];
+            _contacts[type] = bodies;
+        }
+
+        if (!bodies.Contains(other))
+        {
+            bodies.Add(other);
+        }
+    }
+
+    /// <summary>
+    /// The highest speed (cells/second) at which this body and <paramref name="other"/> were
+    /// closing in on each other along the contact normal when a contact between them was resolved
+    /// this frame - 0 for a resting or separating contact, or no contact at all.
+    /// </summary>
+    public double GetContactImpactSpeed(Body2D other) => _contactImpactSpeeds.GetValueOrDefault(other);
+
+    /// <summary>Whether any of this body's current-frame contacts, of any type, is with <paramref name="other"/>.</summary>
+    public bool HasContactWith(Body2D other) => _contacts.Values.Any(bodies => bodies.Contains(other));
+
+    /// <summary>
+    /// Clears every recorded contact for this frame, first
+    /// "previous frame" (see <see cref="_previousContacts"/>) for the next frame's direction
+    /// disambiguation. Called once per body at the start of <see cref="Physics.CollisionSystem.Resolve"/>,
+    /// before any contact for the new frame is resolved/recorded. <paramref name="stepSeconds"/> is
+    /// the length of the (sub)step just integrated, used to turn displacement into
+    /// <see cref="ReferenceVelocityX"/> and friction velocity changes into distance.
+    /// </summary>
+    public void SnapshotContactsForNextFrame(double stepSeconds)
+    {
+        var snapshot = new Dictionary<Physics.ContactType, List<Body2D>>(_contacts.Count);
+        foreach (var (type, bodies) in _contacts)
+        {
+            snapshot[type] = [.. bodies];
+        }
+
+        _previousContacts = snapshot;
+        _contacts.Clear();
+        _contactImpactSpeeds.Clear();
+
+        // Measured
+        // MarkResolvedPosition), so it is this body's own motion over the physics step only -
+        // positional pushes from collision corrections are not mistaken for movement.
+        LastStepDisplacementX = _hasSnapshotPosition ? Position.X - _positionAtLastSnapshotX : 0.0;
+        _lastStepSeconds = stepSeconds > 0 ? stepSeconds : PhysicsConstants.FixedPhysicsStepSeconds;
+    }
+
+    /// <summary>
+    /// Records this body's position after the collision pass, as the starting point for measuring
+    /// the next step's <see cref="LastStepDisplacementX"/>.
+    /// </summary>
+    public void MarkResolvedPosition()
+    {
+        _positionAtLastSnapshotX = Position.X;
+        _hasSnapshotPosition = true;
+    }
+
+    private double _positionAtLastSnapshotX;
+    private bool _hasSnapshotPosition;
+    private double _lastStepSeconds = PhysicsConstants.FixedPhysicsStepSeconds;
+
+    /// <summary>
+    /// Horizontal distance this body travelled during this step's force integration that contact
+    /// friction may still take back. Set by <see cref="Physics.PhysicsSystem"/> after integrating;
+    /// friction removes velocity after the body has already moved, so without undoing the matching
+    /// distance a body held by sufficient grip would still creep by one step's worth whenever it is
+    /// pushed.
+    /// </summary>
+    public double FrictionUndoBudgetX { get; set; }
+
+    /// <summary>
+    /// Takes back the distance travelled with velocity that friction just removed
+    /// (<paramref name="velocityChangeX"/>), limited to what was actually travelled this step.
+    /// </summary>
+    public void UndoFrictionDisplacement(double velocityChangeX)
+    {
+        var correction = velocityChangeX * _lastStepSeconds;
+        if (correction == 0 || Math.Sign(correction) == Math.Sign(FrictionUndoBudgetX))
+        {
+            return;
+        }
+
+        correction = Math.Sign(correction) * Math.Min(Math.Abs(correction), Math.Abs(FrictionUndoBudgetX));
+        Position = new Vector2D(Position.X + correction, Position.Y);
+        FrictionUndoBudgetX += correction;
+    }
+
+    /// <summary>How far this body moved horizontally under its own motion over the last physics step, excluding collision position corrections.</summary>
+    public double LastStepDisplacementX { get; private set; }
+
+    /// <summary>
+    /// The horizontal speed other bodies in contact with this one should be judged against (for
+    /// carry and surface friction): its actual movement over the last step, which - unlike a
+    /// finite-mass body's <see cref="IPhysicsBody.Velocity"/> - is not cancelled by the contact
+    /// response itself.
+    /// </summary>
+    public double ReferenceVelocityX => LastStepDisplacementX / _lastStepSeconds;
+
+    /// <summary>
+    /// Whether this body currently rests on something solid, be it a platform's top surface, the
+    /// world's own floor, or the top of another moving body. Derived fresh from this frame's
+    /// resolved contacts (<c>HasContact(ContactType.SurfaceBottom)</c>) rather than a stored,
+    /// mutable flag - there is nothing to reset each frame and no risk of stale state from a
+    /// missed reset/set ordering (see docs/Decisions.md). Any future hysteresis/game-feel exception (e.g. coyote-time jump
+    /// forgiveness) must be its own separately named field - never reusing this property's name
+    /// or storage.
+    /// </summary>
+    public bool IsGrounded => HasContact(Physics.ContactType.SurfaceBottom);
+
+    private static IEnumerable<Physics.ContactType> EnumerateFlags(Physics.ContactType type)
+    {
+        foreach (Physics.ContactType flag in Enum.GetValues<Physics.ContactType>())
+        {
+            if (flag != Physics.ContactType.None && type.HasFlag(flag))
+            {
+                yield return flag;
+            }
+        }
     }
 }

@@ -12,11 +12,12 @@ let ctx = null;
 let dotNetRef = null;
 let rafHandle = null;
 let lastTimestamp = null;
-// Keydown/keyup listeners are stored (rather than passed as inline arrow functions) so dispose()
+// Window listeners are stored (rather than passed as inline arrow functions) so dispose()
 // can remove the exact same function instances that were added - removeEventListener is a no-op
 // unless given a reference equal to the one originally passed to addEventListener.
 let keydownHandler = null;
 let keyupHandler = null;
+let pointerdownHandler = null;
 
 export async function initialize(canvasElementId, dotNetObjectRef, fontFamily, viewportColumns, viewportRows, fontWidthPixels, fontHeightPixels) {
     const canvas = document.getElementById(canvasElementId);
@@ -35,7 +36,8 @@ export async function initialize(canvasElementId, dotNetObjectRef, fontFamily, v
     // whenever the player clicks anywhere on the page.
     canvas.tabIndex = -1;
     canvas.focus();
-    window.addEventListener('pointerdown', () => canvas.focus());
+    pointerdownHandler = () => canvas.focus();
+    window.addEventListener('pointerdown', pointerdownHandler);
 
     lastTimestamp = null;
     rafHandle = window.requestAnimationFrame(onAnimationFrame);
@@ -110,9 +112,15 @@ export function dispose() {
     }
     if (keydownHandler) {
         window.removeEventListener('keydown', keydownHandler);
+        keydownHandler = null;
     }
     if (keyupHandler) {
         window.removeEventListener('keyup', keyupHandler);
+        keyupHandler = null;
+    }
+    if (pointerdownHandler) {
+        window.removeEventListener('pointerdown', pointerdownHandler);
+        pointerdownHandler = null;
     }
     ctx = null;
     dotNetRef = null;

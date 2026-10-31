@@ -9,50 +9,50 @@ public class InputState
 
     public void KeyUp(string code) => _pressedKeys.Remove(code);
 
-    public bool IsPressed(string code) => _pressedKeys.Contains(code);
+    public bool IsKeyDown(string code) => _pressedKeys.Contains(code);
 
-    public bool IsLeftPressed => IsPressed("ArrowLeft") || IsPressed("KeyA");
+    public bool IsLeftKeyDown => IsKeyDown("ArrowLeft") || IsKeyDown("KeyA");
 
-    public bool IsRightPressed => IsPressed("ArrowRight") || IsPressed("KeyD");
+    public bool IsRightKeyDown => IsKeyDown("ArrowRight") || IsKeyDown("KeyD");
 
     /// <summary>Directional up - posture/direction input only (ladder climb, hang-crawl pull-up,
-    /// ground stand-up). Deliberately never includes jump keys - see <see cref="IsJumpPressed"/>.
+    /// ground stand-up). Deliberately never includes jump keys - see <see cref="IsJumpKeyDown"/>.
     /// "Player 1" (arrow keys) and "Player 2" (WASD) each have their own physically-separate up
     /// key, mirrored by their own separate jump key below, rather than sharing one.</summary>
-    public bool IsUpPressed => IsPressed("ArrowUp") || IsPressed("KeyW");
+    public bool IsUpKeyDown => IsKeyDown("ArrowUp") || IsKeyDown("KeyW");
 
-    public bool IsDownPressed => IsPressed("ArrowDown") || IsPressed("KeyS");
+    public bool IsDownKeyDown => IsKeyDown("ArrowDown") || IsKeyDown("KeyS");
 
     /// <summary>Explicit jump/action input - always its own dedicated key, never doubling as
-    /// <see cref="IsUpPressed"/> (unlike some platformers' convention of treating them as
+    /// <see cref="IsUpKeyDown"/> (unlike some platformers' convention of treating them as
     /// equivalent), so contexts needing both a directional "up" and a separate "action" input at
     /// the same time (e.g. the hang pose ladder: Up pulls into Clamber, Jump swings/jumps
     /// off) can always tell them apart - including on the ground, where Up alone no longer jumps.
     /// "Player 1" (arrow keys) uses <c>Space</c>; "Player 2" (WASD) uses <c>ControlLeft</c> as its
     /// own equivalent jump key, positioned next to WASD the same way Space sits next to the arrow
     /// keys.</summary>
-    public bool IsJumpPressed => IsPressed("Space") || IsPressed("ControlLeft");
+    public bool IsJumpKeyDown => IsKeyDown("Space") || IsKeyDown("ControlLeft");
 
     /// <summary>Escape - asks to exit the current world (confirm with a confirm key, cancel with Escape
     /// again). See docs/Decisions.md.</summary>
-    public bool IsEscapePressed => IsPressed("Escape");
+    public bool IsEscapeKeyDown => IsKeyDown("Escape");
 
     /// <summary>The "action" input (opens a gate the player holds the key for, or operates a nearby
     /// button/lever). "Player 1" (arrow
     /// keys) uses <c>Enter</c>; "Player 2" (WASD) uses <c>E</c>. Distinct from jump and directional
     /// input.</summary>
-    public bool IsActionPressed => IsPressed("Enter") || IsPressed("KeyE");
+    public bool IsActionKeyDown => IsKeyDown("Enter") || IsKeyDown("KeyE");
 
     /// <summary>Selecting/confirming in menus, the end screens and the exit confirmation: any of the
     /// action keys (Enter, E) or jump keys (Space, Left Control), so whichever hand position the player
     /// is in works.</summary>
-    public bool IsConfirmPressed => IsActionPressed || IsJumpPressed;
+    public bool IsConfirmKeyDown => IsActionKeyDown || IsJumpKeyDown;
 
     /// <summary>Dev/testing shortcut - toggles the FPS debug overlay (see
     /// <see cref="GameLoop.OnFrame"/>). "F" is otherwise unused by any gameplay input.</summary>
-    public bool IsFpsToggleKeyPressed => IsPressed("KeyF");
+    public bool IsFpsToggleKeyDown => IsKeyDown("KeyF");
 
     /// <summary>Dev/testing shortcut - toggles the world object-count debug overlay (see
     /// <see cref="GameLoop.OnFrame"/>). "O" is otherwise unused by any gameplay input.</summary>
-    public bool IsObjectCounterToggleKeyPressed => IsPressed("KeyO");
+    public bool IsObjectCounterToggleKeyDown => IsKeyDown("KeyO");
 }

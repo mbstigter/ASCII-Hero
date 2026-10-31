@@ -94,8 +94,9 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
 - **Flying enemies** by giving a hazard vertical force with `PatrolMaxForceY`; gravity stays on.
 - **Automatic facing.** Hazards turn to face their direction of travel and play their
   `move_left`/`move_right` clips.
-- **Stompable enemies.** A killable hazard can play a `KillSound` when the player squashes it by
-  landing on top. Its `Sound` plays instead when it hurts the player, so a single contact plays
+- **Stompable enemies.** A killable hazard is squashed when the player lands on top hard enough
+  (`KillImpactSpeed`); a gentler touch hurts instead. It can play a `KillSound` when squashed. Its
+  `Sound` plays instead when it hurts the player, so a single contact plays
   only one of the two.
 
 ## Sprites and animation

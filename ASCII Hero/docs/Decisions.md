@@ -350,6 +350,14 @@ capture the "why" behind a decision without needing a lengthy narrative.
   (see the pending-transition bullet below); the bar is refilled by the
   respawn that follows. At 0 lives the death leads to a "Game Over!" screen
   instead of a respawn.
+- **Hazard contact comes from the collision solver, not overlap.** A solid
+  hazard is never left overlapping, so `CollisionSystem` treats any resolved
+  contact this frame (`Body2D.HasContactWith`) as touching it; passable hazards
+  still use overlap. A killable hazard is squashed only when the killer lands
+  on top at a closing speed (`Body2D.GetContactImpactSpeed`, recorded before
+  the response) of at least its `KillImpactSpeed` (placement key, default
+  `GameDefaults.DefaultKillImpactSpeed`); slower top contact is an ordinary
+  hit. Any bounce off a squash is just the normal restitution response.
 - **Rings** (`CollectableType.Ring`) add one to `Player2D.Rings` and 5 to
   Score (`GameDefaults.RingScore`); they do not heal. Every `RingsPerLife` rings (`[World] RingsPerLife`,
   default 25) the count resets to 0 and a life is added. Rings survive respawn.
@@ -477,7 +485,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   target nears the viewport edge) and is always clamped to the world's own
   bounds.
 - **An FPS overlay is a dev/testing toggle, off by default** (`GameLoop._showFpsOverlay`,
-  `InputState.IsFpsToggleKeyPressed` bound to `F`), showing a smoothed
+  `InputState.IsFpsToggleKeyDown` bound to `F`), showing a smoothed
   frames-per-second reading computed from each real frame's own raw,
   unclamped elapsed time (not the fixed Physics/Collision step size), since
   the point of the overlay is to surface real frame-pacing hitches that the
@@ -486,7 +494,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   recomputed each frame from its own rendered length and stays flush with
   the top-right corner regardless of digit count.
 - **A second dev/testing overlay shows the world's live object count**
-  (`GameLoop._showObjectCounterOverlay`, `InputState.IsObjectCounterToggleKeyPressed`
+  (`GameLoop._showObjectCounterOverlay`, `InputState.IsObjectCounterToggleKeyDown`
   bound to `O`), stacked directly under the FPS overlay (same row-1 vs.
   row-0 top-right corner), displaying `World2D.Objects.Count` (e.g. "42 Obj")
   so a level author can watch the count drop live as collectables
@@ -511,6 +519,6 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `Global/Worlds.ini` catalog (world metadata/thumbnails loaded without
   loading the full playable world).
 - **`Esc` asks before leaving a world.** During play it freezes the game behind an
-  "Exit game?" prompt: any confirm key (`InputState.IsConfirmPressed`: Enter, E, Space or
+  "Exit game?" prompt: any confirm key (`InputState.IsConfirmKeyDown`: Enter, E, Space or
   Left Control) confirms and returns to the world-select screen, a second `Esc` cancels.
   Menu and end-screen confirmations accept the same keys.

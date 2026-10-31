@@ -31,8 +31,14 @@ public interface IPhysicsBody
     /// <summary>See <see cref="Body2D.GetContactingBodies"/>.</summary>
     IReadOnlyList<Body2D> GetContactingBodies(Physics.ContactType type);
 
+    /// <summary>See <see cref="Body2D.HasContactWith"/>.</summary>
+    bool HasContactWith(Body2D other);
+
+    /// <summary>See <see cref="Body2D.GetContactImpactSpeed"/>.</summary>
+    double GetContactImpactSpeed(Body2D other);
+
     /// <summary>See <see cref="Body2D.AddContact"/>.</summary>
-    void AddContact(Physics.ContactType type, Body2D other);
+    void AddContact(Physics.ContactType type, Body2D other, double impactSpeed = 0.0);
 
     /// <summary>See <see cref="Body2D.RemoveContact"/>.</summary>
     void RemoveContact(Physics.ContactType type, Body2D? other = null);

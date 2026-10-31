@@ -14,7 +14,8 @@ AsciiHero is a browser-based retro ASCII platform game built with C# and .NET 10
 - Preserve smooth movement and scrolling.
 - Treat the ASCII character grid as a visual representation, not as the physics coordinate system.
 - Do not resurrect rejected design approaches unless explicitly asked.
-- Reuse existing code patterns when designing or implementing new game functionality (e.g., interface properties on hazards, World2D.LoadAsync case blocks, SetFrame clip swapping) rather than introducing new mechanisms.
+- Reuse existing code patterns when designing or implementing new game functionality (e.g., interface properties on hazards, World2D.LoadAsync case blocks, SetFrame clip swapping).
+- Use named arguments for calls with long lists of same-typed parameters, especially paired X/Y parameters.
 
 ### Documentation Guidelines
 
@@ -48,6 +49,8 @@ Check [docs/AssetFormat.md](../ASCII%20Hero/docs/AssetFormat.md).
 
 After code changes, build the solution and address build errors before considering the task complete.
 
+Then run the MSTest suite in `ASCII Hero/ASCII Hero.Tests` (Test Explorer or `dotnet test "ASCII Hero.slnx"`) and keep all tests green. When changing behavior that has tests, update or add tests in the same change; when refactoring, tests must pass unchanged.
+
 ### Source Control
 
 - Never commit or push to Git without the user's explicit consent; leave changes uncommitted and ask first.
@@ -55,3 +58,33 @@ After code changes, build the solution and address build errors before consideri
 ### Decision Documentation
 
 - docs/Decisions.md is maintained as a compact, current-state-only reference of architecture/design decisions grouped by subsystem, NOT a chronological historical log. When a decision is added, changed, or superseded/reverted, update docs/Decisions.md in place (edit/remove bullets) rather than appending historical entries.
+
+## Testing Guidelines
+
+### Automated Testing with MSTest
+
+- Understand the basics of automated testing: it involves writing code to verify that your application behaves as expected.
+- Set up MSTest for AsciiHero by adding the MSTest NuGet package to your project.
+- Create a test project in your solution to organize your tests separately from your main application code.
+- Write test methods using the `[TestMethod]` attribute to define what should be tested.
+- Use assertions (e.g., `Assert.AreEqual`, `Assert.IsTrue`) to check if the actual output matches the expected output.
+- Run tests using the Test Explorer in Visual Studio or via the command line with `dotnet test`.
+- Maintain tests by regularly updating them as your application changes, ensuring they remain relevant and accurate.
+- **Step-by-Step Setup for MSTest:**
+  1. Right-click on your solution in Visual Studio, choose `Add` > `New Project`.
+  2. Select `MSTest Test Project` from the list of templates.
+  3. Name the project (e.g., `AsciiHero.Tests`) and click `Create`.
+  4. In the new test project, open the default `UnitTest1.cs` file.
+  5. Write a simple test method:
+     ```csharp
+     [TestMethod]
+     public void TestMethod1()
+     {
+         Assert.IsTrue(true);
+     }
+     ```
+  6. Build the solution to restore NuGet packages and build the test project.
+  7. Open the Test Explorer (`Test` > `Test Explorer`).
+  8. Run the test by clicking the `Run All` button in the Test Explorer.
+  9. Check the test results in the Test Explorer window.
+  10. Update and expand your tests as needed, following the naming and organizational conventions you establish.

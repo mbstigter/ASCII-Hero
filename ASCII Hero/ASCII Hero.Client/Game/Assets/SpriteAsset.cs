@@ -31,13 +31,12 @@ public enum AnimationMode
     Once,
 }
 
-/// <summary>One drawable/collidable frame of a sprite clip: char/fore/back grids plus material per cell.</summary>
+/// <summary>One drawable/collidable frame of a sprite clip: char/fore/back grids.</summary>
 public class SpriteFrame
 {
     public required char[,] Chars { get; init; }
     public required char[,] Fore { get; init; }
     public required char[,] Back { get; init; }
-    public required string?[,] Materials { get; init; }
 
     public int Width => Chars.GetLength(1);
     public int Height => Chars.GetLength(0);
@@ -148,6 +147,13 @@ public class SpriteAsset
 
     /// <summary>See <see cref="DefaultForeColor"/>.</summary>
     public char? DefaultBackColor { get; init; }
+
+    /// <summary>
+    /// Material name from this asset's <c>[Physics] DefaultMaterial</c> settings.ini key (or the
+    /// material a materials-only placement is built from), used for every body spawned from this
+    /// asset unless its placement names its own <c>Material</c>. Null when not set.
+    /// </summary>
+    public string? DefaultMaterial { get; init; }
 
     /// <summary>
     /// Optional pose/facing metadata mapping each pose name (e.g. "Walk", "Crawl") to the clips

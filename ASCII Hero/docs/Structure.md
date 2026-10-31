@@ -8,7 +8,7 @@ document instead focuses on "what exists and how it fits together."
 
 ## Solution Layout
 
-The solution has two projects:
+The solution has three projects:
 
 - **ASCII Hero** - the Blazor Web App host. Serves the page shell, handles
   server-side prerendering, and hosts the WebAssembly runtime. Contains almost
@@ -17,6 +17,9 @@ The solution has two projects:
   game code, static assets (sprites, worlds, fonts), and the small amount of
   JavaScript interop the game needs. The entire game runs client-side inside
   this project once the page loads.
+- **ASCII Hero.Tests** - MSTest unit tests for browser-independent game code
+  in `ASCII Hero.Client`. Not part of the shipped game; test folders mirror
+  the `Game/` subsystem folders.
 
 All gameplay code lives under `ASCII Hero.Client/Game/`, organized into one
 folder per subsystem, described below in roughly the order data flows through
@@ -42,7 +45,9 @@ Everything to do with reading the plain-text asset format (sprites, worlds,
 palettes, materials) from disk/HTTP into in-memory game objects.
 
 - **`IAssetFileProvider`** - fetches raw file text by relative path, returning
-  null for a missing file (404). Implemented by `HttpAssetFileProvider`, which
+  null for a missing file (404); any other failed request throws an error
+  naming the file, so a failed download never silently falls back to a global
+  default. Implemented by `HttpAssetFileProvider`, which
   reads static files served from `wwwroot/Assets` over HTTP, since Blazor
   WebAssembly has no direct filesystem access. Kept behind this interface so
   no other asset-loading code depends directly on `HttpClient`.
@@ -135,7 +140,9 @@ palettes, materials) from disk/HTTP into in-memory game objects.
 
 The live game state and the entity types that make it up.
 
-- **`World2D`** - holds everything that makes up the current game state: the
+- **`World2D`** (runtime state in `World2D.cs`; `LoadAsync`, placement
+  spawning and switch-link resolution in the partial `World2D.Loading.cs`)
+  - holds everything that makes up the current game state: the
   player, every other body in one generic `Objects` list, the background
   layer, the resolved color palette, the resolved material library
   (`Materials`), gravity, world dimensions, and which body the camera should
@@ -155,7 +162,8 @@ The live game state and the entity types that make it up.
   private `ObjectSection` reader, which applies the shared default/error rules.
   Also owns deferred removal (`QueueRemoval`/`ApplyPendingRemovals`),
   so nothing mutates the `Objects` list mid-iteration.
-- **`Body2D`** - the base class for anything living in the world at a
+- **`Body2D`** (per-frame contact sets and step-displacement/friction-undo
+  tracking are grouped at the end of `Body2D.cs`) - the base class for anything living in the world at a
   floating-point position, backed by a loaded sprite frame. Derives its size
   and collision shape once from the active frame's actual (non-empty) glyph
   data, handles animation frame advancement and stance/facing pose switching,
@@ -224,7 +232,7 @@ The live game state and the entity types that make it up.
 	collector body touches it (e.g. a coin or power-up), regardless of its
 	`Type` (`CollectableType`: `Ring`/`Diamond`/`Checkpoint`/`LevelEnd`/`Key`,
 	set from the placement's optional `Type` ini key; absent = inert) - see
-	`CollisionSystem.ResolveHazardsAndCollectables` below for the actual
+	`InteractionHandler.OnCollected` below for the actual
 	per-type pickup behavior. `Checkpoint`/`LevelEnd` typically set
 	`EffectPersists = true` so their pickup effect remains in the removed
 	collectable's place as a permanent "already used" marker, the same way a
@@ -271,7 +279,7 @@ The live game state and the entity types that make it up.
 	one shared rule every horizontally-facing implementer (`Player2D`,
 	`DynamicHazard2D`) derives `Facing.Left`/`Right`/`Idle` from.
   - `IHazardBody` - damages a body on contact (marker only; the actual damage
-	is applied by `CollisionSystem.ResolveHazardsAndCollectables`, which
+	is applied by `InteractionHandler.OnHazardHit`, which
 	deducts the hazard's `Body2D.Damage` (default 1 = a full bar) from
 	`Player2D.Health` on the first frame of a fresh, non-fatal
 	contact - clamped at 0; when the bar empties it removes one `Player2D.Lives`
@@ -285,7 +293,7 @@ The live game state and the entity types that make it up.
 	(e.g. the player); kept independent of `ICollectorBody` since the two
 	capabilities are conceptually unrelated even though the player has both.
   - `IKillableBody` - can be killed by a qualifying contact; carries real
-	state (`IsKillable`, `EffectPersists`) since not every instance of an
+	state (`IsKillable`, `EffectPersists`, `KillImpactSpeed`) since not every instance of an
 	otherwise-killable type should be killable in every placement.
   - `IEffectTrigger` - can optionally name a cosmetic effect clip
 	(`EffectClipName`) to play on contact, reusing a clip already defined on
@@ -396,7 +404,7 @@ The live game state and the entity types that make it up.
   with a further Down from already-`Hang` meaning an explicit "let go" and
   dropping. `Up` (directional) and `Jump` (action) are always distinct
   inputs, never equivalent anywhere including the ground - see
-  `InputState.IsUpPressed`/`IsJumpPressed` below - so a Jump press instead of
+  `InputState.IsUpKeyDown`/`IsJumpKeyDown` below - so a Jump press instead of
   Up/Down from `Hang` swings/jumps off with an upward-plus-current-lateral-
   velocity impulse (not available from `Clamber`), and a Jump press while
   climbing likewise lets go of the ladder and launches upward. All three
@@ -425,7 +433,12 @@ The live game state and the entity types that make it up.
   moving bodies against solid static terrain, moving bodies against each
   other, moving bodies against the world's own bounds (which act as a
   generic physical surface, bouncing dynamic bodies per their restitution),
-  hazard/collectable overlap, and any `IClimberBody`/`IHangerBody`'s
+  hazard/collectable contact (resolved solver contacts for solid hazards,
+  overlap for passable hazards and collectables; squash = top contact at or
+  above the hazard's `KillImpactSpeed`; detection and the hazard-contact rising-edge
+  history only; what each interaction does - kills, damage, lives, score,
+  rings, keys, checkpoints, level-end/death transitions, their sounds and
+  effects - is applied by **`InteractionHandler`**), and any `IClimberBody`/`IHangerBody`'s
   `IsTouchingClimbable`/`IsTouchingHangable` overlap against
   `IsClimbable`/`IsHangable` terrain. Restitution/friction used in any given
   collision response are the combined values (friction: geometric mean,
@@ -646,6 +659,9 @@ The live game state and the entity types that make it up.
 - **`WorldLoadingRenderer`** - creates the "Loading..." `UIBar`
   (`CreateLoadingBar`) and draws the frozen selection layout plus that bar
   while a world loads (`BuildLoadingFrame`).
+- **`EndScreenRenderer`** - draws the centered end-screen message box
+  (ripple, glow and label) for a given text, tint set and elapsed time. It
+  only builds glyphs; `GameLoop` decides the mode, text, colors and timing.
 
 - **`AnimationSystem`** - advances every body's animation timer once per
   frame (bodies with no animation configured, or a single frame, no-op
@@ -664,12 +680,12 @@ The live game state and the entity types that make it up.
   `columns/rows * cellSize`, and draws a frame's glyphs. No other game code
   talks to JavaScript directly.
 - **`InputState`** - tracks which keyboard keys are currently held down and
-  exposes them as game-oriented queries (`IsLeftPressed`, `IsUpPressed`,
+  exposes them as game-oriented queries (`IsLeftKeyDown`, `IsUpKeyDown`,
   etc.), so gameplay code never depends on raw DOM key codes. Two full,
   independent key sets are supported for local co-op/preference - "Player 1"
   (arrow keys + `Space`, action `Enter`) and "Player 2" (`WASD` + `Left Ctrl`, action `E`) - rather than
-  one shared movement set plus one shared jump key. `IsUpPressed` and
-  `IsJumpPressed` are deliberately never combined into one query anywhere,
+  one shared movement set plus one shared jump key. `IsUpKeyDown` and
+  `IsJumpKeyDown` are deliberately never combined into one query anywhere,
   even for the ordinary ground jump - see `PhysicsSystem` above for why
   (`Hang`/`Climb` both need to tell "pull in"/"climb" apart from "let go and
   launch").
@@ -759,7 +775,7 @@ The live game state and the entity types that make it up.
    placement, resolving each placement's sprite through `SpriteLoader`) - so
    gameplay never stalls mid-frame waiting on a network fetch. `LoadAsync`
    reports its progress after each of those logical steps via an
-   `IProgress<int>` callback, which fills in the bar's `CurrentValue`; every
+   `IProgress<double>` callback, which fills in the bar's `CurrentValue`; every
    `OnFrame` tick that lands while still in `LoadingWorld` redraws the
    (`WorldLoadingRenderer.BuildLoadingFrame`)
    instead of leaving the canvas showing a stale frame. Once loading
@@ -830,7 +846,11 @@ large jumps after e.g. a tab switch):
    should already be gone. `_physicsAccumulatorSeconds` is reset to `0` when
    a new world finishes loading, so no leftover time from a previous world
    (or time spent loading) is burned through as extra steps on the new
-   world's very first frame.
+   world's very first frame. At the same moment the pending-transition timer
+   is cleared and `PhysicsSystem`, `CollisionSystem` and `AnimationSystem`
+   each `Reset()` the state they carry between frames (held-key edges,
+   active hazard contacts, previous airborne state), so nothing from the
+   previous world leaks into the new one.
 2. **Animation** - `AnimationSystem.Update` advances every body's animation
    frame timer and ticks down any active effect's remaining lifetime. Runs
    once per real frame (using the frame's full elapsed time, not the fixed
@@ -852,14 +872,14 @@ large jumps after e.g. a tab switch):
    "Health:" caption followed by the `_hudBar` gauge (`Player2D.Health`), and a key icon
    followed by a superscript count (`¹`-`⁹`, `ⁿ` for more than 9) appears while a key is held.
    A dev/testing FPS overlay
-   (`InputState.IsFpsToggleKeyPressed`, bound to `F`) can be toggled on top
+   (`InputState.IsFpsToggleKeyDown`, bound to `F`) can be toggled on top
    of the HUD, showing a smoothed frames-per-second reading computed each
    frame from that frame's own raw, unclamped elapsed time (not the fixed
    Physics/Collision step size), right-aligned using the rendered text's own
    length (leading with the number, e.g. "144 FPS") so it stays pinned to the
    top-right corner regardless of digit count;
    off by default so it never appears for an ordinary player. A second
-   dev/testing overlay (`InputState.IsObjectCounterToggleKeyPressed`, bound
+   dev/testing overlay (`InputState.IsObjectCounterToggleKeyDown`, bound
    to `O`) stacks directly under the FPS overlay, showing `World2D.Objects`'s
    live count (e.g. "42 Obj") - same right-aligned-by-rendered-length
    approach, also off by default.
@@ -874,7 +894,8 @@ large jumps after e.g. a tab switch):
    `World2D.Respawn()` and play continues if `Player2D.Lives` is above 0,
    otherwise it switches to `GameMode.GameOver`. In both end modes gameplay is
    frozen, the last rendered world frame is redrawn with a centered "Level
-   Complete!"/"Game Over!" message on top (`GameLoop.AddEndScreenMessage`: a
+   Complete!"/"Game Over!" message on top (`GameLoop.AddEndScreenMessage` picks
+   the text and tint, `EndScreenRenderer.AddMessage` draws it: a
    short trail of `UIFrame` boxes shrinks in a ripple onto the final box, then
    the `UILabel` appears inside it on a solid black background; green for
    Level Complete, red for Game Over (amber for the "Exit game?" prompt, which

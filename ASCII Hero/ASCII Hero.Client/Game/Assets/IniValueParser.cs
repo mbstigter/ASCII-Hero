@@ -5,9 +5,9 @@ namespace ASCII_Hero.Client.Game.Assets;
 /// <summary>
 /// Shared parsing helpers for common ini value shapes used throughout settings.ini/*.ini asset
 /// files: empty-char markers, single-character color codes, and culture-invariant numbers.
-/// Naming follows the standard .NET <c>Parse</c>/<c>TryParse</c> convention: a <c>Parse...</c>
-/// method always returns a value (falling back to a sensible default), while a
-/// <c>TryParse...</c> method returns a bool and only assigns its out parameter on success.
+/// A <c>Parse...</c> method always returns a value (falling back to a sensible default for an
+/// absent value); a <c>...OrDefault</c> method also falls back silently for an unparsable value;
+/// a <c>TryParse...</c> method returns a bool and only assigns its out parameter on success.
 /// </summary>
 public static class IniValueParser
 {
@@ -27,11 +27,12 @@ public static class IniValueParser
         string.IsNullOrEmpty(rawValue) ? null : rawValue[0];
 
     /// <summary>
-    /// Parses a numeric ini value with a 0.0 fallback when absent/unparsable, using
+    /// Parses a numeric ini value, silently returning 0.0 when absent or unparsable (callers that
+    /// must reject malformed input use <see cref="TryParseDouble"/> instead), using
     /// <see cref="CultureInfo.InvariantCulture"/> so a decimal point (e.g. "1.0") is never
     /// misread as a thousands separator under locales where '.' is the group separator.
     /// </summary>
-    public static double ParseDouble(string? rawValue) =>
+    public static double ParseDoubleOrDefault(string? rawValue) =>
         double.TryParse(rawValue, NumberStyles.Float, CultureInfo.InvariantCulture, out var value) ? value : 0.0;
 
     /// <summary>

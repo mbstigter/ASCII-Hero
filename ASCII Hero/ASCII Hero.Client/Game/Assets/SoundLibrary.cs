@@ -55,7 +55,7 @@ public class SoundLibrary
         foreach (var sectionName in ini.SectionNames)
         {
             var section = ini.Section(sectionName);
-            var startFrequency = IniValueParser.ParseDouble(section.GetValueOrDefault("StartFreq"));
+            var startFrequency = IniValueParser.ParseDoubleOrDefault(section.GetValueOrDefault("StartFreq"));
             var endFrequency = section.TryGetValue("EndFreq", out var endFrequencyText) && IniValueParser.TryParseDouble(endFrequencyText, out var parsedEndFrequency)
                 ? parsedEndFrequency
                 : startFrequency;
@@ -65,10 +65,10 @@ public class SoundLibrary
                 section.GetValueOrDefault("Wave") ?? string.Empty,
                 startFrequency,
                 endFrequency,
-                IniValueParser.ParseDouble(section.GetValueOrDefault("Duration")),
-                IniValueParser.ParseDouble(section.GetValueOrDefault("Volume")),
-                IniValueParser.ParseDouble(section.GetValueOrDefault("Attack")),
-                IniValueParser.ParseDouble(section.GetValueOrDefault("Vibrato")));
+                IniValueParser.ParseDoubleOrDefault(section.GetValueOrDefault("Duration")),
+                IniValueParser.ParseDoubleOrDefault(section.GetValueOrDefault("Volume")),
+                IniValueParser.ParseDoubleOrDefault(section.GetValueOrDefault("Attack")),
+                IniValueParser.ParseDoubleOrDefault(section.GetValueOrDefault("Vibrato")));
         }
     }
 }

@@ -6,7 +6,7 @@ namespace ASCII_Hero.Client.Game.Assets;
 /// <c>_objects.ini</c> section instead of an <c>Asset</c>/<c>Clip</c> pair backed by on-disk
 /// sprite files. The synthesized asset has exactly one clip ("default") with one frame, fully
 /// filled with the material's own (or a placement's own override of) <see cref="Material.Character"/>
-/// and tagged with the material's name in every cell's materials grid - so it flows through the
+/// and with the material as its <see cref="SpriteAsset.DefaultMaterial"/> - so it flows through the
 /// same <see cref="World.Body2D.SetFrame"/>/collision/render/material-resolution path as any
 /// sprite loaded by <see cref="SpriteLoader"/>. No tiling/<see cref="TileAxis"/> concept applies
 /// here - <c>Width</c>/<c>Height</c> already give the placement's final size directly.
@@ -33,7 +33,6 @@ public static class SyntheticSpriteFactory
         var chars = new char[height, width];
         var fore = new char[height, width];
         var back = new char[height, width];
-        var materials = new string?[height, width];
 
         for (var row = 0; row < height; row++)
         {
@@ -42,11 +41,10 @@ public static class SyntheticSpriteFactory
                 chars[row, col] = glyph;
                 fore[row, col] = EmptyChar;
                 back[row, col] = EmptyChar;
-                materials[row, col] = materialName;
             }
         }
 
-        var frame = new SpriteFrame { Chars = chars, Fore = fore, Back = back, Materials = materials };
+        var frame = new SpriteFrame { Chars = chars, Fore = fore, Back = back };
         var clip = new SpriteClip { Name = "default", Frames = [frame] };
 
         return new SpriteAsset
@@ -54,6 +52,7 @@ public static class SyntheticSpriteFactory
             Name = $"Material:{materialName}:{width}x{height}",
             EmptyChar = EmptyChar,
             Clips = new Dictionary<string, SpriteClip>(StringComparer.OrdinalIgnoreCase) { ["default"] = clip },
+            DefaultMaterial = materialName,
         };
     }
 }

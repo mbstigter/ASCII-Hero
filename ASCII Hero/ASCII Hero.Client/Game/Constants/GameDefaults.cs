@@ -248,4 +248,12 @@ public static class GameDefaults
 
     /// <summary>Default health a hazard hit removes.</summary>
     public const double DefaultHazardDamage = 1.0;
+
+    /// <summary>
+    /// Default minimum downward closing speed (cells/second) at which landing on a killable hazard
+    /// kills it (see <see cref="World.IKillableBody.KillImpactSpeed"/>). Overridable per-placement
+    /// via the <c>KillImpactSpeed</c> ini key. At default gravity a drop of about a third of a cell
+    /// already reaches it, while walking or resting onto a hazard does not.
+    /// </summary>
+    public const double DefaultKillImpactSpeed = 5.0;
 }

@@ -47,6 +47,9 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// <summary>Guards <see cref="OnFrame"/> against overlapping calls; an overlapping frame is simply dropped.</summary>
     private bool _isProcessingFrame;
 
+    /// <summary>Set by <see cref="Stop"/>; once set, <see cref="OnFrame"/> does nothing.</summary>
+    private bool _isStopped;
+
     // ---------------------------------------------------------------------------------------
     // Systems and world state
     // ---------------------------------------------------------------------------------------
@@ -101,29 +104,11 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// <summary>Set once no confirm key is held on an end screen, so a key still held from gameplay doesn't dismiss it instantly.</summary>
     private bool _endScreenKeysReleased;
 
-    /// <summary>Message of the active <see cref="GameMode.LevelComplete"/>/<see cref="GameMode.GameOver"/> screen; one text row (with a space either side) inside the final ripple box, on a solid background so it stays readable over the world.</summary>
-    private readonly UILabel _endScreenLabel = new(col: 0, row: 0, width: 20, height: 1);
-
-    /// <summary>Border around the end screen
-    private readonly UIFrame _endScreenFrame = new(col: 0, row: 0, width: 0, height: 0);
+    /// <summary>Draws the active <see cref="GameMode.LevelComplete"/>/<see cref="GameMode.GameOver"/>/<see cref="GameMode.ConfirmExit"/> message box.</summary>
+    private readonly EndScreenRenderer _endScreenRenderer = new();
 
     /// <summary>Time since the end screen opened; drives the ripple animation.</summary>
     private double _endScreenElapsedSeconds;
-
-    /// <summary>Number of shrinking steps from the largest ripple box down to the box that holds the message.</summary>
-    private const int EndScreenRippleSteps = 12;
-
-    /// <summary>How long each ripple step lasts.</summary>
-    private const double EndScreenStepSeconds = 0.06;
-
-    /// <summary>How many boxes are visible at once while the ripple converges.</summary>
-    private const int EndScreenRippleTrail = 4;
-
-    /// <summary>Per step, the box shrinks by this many cells on each axis (1 per side).</summary>
-    private const int EndScreenStepCells = 2;
-
-    /// <summary>Once the ripple settles, how long the box shows each tint of its glow cycle.</summary>
-    private const double EndScreenGlowStepSeconds = 0.2;
 
     // Per-screen woosh sound (played as the ripple opens; see Global/SoundLibrary.ini).
     private const string LevelCompleteWooshSoundName = "LevelCompleteWoosh";
@@ -154,10 +139,10 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
     private const double FpsSmoothingFactor = 0.1;
 
-    /// <summary>FPS overlay, toggled by <see cref="InputState.IsFpsToggleKeyPressed"/>.</summary>
+    /// <summary>FPS overlay, toggled by <see cref="InputState.IsFpsToggleKeyDown"/>.</summary>
     private readonly UILabel _fpsLabel = new(col: 0, row: 0, width: 12, height: 1);
 
-    /// <summary>World object-count overlay, toggled by <see cref="InputState.IsObjectCounterToggleKeyPressed"/>; sits under the FPS overlay.</summary>
+    /// <summary>World object-count overlay, toggled by <see cref="InputState.IsObjectCounterToggleKeyDown"/>; sits under the FPS overlay.</summary>
     private readonly UILabel _objectCounterLabel = new(col: 0, row: 1, width: 12, height: 1);
 
     private bool _showFpsOverlay;
@@ -206,6 +191,11 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
 
         var cellMetrics = await canvasBridge.InitializeAsync(canvasElementId, this, fontFamily, viewportColumns, viewportRows, fontWidthPixels, fontHeightPixels);
+        if (_isStopped)
+        {
+            return;
+        }
+
         ApplyCellMetrics(cellMetrics, viewportColumns, viewportRows);
 
         var soundEnabled = !bool.TryParse(globalSettings.TryGetValue("Sound", "Enabled"), out var parsedSoundEnabled) || parsedSoundEnabled;
@@ -235,7 +225,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         _hudKeyLabel.HighlightColor = colors.GreenDark;
         _fpsLabel.ForeColor = colors.Green;
         _objectCounterLabel.ForeColor = colors.Green;
-        _endScreenLabel.BackColor = colors.Black;
+        _endScreenRenderer.ApplyColors(colors);
     }
 
     private void ApplyCellMetrics(CellMetrics cellMetrics, int viewportColumns, int viewportRows)
@@ -263,6 +253,12 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         _viewportHeightPixels = (int)Math.Round(viewportRows * _renderer.CellHeightPixels);
     }
 
+    /// <summary>
+    /// Marks the loop as stopped: any frame or startup work still in flight returns without touching
+    /// the browser adapters. Called by the page before it disposes those adapters.
+    /// </summary>
+    public void Stop() => _isStopped = true;
+
     // ---------------------------------------------------------------------------------------
     // JS entry points
     // ---------------------------------------------------------------------------------------
@@ -276,7 +272,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     [JSInvokable]
     public async Task OnFrame(double deltaSeconds)
     {
-        if (_isProcessingFrame)
+        if (_isProcessingFrame || _isStopped)
         {
             return;
         }
@@ -325,14 +321,14 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
     private void UpdateOverlayToggles()
     {
-        var fpsToggleKeyDown = _input.IsFpsToggleKeyPressed;
+        var fpsToggleKeyDown = _input.IsFpsToggleKeyDown;
         if (fpsToggleKeyDown && !_wasFpsToggleKeyDown)
         {
             _showFpsOverlay = !_showFpsOverlay;
         }
         _wasFpsToggleKeyDown = fpsToggleKeyDown;
 
-        var objectCounterToggleKeyDown = _input.IsObjectCounterToggleKeyPressed;
+        var objectCounterToggleKeyDown = _input.IsObjectCounterToggleKeyDown;
         if (objectCounterToggleKeyDown && !_wasObjectCounterToggleKeyDown)
         {
             _showObjectCounterOverlay = !_showObjectCounterOverlay;
@@ -400,9 +396,15 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
         // Time spent loading is not gameplay time.
         _physicsAccumulatorSeconds = 0;
+        _pendingTransitionElapsedSeconds = 0;
+
+        // State the systems carry between frames belongs to the previous world.
+        _physics.Reset();
+        _collision.Reset();
+        _animation.Reset();
 
         // Keys still held from the menu must not count as fresh presses in the first frame.
-        _wasActionKeyDown = _input.IsActionPressed;
+        _wasActionKeyDown = _input.IsActionKeyDown;
 
         _camera.SnapTo(
             _world.CameraTarget.Position,
@@ -455,7 +457,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private async Task OnPlayingFrameAsync(double deltaSeconds)
     {
         // Escape asks for confirmation before abandoning the world.
-        var escapeDown = _input.IsEscapePressed;
+        var escapeDown = _input.IsEscapeKeyDown;
         if (escapeDown && !_wasEscapeKeyDown)
         {
             _wasEscapeKeyDown = true;
@@ -532,7 +534,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// <summary>Handles the once-per-press action key (operates switches, opens key gates).</summary>
     private void HandleActionKeys()
     {
-        var actionKeyDown = _input.IsActionPressed;
+        var actionKeyDown = _input.IsActionKeyDown;
         if (actionKeyDown && !_wasActionKeyDown && (_world.TryOperateSwitch() || _world.TryOpenGate()))
         {
             _world.ApplyPendingRemovals();
@@ -653,7 +655,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private async Task OnEndScreenFrameAsync(double deltaSeconds)
     {
         _endScreenElapsedSeconds += deltaSeconds;
-        var confirmPressed = _input.IsConfirmPressed;
+        var confirmPressed = _input.IsConfirmKeyDown;
         if (!confirmPressed)
         {
             _endScreenKeysReleased = true;
@@ -679,7 +681,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     {
         _endScreenElapsedSeconds += deltaSeconds;
 
-        var escapeDown = _input.IsEscapePressed;
+        var escapeDown = _input.IsEscapeKeyDown;
         if (escapeDown && !_wasEscapeKeyDown)
         {
             _wasEscapeKeyDown = true;
@@ -688,7 +690,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
         _wasEscapeKeyDown = escapeDown;
 
-        var confirmPressed = _input.IsConfirmPressed;
+        var confirmPressed = _input.IsConfirmKeyDown;
         if (!confirmPressed)
         {
             _endScreenKeysReleased = true;
@@ -707,9 +709,8 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     }
 
     /// <summary>
-    /// Draws the end screen message in a centered box: a short trail
-    /// onto the final box (just big enough for the message), then the message appears inside it.
-    /// Colored per screen (green, red or amber tints from <see cref="InterfaceColors"/>). Only adds glyphs on top of the world.
+    /// Picks the end screen's message and tint (green, red or amber from <see cref="InterfaceColors"/>)
+    /// for the current mode and draws it via <see cref="EndScreenRenderer"/> on top of the world.
     /// </summary>
     private void AddEndScreenMessage(List<Glyph> glyphs)
     {
@@ -720,40 +721,9 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             : isLevelComplete ? (_colors.GreenDark, _colors.Green, _colors.GreenLight)
             : (_colors.RedDark, _colors.Red, _colors.RedLight);
 
-        var finalWidth = text.Length + 4;
-        var finalHeight = 3;
-
-        // Level 0 is the final box; each level above it is EndScreenStepCells larger on each axis.
-        var level = Math.Max(0, EndScreenRippleSteps - (int)(_endScreenElapsedSeconds / EndScreenStepSeconds));
-        var outermostLevel = level == 0 ? 0 : Math.Min(level + EndScreenRippleTrail - 1, EndScreenRippleSteps);
-
-        for (var frameLevel = outermostLevel; frameLevel >= level; frameLevel--)
-        {
-            // While rippling, the leading box is bright and the trail behind it dim; once settled, the box glows dark -> normal -> light -> normal.
-            _endScreenFrame.ForeColor = level > 0
-                ? (frameLevel == level ? lightColor : darkColor)
-                : ((int)(_endScreenElapsedSeconds / EndScreenGlowStepSeconds) % 4) switch { 0 => darkColor, 2 => lightColor, _ => color };
-            _endScreenFrame.Width = finalWidth + EndScreenStepCells * frameLevel;
-            _endScreenFrame.Height = finalHeight + EndScreenStepCells * frameLevel;
-            _endScreenFrame.Col = Math.Floor((_viewportWidthCells - _endScreenFrame.Width) / 2);
-            _endScreenFrame.Row = Math.Floor((_viewportHeightCells - _endScreenFrame.Height) / 2);
-            UIRenderer.AddFrame(glyphs, _endScreenFrame, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
-        }
-
-        if (level > 0)
-        {
-            return;
-        }
-
-        // The label sits on the frame's single interior row; its black background is a solid panel behind the text.
-        var interiorWidth = text.Length + 2;
-        _endScreenLabel.Col = _endScreenFrame.Col + 1;
-        _endScreenLabel.Row = _endScreenFrame.Row + 1;
-        _endScreenLabel.Width = interiorWidth;
-        _endScreenLabel.ForeColor = color;
-        _endScreenLabel.Lines.Clear();
-        _endScreenLabel.Lines.Add($" {text} ");
-        UIRenderer.AddLabel(glyphs, _endScreenLabel, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+        _endScreenRenderer.AddMessage(
+            glyphs, text, darkColor, color, lightColor, _endScreenElapsedSeconds,
+            _viewportWidthCells, _viewportHeightCells, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
     }
 
     // ---------------------------------------------------------------------------------------

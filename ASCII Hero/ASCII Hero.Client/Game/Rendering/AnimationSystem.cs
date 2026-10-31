@@ -13,6 +13,13 @@ public class AnimationSystem
     private bool _wasAirborne;
     private bool _hasPreviousAirborneState;
 
+    /// <summary>Forgets the previous airborne state, so a newly loaded world plays no stale jump/land sound.</summary>
+    public void Reset()
+    {
+        _wasAirborne = false;
+        _hasPreviousAirborneState = false;
+    }
+
     /// <summary>
     /// Plays the sprite's "JumpStart" sound when the player leaves the ground moving upward and its
     /// "Land" sound when it touches down after being airborne (not after climbing/hanging/swimming),

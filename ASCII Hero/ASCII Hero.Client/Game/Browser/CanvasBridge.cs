@@ -3,14 +3,14 @@ using Microsoft.JSInterop;
 namespace ASCII_Hero.Client.Game.Browser;
 
 /// <summary>
-/// The real, measured pixel size of one font glyph cell, reported by the browser after the
-/// active rendering font has finished loading. See game-interop.js for how this is measured.
+/// The pixel size of one font glyph cell as configured for the canvas, reported by the browser
+/// after the active rendering font has finished loading. See game-interop.js.
 /// </summary>
 public readonly record struct CellMetrics(double CellWidthPixels, double CellHeightPixels);
 
 /// <summary>
 /// Thin, isolated interop boundary between C# and the browser Canvas/keyboard APIs.
-/// This is the only place in the game that talks to JavaScript.
+/// Audio has its own separate adapter; no other game code talks to JavaScript.
 /// </summary>
 public class CanvasBridge(IJSRuntime jsRuntime) : IAsyncDisposable
 {
@@ -44,12 +44,14 @@ public class CanvasBridge(IJSRuntime jsRuntime) : IAsyncDisposable
 
     public async ValueTask DisposeAsync()
     {
-        _dotNetRef?.Dispose();
-
+        // Stop the JS frame loop and listeners first, so no callback can reach the .NET reference
+        // after it is released.
         if (_module is not null)
         {
             await _module.InvokeVoidAsync("dispose");
             await _module.DisposeAsync();
         }
+
+        _dotNetRef?.Dispose();
     }
 }

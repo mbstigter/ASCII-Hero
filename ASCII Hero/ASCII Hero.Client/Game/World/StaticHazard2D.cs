@@ -30,4 +30,7 @@ public class StaticHazard2D : StaticObject2D, IHazardBody, IEffectTrigger, IKill
 
     /// <inheritdoc />
     public string? KillSoundName { get; set; }
+
+    /// <inheritdoc />
+    public double KillImpactSpeed { get; set; } = GameDefaults.DefaultKillImpactSpeed;
 }

@@ -29,11 +29,43 @@ public class PhysicsSystem
     /// </summary>
     private bool _suppressClimbUntilClear;
 
+    /// <summary>Clears all player-control state carried between frames, so a newly loaded world starts fresh.</summary>
+    public void Reset()
+    {
+        _wasUpKeyDown = false;
+        _wasDownKeyDown = false;
+        _wasJumpKeyDown = false;
+        _wasAirborneSinceStance = false;
+        _suppressClimbUntilClear = false;
+    }
+
     public void Step(World2D world, InputState input, double deltaSeconds)
     {
         var player = world.Player;
         var velocity = player.Velocity;
 
+        var wasHanging = UpdateLocomotionModes(player, input);
+        var stoodUpThisFrame = ApplyStanceInput(player, input, wasHanging, ref velocity);
+        var (gripped, targetVelocityX, targetVelocityY) = ResolveMotorTargets(player, input, velocity);
+
+        // Commit any climb/hang jump-off impulse applied above before computing the motor: the
+        // motor's gap is measured against player.Velocity, so leaving the impulse only in the
+        // local copy would make the motor apply the same velocity change a second time.
+        player.Velocity = velocity;
+        UpdateWalkForce(world, player, gripped, targetVelocityX, targetVelocityY, deltaSeconds);
+
+        ApplyGroundJump(player, input, stoodUpThisFrame, ref velocity);
+        player.Velocity = velocity;
+
+        IntegrateBodies(world, deltaSeconds);
+    }
+
+    /// <summary>
+    /// Engages/disengages climbing, hanging and swimming from last frame's contacts and the held
+    /// keys. Returns whether the player was already hanging before this frame's update.
+    /// </summary>
+    private bool UpdateLocomotionModes(Player2D player, InputState input)
+    {
         // Climbing/hanging: CollisionSystem set IsTouchingClimbable/IsTouchingHangable last frame
         // from the player's current overlap (and snap-speed check) against Body2D.IsClimbable/
         // IsHangable terrain, but that alone doesn't engage either state - merely brushing
@@ -54,7 +86,7 @@ public class PhysicsSystem
         {
             player.IsClimbing = false;
         }
-        else if (!player.IsClimbing && player.IsTouchingClimbable && player.Stance == "Walk" && !_suppressClimbUntilClear && (input.IsUpPressed || input.IsDownPressed))
+        else if (!player.IsClimbing && player.IsTouchingClimbable && player.Stance == "Walk" && !_suppressClimbUntilClear && (input.IsUpKeyDown || input.IsDownKeyDown))
         {
             player.IsClimbing = true;
         }
@@ -107,11 +139,22 @@ public class PhysicsSystem
         }
         else if (!player.IsSwimming && !player.IsGrounded && !player.IsClimbing && !player.IsHanging
             && IsSwimmableMedium(player.CurrentMedium)
-            && (input.IsLeftPressed || input.IsRightPressed || input.IsUpPressed || input.IsDownPressed))
+            && (input.IsLeftKeyDown || input.IsRightKeyDown || input.IsUpKeyDown || input.IsDownKeyDown))
         {
             player.IsSwimming = true;
         }
 
+        return wasHanging;
+    }
+
+    /// <summary>
+    /// Applies edge-triggered Up/Down/Jump input to the stance and climb/hang state (including
+    /// climb/hang jump-off impulses written into <paramref name="velocity"/>), and records this
+    /// frame's key state for next frame's edge detection. Returns whether the player stood up
+    /// from a crawl this frame.
+    /// </summary>
+    private bool ApplyStanceInput(Player2D player, InputState input, bool wasHanging, ref Vector2D velocity)
+    {
         // A single, structured up/down pose ladder, deliberately mirroring floor and hanging
         // as inverses of each other rather than two unrelated sets of key handling:
         //   Floor:    Up -> Walk (stand up from Crawl); Down -> Crawl (crouch down from Walk)
@@ -125,7 +168,7 @@ public class PhysicsSystem
         // clamber pose (mirroring Crawl), Down extends back out into the normal fully-stretched
         // hang (mirroring Walk) - and, since fully stretched is already the "least attached" pose,
         // a second Down from there means letting go entirely and dropping. Up and Jump are
-        // deliberately distinct inputs everywhere (see InputState.IsJumpPressed) - Up is always a
+        // deliberately distinct inputs everywhere (see InputState.IsJumpKeyDown) - Up is always a
         // directional/posture action, Jump is always a distinct explicit action - because Hang
         // genuinely needs both at the same time (Up pulls into Clamber, Jump swings off), and
         // keeping the same rule on the ground and while climbing avoids a special case. All three
@@ -144,9 +187,9 @@ public class PhysicsSystem
             player.Stance = "Walk";
         }
 
-        var upKeyDown = input.IsUpPressed;
-        var downKeyDown = input.IsDownPressed;
-        var jumpKeyDown = input.IsJumpPressed;
+        var upKeyDown = input.IsUpKeyDown;
+        var downKeyDown = input.IsDownKeyDown;
+        var jumpKeyDown = input.IsJumpKeyDown;
         var upPressedThisFrame = upKeyDown && !_wasUpKeyDown;
         var downPressedThisFrame = downKeyDown && !_wasDownKeyDown;
         var jumpPressedThisFrame = jumpKeyDown && !_wasJumpKeyDown;
@@ -221,6 +264,15 @@ public class PhysicsSystem
         _wasDownKeyDown = downKeyDown;
         _wasJumpKeyDown = jumpKeyDown;
 
+        return stoodUpThisFrame;
+    }
+
+    /// <summary>
+    /// Resolves the gripped surface (if any), the walk-motor's horizontal/vertical target
+    /// velocities, and the player's raw move intent for facing.
+    /// </summary>
+    private static (Body2D? Gripped, double TargetVelocityX, double TargetVelocityY) ResolveMotorTargets(Player2D player, InputState input, Vector2D velocity)
+    {
         var moveSpeed = player.Stance == "Walk" ? player.WalkSpeed : player.CrawlSpeed;
 
         // Horizontal movement is driven by a mass-scaled "motor" force converging the player's
@@ -257,15 +309,15 @@ public class PhysicsSystem
             : player.IsSwimming ? 0.0
             : player.GetSurfaceVelocityX();
         var targetVelocityX = groundVelocityX;
-        if (input.IsLeftPressed)
+        if (input.IsLeftKeyDown)
         {
             targetVelocityX -= horizontalSpeed;
         }
-        if (input.IsRightPressed)
+        if (input.IsRightKeyDown)
         {
             targetVelocityX += horizontalSpeed;
         }
-        if (!player.IsGrounded && !player.IsClimbing && !player.IsHanging && !player.IsSwimming && !input.IsLeftPressed && !input.IsRightPressed)
+        if (!player.IsGrounded && !player.IsClimbing && !player.IsHanging && !player.IsSwimming && !input.IsLeftKeyDown && !input.IsRightKeyDown)
         {
             // Airborne with no horizontal key held: target the player's own current velocity
             // rather than groundVelocityX (which is always 0 here - GetSurfaceVelocityX has
@@ -285,11 +337,11 @@ public class PhysicsSystem
         // Raw move input intent for UpdatePose's facing (see Body2D.MoveIntentX) - deliberately
         // just Left/Right key state, with no platform-carry reference frame or velocity involved
         // at all, so facing reflects only what the player is actually trying to do this frame.
-        player.MoveIntentX = input.IsLeftPressed ? -1.0 : input.IsRightPressed ? 1.0 : 0.0;
+        player.MoveIntentX = input.IsLeftKeyDown ? -1.0 : input.IsRightKeyDown ? 1.0 : 0.0;
         // Raw up/down input intent for UpdatePose's climbing facing (see Body2D.MoveIntentY) -
         // the vertical counterpart to MoveIntentX above, for exactly the same reason: the climb
         // motor's velocity only ever asymptotically approaches zero, never reaching it exactly.
-        player.MoveIntentY = input.IsUpPressed ? -1.0 : input.IsDownPressed ? 1.0 : 0.0;
+        player.MoveIntentY = input.IsUpKeyDown ? -1.0 : input.IsDownKeyDown ? 1.0 : 0.0;
 
         // Vertical target speed for the same mass-scaled motor force: straight up/down at a
         // fixed climb speed while IsClimbing, held at rest while IsHanging - both relative to the
@@ -305,11 +357,11 @@ public class PhysicsSystem
         if (player.IsClimbing)
         {
             targetVelocityY = gripVelocity.Y;
-            if (input.IsUpPressed)
+            if (input.IsUpKeyDown)
             {
                 targetVelocityY -= GameDefaults.ClimbVerticalSpeed;
             }
-            if (input.IsDownPressed)
+            if (input.IsDownKeyDown)
             {
                 targetVelocityY += GameDefaults.ClimbVerticalSpeed;
             }
@@ -338,11 +390,11 @@ public class PhysicsSystem
             // recompute a moving goalpost every frame and never actually converge, snowballing
             // into runaway speed instead of the intended bounded SwimVerticalSpeed.
             targetVelocityY = velocity.Y;
-            if (input.IsUpPressed)
+            if (input.IsUpKeyDown)
             {
                 targetVelocityY = -GameDefaults.SwimVerticalSpeed;
             }
-            if (input.IsDownPressed)
+            if (input.IsDownKeyDown)
             {
                 targetVelocityY = GameDefaults.SwimVerticalSpeed;
             }
@@ -358,13 +410,14 @@ public class PhysicsSystem
             // climbing/hanging.
             targetVelocityY = velocity.Y;
         }
-        // Commit any climb/hang jump-off impulse applied above before computing the motor: the
-        // motor's gap is measured against player.Velocity, so leaving the impulse only in the
-        // local copy would make the motor apply the same velocity change a second time.
-        player.Velocity = velocity;
-        UpdateWalkForce(world, player, gripped, targetVelocityX, targetVelocityY, deltaSeconds);
 
-        if (!player.IsClimbing && !player.IsHanging && input.IsJumpPressed && player.IsGrounded && player.Stance == "Walk" && !stoodUpThisFrame)
+        return (gripped, targetVelocityX, targetVelocityY);
+    }
+
+    /// <summary>Applies the standing jump impulse (and its reaction on a movable support) when allowed.</summary>
+    private static void ApplyGroundJump(Player2D player, InputState input, bool stoodUpThisFrame, ref Vector2D velocity)
+    {
+        if (!player.IsClimbing && !player.IsHanging && input.IsJumpKeyDown && player.IsGrounded && player.Stance == "Walk" && !stoodUpThisFrame)
         {
             // A true impulse: an instantaneous Delta-v applied once per take-off, not a target the
             // player's velocity converges toward over subsequent frames. The condition tests the
@@ -393,9 +446,11 @@ public class PhysicsSystem
             // the player has left the surface.
             player.RemoveContact(ContactType.SurfaceBottom);
         }
+    }
 
-        player.Velocity = velocity;
-
+    /// <summary>Moves every kinematic body and force-integrates every other physics body.</summary>
+    private void IntegrateBodies(World2D world, double deltaSeconds)
+    {
         foreach (var body in world.Objects)
         {
             switch (body)

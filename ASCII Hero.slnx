@@ -1,4 +1,5 @@
 <Solution>
   <Project Path="ASCII Hero/ASCII Hero.Client/ASCII Hero.Client.csproj" />
+  <Project Path="ASCII Hero/ASCII Hero.Tests/ASCII Hero.Tests.csproj" />
   <Project Path="ASCII Hero/ASCII Hero/ASCII Hero.csproj" />
 </Solution>
