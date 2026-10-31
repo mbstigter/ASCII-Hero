@@ -190,6 +190,11 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             throw new InvalidOperationException("Global/Settings.ini is missing a required [Render] FontHeightPixels value.");
         }
 
+        if (_isStopped)
+        {
+            return;
+        }
+
         var cellMetrics = await canvasBridge.InitializeAsync(canvasElementId, this, fontFamily, viewportColumns, viewportRows, fontWidthPixels, fontHeightPixels);
         if (_isStopped)
         {
@@ -205,7 +210,17 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         await soundPlayer.InitializeAsync(soundEnabled ? masterVolume : 0.0);
 
         // Register the global sounds for the menu; a world's own library replaces them once loaded.
-        await soundPlayer.SetSoundsAsync(await SoundLibrary.LoadAsync(assetFileProvider, null));
+        var globalSounds = await SoundLibrary.LoadAsync(assetFileProvider, null);
+        if (_isStopped)
+        {
+            return;
+        }
+
+        await soundPlayer.SetSoundsAsync(globalSounds);
+        if (_isStopped)
+        {
+            return;
+        }
 
         var visibleSlotCount = WorldSelectRenderer.ComputeVisibleSlotCount(_viewportWidthCells, worlds.Count);
         _worldSelect = new WorldSelectScreen(worlds, visibleSlotCount);
@@ -254,8 +269,10 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     }
 
     /// <summary>
-    /// Marks the loop as stopped: any frame or startup work still in flight returns without touching
-    /// the browser adapters. Called by the page before it disposes those adapters.
+    /// Marks the loop as stopped: frame processing, startup and world loading check this after each
+    /// await and return without touching the browser adapters again. Called by the page before it
+    /// disposes those adapters. A JS call already in flight at that moment may still complete or
+    /// fault; nothing new is started.
     /// </summary>
     public void Stop() => _isStopped = true;
 
@@ -391,19 +408,28 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
                 _loadingBar.CurrentValue = stepsCompleted;
             }
         });
-        _world = await World2D.LoadAsync(assetFileProvider, worldName, progress);
+        var world = await World2D.LoadAsync(assetFileProvider, worldName, progress);
+        if (_isStopped)
+        {
+            return;
+        }
+
+        _world = world;
         await soundPlayer.SetSoundsAsync(_world.Sounds);
+        if (_isStopped)
+        {
+            return;
+        }
 
         // Time spent loading is not gameplay time.
         _physicsAccumulatorSeconds = 0;
         _pendingTransitionElapsedSeconds = 0;
 
-        // State the systems carry between frames belongs to the previous world.
-        _physics.Reset();
+        // State the systems carry between frames belongs to the previous world. Keys still held
+        // from the menu seed the edge history, so they do not count as fresh presses in the first frame.
+        _physics.Reset(_input);
         _collision.Reset();
         _animation.Reset();
-
-        // Keys still held from the menu must not count as fresh presses in the first frame.
         _wasActionKeyDown = _input.IsActionKeyDown;
 
         _camera.SnapTo(

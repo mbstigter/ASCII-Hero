@@ -3,8 +3,9 @@ using Microsoft.JSInterop;
 namespace ASCII_Hero.Client.Game.Browser;
 
 /// <summary>
-/// The pixel size of one font glyph cell as configured for the canvas, reported by the browser
-/// after the active rendering font has finished loading. See game-interop.js.
+/// The pixel size of one font glyph cell, as returned by the browser initializer. These are the
+/// configured <c>FontWidthPixels</c>/<c>FontHeightPixels</c> echoed back; the initializer does not
+/// wait for the font to load or measure it. See game-interop.js.
 /// </summary>
 public readonly record struct CellMetrics(double CellWidthPixels, double CellHeightPixels);
 

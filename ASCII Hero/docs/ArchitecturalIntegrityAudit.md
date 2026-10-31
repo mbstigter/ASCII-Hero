@@ -803,3 +803,43 @@ Those issues matter more than class counts or file lengths.
 8. **Leave optional presentation/naming work until useful:** ARCH-017–018.
 
 **Bottom line:** preserve the architecture. Strengthen a few invariants, make lifetimes explicit, establish regression evidence, and separate only those responsibilities that demonstrably change for different reasons. There is no case here for a wholesale redesign.
+
+## 10. Implementation outcome
+
+All eighteen recommendations were approved and implemented incrementally, with a build and test run after each step, in commit `793fa1f` on `master`. Shipped gameplay was checked manually after the work.
+
+### Per recommendation
+
+| ID | Outcome | Choice made |
+| --- | --- | --- |
+| ARCH-001 | Outdated comments and structure docs corrected (`CanvasBridge`, `Body2D`, `Player2D`, `GameLoop`, `World2D`, `docs/Structure.md`). | Rationale kept; only false statements removed. |
+| ARCH-002 | `ParseDouble` renamed to `ParseDoubleOrDefault`. | Parsing behavior unchanged. |
+| ARCH-003 | Dynamic patrol configuration uses named arguments. | Adopted as a general project convention for paired X/Y parameters. |
+| ARCH-004 | `Body2D` regrouped; contact and step tracking gathered at the end of the class. | Class not split. |
+| ARCH-005 | A body's material is fixed at spawn: placement `Material`, else the sprite's `DefaultMaterial`. Frame, clip and pose changes no longer change it. | Simpler of the two options: the per-frame "dominant material" was removed, as no asset depends on material changing between frames. |
+| ARCH-006 | `HttpAssetFileProvider` returns `null` only for 404; other failures throw `HttpRequestException` with path and status. | Fallback means "absent", never "failed to load". |
+| ARCH-007 | Invalid default poses and missing required player poses are hard load errors. | Matches the documented contract. |
+| ARCH-008 | A world must contain exactly one player placement. | Hard load error for none or several. |
+| ARCH-009 | Patrol bounds, speeds and multipliers reject negative and infinite values. | Validation added at the loader, not in the patrol code. |
+| ARCH-010 | The canvas-focus `pointerdown` listener is stored and removed on dispose. | Same pattern as the existing key listeners. |
+| ARCH-011 | The game loop is stopped when the page is disposed; JS loop and listeners are stopped before the .NET reference is released. | No cancellation framework introduced. |
+| ARCH-012 | `PhysicsSystem`, `CollisionSystem` and `AnimationSystem` have explicit `Reset()` methods, called when a world loads. | Explicit reset over recreating systems. |
+| ARCH-013 | New MSTest project `ASCII Hero.Tests` (40 tests): INI parsing, HTTP asset provider, sprite pose contract, input state, contact impact tracking, and loading every shipped world. | Characterization tests of real assets rather than physics simulation tests. |
+| ARCH-014 | Loading and spawning moved to `World2D.Loading.cs`. | Option B (partial class); option C (separate `WorldLoader`) was not justified. |
+| ARCH-015 | Gameplay consequences moved to `InteractionHandler`; `CollisionSystem` keeps detection only. | Option B (concrete handler); no event bus. |
+| ARCH-016 | `PhysicsSystem.Step` reads as named player-control phases followed by integration. | Phase methods, no new class. |
+| ARCH-017 | End-screen drawing moved from `GameLoop` to `EndScreenRenderer`. | Same pattern as the existing renderers. |
+| ARCH-018 | `InputState` members renamed from `...Pressed` to `...KeyDown`. | Rename only; edge detection stays with the callers that already track it. |
+
+### Follow-up found during implementation: solid hazard contact
+
+After the work, slow contact with solid hazards (snakes) was not registering. This was a pre-existing problem: hazard hits were detected by overlap, but the collision solver fully separates solid bodies, so only fast contacts left a brief overlap.
+
+Choices made:
+
+- Hazard detection uses the contacts the solver already records; plain overlap remains for passable hazards and collectables. No overlap tolerance was introduced.
+- Each resolved contact records its closing speed before the collision response (`Body2D.GetContactImpactSpeed`, `HasContactWith`).
+- A killable hazard is squashed only when landed on at least at its new placement setting `KillImpactSpeed` (default 5 cells/second, `GameDefaults.DefaultKillImpactSpeed`). A gentler touch from above is an ordinary hit, as is a hazard falling onto the player.
+- No special squash bounce; any bounce comes from normal restitution.
+
+Documented in `docs/AssetFormat.md`, `docs/Decisions.md`, `docs/Structure.md` and `docs/Features.md`.

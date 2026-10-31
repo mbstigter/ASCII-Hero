@@ -21,11 +21,9 @@ public class CollisionSystem
     private readonly SpatialGrid<IPhysicsBody> _movingBodiesGrid = new(PhysicsConstants.GridCellSize);
 
     /// <summary>
-    /// Hazard/body contact pairs
-    /// ordinary (non-kill) hazard contact's effect fires only on the first frame of a new contact
-    /// - a "rising edge" - rather than every frame the two remain overlapping. A hazard never
-    /// physically pushes a body back out, so a body can rest against/inside one for many
-    /// consecutive frames.
+    /// Hazard/body contact pairs touching last frame, so an ordinary (non-kill) hazard contact's
+    /// effect fires only on the first frame of a new contact - a "rising edge" - rather than every
+    /// frame the two remain touching (resting on/against a solid hazard, or inside a passable one).
     /// </summary>
     private HashSet<(Body2D Hazard, IPhysicsBody Body)> _activeHazardContacts = [];
 
@@ -395,27 +393,36 @@ public class CollisionSystem
     }
 
     /// <summary>
-    /// A solid hazard is touched when the solver resolved a contact between the two this frame -
-    /// it is never left overlapping, so overlap alone would miss a resting/sliding contact. A
-    /// passable hazard gets no resolved contact and is touched by plain overlap.
+    /// Whether the solver physically resolves <paramref name="hazard"/> against movers: any
+    /// moving body, or a static body that is not passable - the same split the solids and
+    /// mover-pair passes in <see cref="Resolve"/> use.
+    /// </summary>
+    private static bool IsSolidHazard(Body2D hazard) => !hazard.IsStatic || !hazard.IsPassable;
+
+    /// <summary>
+    /// A solid hazard is touched only through a surface contact the solver resolved this frame -
+    /// it is pushed apart, never left overlapping, so overlap alone would miss a resting/sliding
+    /// contact. A passable hazard gets no surface contact and is touched by plain overlap. Climb/
+    /// hang grip contacts never count as touching.
     /// </summary>
     private static bool IsTouchingHazard(IPhysicsBody body, Body2D hazard) =>
-        body.HasContactWith(hazard) || Overlaps(body, hazard);
+        IsSolidHazard(hazard) ? body.HasSurfaceContactWith(hazard) : Overlaps(body, hazard);
 
     /// <summary>
     /// Whether <paramref name="body"/> landed on top of <paramref name="hazard"/> at a closing
     /// speed of at least its <see cref="IKillableBody.KillImpactSpeed"/>. A solid hazard uses the
-    /// resolved top contact and its recorded impact speed; a passable hazard uses the overlap
-    /// direction and the body's downward speed relative to the hazard.
+    /// impact speed recorded for the body's bottom contact with it (side impacts are stored
+    /// separately and never count); a passable hazard uses the overlap direction and the body's
+    /// downward speed relative to the hazard.
     /// </summary>
     private static bool IsKillingImpact(IPhysicsBody body, Body2D hazard, IKillableBody killable)
     {
-        if (body.GetContactingBodies(ContactType.SurfaceBottom).Contains(hazard))
+        if (IsSolidHazard(hazard))
         {
-            return body.GetContactImpactSpeed(hazard) >= killable.KillImpactSpeed;
+            return body.GetContactImpactSpeed(ContactType.SurfaceBottom, hazard) >= killable.KillImpactSpeed;
         }
 
-        if (body.HasContactWith(hazard) || !IsApproachingFromTop(body, hazard))
+        if (!IsApproachingFromTop(body, hazard))
         {
             return false;
         }
@@ -819,7 +826,8 @@ public class CollisionSystem
     /// (<c>(0, -1)</c>, body moves up to separate) means <paramref name="other"/> is below
     /// <paramref name="body"/>: <see cref="ContactType.SurfaceBottom"/> on <paramref name="body"/>,
     /// <see cref="ContactType.SurfaceTop"/> on <paramref name="other"/>. Both sides also record
-    /// <paramref name="impactSpeed"/>, the pre-response closing speed along the normal.
+    /// <paramref name="impactSpeed"/>, the pre-response closing speed along the normal, keyed by
+    /// their own contact side.
     /// </summary>
     private static void RecordContact(IPhysicsBody body, Body2D other, Vector2D normal, double impactSpeed = 0.0)
     {

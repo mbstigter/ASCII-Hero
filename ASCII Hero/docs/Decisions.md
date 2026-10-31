@@ -350,14 +350,27 @@ capture the "why" behind a decision without needing a lengthy narrative.
   (see the pending-transition bullet below); the bar is refilled by the
   respawn that follows. At 0 lives the death leads to a "Game Over!" screen
   instead of a respawn.
-- **Hazard contact comes from the collision solver, not overlap.** A solid
-  hazard is never left overlapping, so `CollisionSystem` treats any resolved
-  contact this frame (`Body2D.HasContactWith`) as touching it; passable hazards
-  still use overlap. A killable hazard is squashed only when the killer lands
-  on top at a closing speed (`Body2D.GetContactImpactSpeed`, recorded before
-  the response) of at least its `KillImpactSpeed` (placement key, default
-  `GameDefaults.DefaultKillImpactSpeed`); slower top contact is an ordinary
+- **How a hazard is touched follows how the solver treats it.** A solid hazard
+  (any moving hazard, or a static one that is not passable) is pushed apart,
+  never left overlapping, so it is touched only through a surface contact
+  resolved this frame (`Body2D.HasSurfaceContactWith`); a passable hazard is
+  touched by overlap. Climb/hang grip contacts are not surface contacts and
+  never count. A killable hazard is squashed only when the impact speed recorded
+  for the killer's bottom contact with it (`Body2D.GetContactImpactSpeed(SurfaceBottom, hazard)`,
+  measured before the response and stored per contact side, so a hard side hit
+  is never mistaken for a landing) reaches its `KillImpactSpeed` (placement key,
+  default `GameDefaults.DefaultKillImpactSpeed`); anything else is an ordinary
   hit. Any bounce off a squash is just the normal restitution response.
+- **Gravity is a non-negative magnitude that always pulls down.** Inverted
+  gravity is not a concept; negative or non-finite values are rejected at load.
+  Zero means weightless; weight-scaled patrol caps then give no force, except
+  an unlimited cap, which stays unlimited.
+- **A world load seeds key-edge history from the keys currently held**
+  (`PhysicsSystem.Reset(InputState)`, `_wasActionKeyDown`), so a key held
+  through loading is never read as a fresh press.
+- **`GameLoop.Stop()` is a flag checked after every await** in startup, world
+  loading and frame processing; nothing new reaches the browser adapters once
+  the page has begun disposing them. No cancellation tokens are used.
 - **Rings** (`CollectableType.Ring`) add one to `Player2D.Rings` and 5 to
   Score (`GameDefaults.RingScore`); they do not heal. Every `RingsPerLife` rings (`[World] RingsPerLife`,
   default 25) the count resets to 0 and a life is added. Rings survive respawn.

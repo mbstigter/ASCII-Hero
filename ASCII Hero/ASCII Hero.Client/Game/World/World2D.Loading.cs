@@ -83,8 +83,17 @@ public partial class World2D
 
         var globalSettingsContent = await fileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/Settings.ini");
         var globalSettings = IniDocument.Parse(globalSettingsContent ?? string.Empty);
-        if (IniValueParser.TryParseDouble(settings.TryGetValue("Physics", "Gravity") ?? globalSettings.TryGetValue("Physics", "Gravity"), out var gravity))
+        // Gravity always pulls down: a finite, non-negative magnitude (0 = weightless). Inverted
+        // gravity is not a supported concept, so a negative or malformed value is rejected here
+        // rather than producing undefined physics later.
+        var gravityText = settings.TryGetValue("Physics", "Gravity") ?? globalSettings.TryGetValue("Physics", "Gravity");
+        if (gravityText is not null)
         {
+            if (!IniValueParser.TryParseDouble(gravityText, out var gravity) || !double.IsFinite(gravity) || gravity < 0)
+            {
+                throw new FormatException($"World '{worldName}' [Physics] Gravity '{gravityText}' must be a finite number of at least 0.");
+            }
+
             world.Gravity = gravity;
         }
         progress?.Report(1);

@@ -29,15 +29,23 @@ public class PhysicsSystem
     /// </summary>
     private bool _suppressClimbUntilClear;
 
-    /// <summary>Clears all player-control state carried between frames, so a newly loaded world starts fresh.</summary>
-    public void Reset()
+    /// <summary>
+    /// Clears all player-control state carried between frames, so a newly loaded world starts
+    /// fresh. Key-edge history is seeded from the keys held right now rather than cleared: a key
+    /// still held from the previous world is not a fresh press, so it cannot trigger a jump or
+    /// stance change on the first frame of the new world.
+    /// </summary>
+    public void Reset(InputState input)
     {
-        _wasUpKeyDown = false;
-        _wasDownKeyDown = false;
-        _wasJumpKeyDown = false;
+        _wasUpKeyDown = input.IsUpKeyDown;
+        _wasDownKeyDown = input.IsDownKeyDown;
+        _wasJumpKeyDown = input.IsJumpKeyDown;
         _wasAirborneSinceStance = false;
         _suppressClimbUntilClear = false;
     }
+
+    /// <summary>Whether the last-seen key state (the edge-detection baseline) has Up, Down and Jump held.</summary>
+    internal (bool Up, bool Down, bool Jump) KeyEdgeBaseline => (_wasUpKeyDown, _wasDownKeyDown, _wasJumpKeyDown);
 
     public void Step(World2D world, InputState input, double deltaSeconds)
     {

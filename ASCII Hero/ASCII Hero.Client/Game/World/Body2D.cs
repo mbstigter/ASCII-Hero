@@ -486,9 +486,9 @@ public abstract class Body2D
     /// This frame's resolved contacts, keyed by <see cref="Physics.ContactType"/> flag with the
     /// set of other bodies contacted for that flag (e.g. <see cref="Physics.ContactType.SurfaceBottom"/>
     /// maps to whichever solid(s) this body is currently resting on). Rebuilt from scratch every
-    /// frame by <see cref="Physics.CollisionSystem"/> as contacts are resolved - never mutated by
-    /// any other system, and never carried forward as "still true until told otherwise": a stale
-    /// entry from a contact that stopped applying is removed the same frame, not left to linger.
+    /// frame by <see cref="Physics.CollisionSystem"/> as contacts are resolved, and never carried
+    /// forward as "still true until told otherwise". The only other edit is an explicit
+    /// <see cref="RemoveContact"/> (e.g. a jump dropping its ground contact for the rest of the frame).
     /// See docs/Decisions.md for why contacts are recorded per side rather than inferred from
     /// overlap depth alone, and why <see cref="IPhysicsBody.IsGrounded"/> is derived from them.
     /// </summary>
@@ -506,11 +506,16 @@ public abstract class Body2D
         new Dictionary<Physics.ContactType, List<Body2D>>();
 
     /// <summary>
-    /// This frame's highest closing (approach) speed along the contact normal per contacted body,
-    /// in cells/second, measured before the collision response. Cleared together with
+    /// This frame's highest closing (approach) speed along the contact normal per contact side and
+    /// contacted body, in cells/second, measured before the collision response. Keyed by side so a
+    /// hard side impact can never be read back as a bottom (landing) impact. Cleared together with
     /// <see cref="_contacts"/>; see <see cref="GetContactImpactSpeed"/>.
     /// </summary>
-    private readonly Dictionary<Body2D, double> _contactImpactSpeeds = [];
+    private readonly Dictionary<(Physics.ContactType Type, Body2D Other), double> _contactImpactSpeeds = [];
+
+    /// <summary>The contact sides produced by the collision solver - grip contacts (climb/hang) are not physical surface contacts.</summary>
+    private const Physics.ContactType SurfaceContacts =
+        Physics.ContactType.SurfaceTop | Physics.ContactType.SurfaceBottom | Physics.ContactType.SurfaceLeft | Physics.ContactType.SurfaceRight;
 
     /// <summary>
     /// Whether this body's current-frame contacts include the given <paramref name="type"/> with
@@ -580,11 +585,17 @@ public abstract class Body2D
 
         if (other is null)
         {
+            foreach (var body in bodies)
+            {
+                _contactImpactSpeeds.Remove((type, body));
+            }
+
             bodies.Clear();
         }
         else
         {
             bodies.Remove(other);
+            _contactImpactSpeeds.Remove((type, other));
         }
     }
 
@@ -596,9 +607,9 @@ public abstract class Body2D
     /// </summary>
     public void AddContact(Physics.ContactType type, Body2D other, double impactSpeed = 0.0)
     {
-        if (impactSpeed > GetContactImpactSpeed(other))
+        if (impactSpeed > GetContactImpactSpeed(type, other))
         {
-            _contactImpactSpeeds[other] = impactSpeed;
+            _contactImpactSpeeds[(type, other)] = impactSpeed;
         }
 
         if (!_contacts.TryGetValue(type, out var bodies))
@@ -615,13 +626,30 @@ public abstract class Body2D
 
     /// <summary>
     /// The highest speed (cells/second) at which this body and <paramref name="other"/> were
-    /// closing in on each other along the contact normal when a contact between them was resolved
-    /// this frame - 0 for a resting or separating contact, or no contact at all.
+    /// closing in on each other along the contact normal when a contact on this body's
+    /// <paramref name="type"/> side (a single flag) was resolved this frame - 0 for a resting or
+    /// separating contact, or no such contact at all.
     /// </summary>
-    public double GetContactImpactSpeed(Body2D other) => _contactImpactSpeeds.GetValueOrDefault(other);
+    public double GetContactImpactSpeed(Physics.ContactType type, Body2D other) =>
+        _contactImpactSpeeds.GetValueOrDefault((type, other));
 
-    /// <summary>Whether any of this body's current-frame contacts, of any type, is with <paramref name="other"/>.</summary>
-    public bool HasContactWith(Body2D other) => _contacts.Values.Any(bodies => bodies.Contains(other));
+    /// <summary>
+    /// Whether the collision solver resolved a physical surface contact (top, bottom, left or
+    /// right) between this body and <paramref name="other"/> this frame. Climb/hang grip
+    /// contacts do not count: gripping is not touching a surface.
+    /// </summary>
+    public bool HasSurfaceContactWith(Body2D other)
+    {
+        foreach (var flag in EnumerateFlags(SurfaceContacts))
+        {
+            if (_contacts.TryGetValue(flag, out var bodies) && bodies.Contains(other))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     /// <summary>
     /// Clears every recorded contact for this frame, first

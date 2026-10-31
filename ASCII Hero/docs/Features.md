@@ -95,7 +95,7 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
 - **Automatic facing.** Hazards turn to face their direction of travel and play their
   `move_left`/`move_right` clips.
 - **Stompable enemies.** A killable hazard is squashed when the player lands on top hard enough
-  (`KillImpactSpeed`); a gentler touch hurts instead. It can play a `KillSound` when squashed. Its
+  (`KillImpactSpeed`); a gentler landing, or running into its side however fast, hurts instead. It can play a `KillSound` when squashed. Its
   `Sound` plays instead when it hurts the player, so a single contact plays
   only one of the two.
 

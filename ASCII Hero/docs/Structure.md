@@ -433,9 +433,13 @@ The live game state and the entity types that make it up.
   moving bodies against solid static terrain, moving bodies against each
   other, moving bodies against the world's own bounds (which act as a
   generic physical surface, bouncing dynamic bodies per their restitution),
-  hazard/collectable contact (resolved solver contacts for solid hazards,
-  overlap for passable hazards and collectables; squash = top contact at or
-  above the hazard's `KillImpactSpeed`; detection and the hazard-contact rising-edge
+  hazard/collectable contact (a solid hazard - any moving hazard, or a
+  static one that is not passable - is touched only through a solver
+  surface contact; a passable hazard or collectable by overlap; climb/hang
+  grip contacts never count; squash = the impact speed recorded for the
+  body's bottom contact with the hazard reaching its `KillImpactSpeed`,
+  impact speeds being stored per contact side so a side hit never reads as
+  a landing; detection
   history only; what each interaction does - kills, damage, lives, score,
   rings, keys, checkpoints, level-end/death transitions, their sounds and
   effects - is applied by **`InteractionHandler`**), and any `IClimberBody`/`IHangerBody`'s

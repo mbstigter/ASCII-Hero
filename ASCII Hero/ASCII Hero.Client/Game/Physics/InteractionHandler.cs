@@ -4,11 +4,12 @@ using ASCII_Hero.Client.Game.World;
 namespace ASCII_Hero.Client.Game.Physics;
 
 /// <summary>
-/// Gameplay consequences of hazard and collectable overlaps detected by
+/// Gameplay consequences of hazard contacts and collectable overlaps detected by
 /// <see cref="CollisionSystem"/>: kills, damage, lives, score, rings, keys, checkpoints,
 /// level-end and death transitions, plus their sounds and effects. <see cref="CollisionSystem"/>
-/// keeps the overlap detection and the hazard-contact rising-edge history and calls into here
-/// in the same order it always has; this class decides only what each interaction does.
+/// keeps the detection (solver surface contacts for solid hazards, overlap for passable hazards
+/// and collectables) and the hazard-contact rising-edge history; this class decides only what
+/// each interaction does.
 /// </summary>
 public static class InteractionHandler
 {

@@ -556,6 +556,11 @@ own settings.ini.
 
 **`[Physics]`** (optional) — `Gravity`, this world's gravity acceleration in
 world cells per second squared; falls back to `Global/Settings.ini` (§4.4).
+Gravity always pulls down: the value must be a finite number of at least 0
+(0 = weightless). A negative or unreadable value stops the world from loading
+with an error. Patrol strength caps are given in multiples of a body's weight,
+so at 0 gravity a finite cap gives no patrol force; an unset (unlimited)
+horizontal cap stays unlimited.
 
 **`[World]`** (optional)
 this world's thumbnail on the world-selection screen (see §3.2). Falls back

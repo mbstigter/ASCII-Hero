@@ -292,7 +292,7 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
             var surfaceVelocityX = GetSurfaceVelocityX();
             var targetVelocityX = surfaceVelocityX + axisTargetX;
             forceX = (targetVelocityX - Velocity.X) * mass * PatrolForceMultiplierX;
-            var maxForceX = PatrolMaxForceX * mass * gravity;
+            var maxForceX = WeightScaledForceCap(PatrolMaxForceX, mass, gravity);
             forceX = Math.Clamp(forceX, -maxForceX, maxForceX);
 
             // Facing intent (see Body2D.MoveIntentX) is simply this patrol's current heading -
@@ -316,12 +316,21 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
             // Force cap ("wing power"). Gravity is just another force in the net sum, so
             // climbing needs the force to beat it (saturating the cap) while descending
             // needs little or none. The default cap of 0 means no thrust at all (a walker).
-            var maxForceY = PatrolMaxForceY * mass * gravity;
+            var maxForceY = WeightScaledForceCap(PatrolMaxForceY, mass, gravity);
             forceY = Math.Clamp(forceY, -maxForceY, maxForceY);
         }
 
         PatrolForce = new Vector2D(forceX, forceY);
     }
+
+    /// <summary>
+    /// Converts a force cap given in multiples of this body's weight into an absolute force.
+    /// Gravity is validated non-negative at load, so the result is never negative. An unlimited
+    /// (infinite) cap stays unlimited even at zero gravity; a finite cap is zero there, since a
+    /// weightless body has no weight to scale it by.
+    /// </summary>
+    private static double WeightScaledForceCap(double capInWeights, double mass, double gravity) =>
+        double.IsPositiveInfinity(capInWeights) ? double.PositiveInfinity : capInWeights * mass * gravity;
 
     /// <summary>
     /// Sets the horizontal patrol range to the extent of the static or kinematic solid this body
