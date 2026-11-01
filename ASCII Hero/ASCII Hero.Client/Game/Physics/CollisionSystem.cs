@@ -248,11 +248,15 @@ public class CollisionSystem
     /// actually engage <see cref="IClimberBody.IsClimbing"/>/<see cref="IHangerBody.IsHanging"/>.
     /// </summary>
     /// <remarks>
-    /// A ladder can be grabbed from any side (climbing up into it, sideways into it mid-jump, or
+    /// A climbable can be grabbed from any side (climbing up into it, sideways into it mid-jump, or
     /// falling down onto/through it), so climbable overlap has no directional restriction - just
-    /// overlap plus a speed gate (see <see cref="PhysicsConstants.MaxSnapSpeed"/>). A hangable surface only
-    /// triggers when approaching from underneath (see <see cref="WouldSnapFromBelow"/>), not
-    /// merely brushing its top while landing on it, and is likewise gated on speed.
+    /// overlap plus a speed gate (see <see cref="PhysicsConstants.MaxGripSpeed"/>). A hangable surface only
+    /// counts once the body's top edge is at or below the surface's top edge (see
+    /// <see cref="IsAtHandLevel"/>) - i.e. hands at the surface's level, whether rising up to it or
+    /// falling down past it - not while merely brushing its top when landing on it, and is
+    /// likewise gated on speed. The body is only snapped onto the surface once it is actually
+    /// hanging (a deliberate grab engaged by <see cref="Physics.PhysicsSystem"/>); merely touching
+    /// a hangable lets the body pass straight through.
     /// </remarks>
     private static void ResolveClimbingAndHanging(World2D world)
     {
@@ -263,8 +267,8 @@ public class CollisionSystem
         foreach (var body in world.Objects)
         {
             // Speed gates are measured relative to the surface's carry velocity (its own motion
-            // plus any conveyor motion - see Body2D.GetCarryVelocity), so a moving ladder/pipe or
-            // a conveyor/rope can be grabbed as easily as a fixed one. The touched surface is
+            // plus any conveyor motion - see Body2D.GetCarryVelocity), so a moving or running
+            // climbable/hangable can be grabbed as easily as a fixed one. The touched surface is
             // recorded as a grip contact (ContactType.Climbable/Hangable), which PhysicsSystem
             // uses as the reference frame and reaction target for the grip motor.
             if (body is IClimberBody climber)
@@ -272,7 +276,7 @@ public class CollisionSystem
                 climber.IsTouchingClimbable = false;
                 foreach (var climbable in climbables)
                 {
-                    if (!Overlaps(climber, climbable) || !IsWithinSnapSpeed(climber.Velocity - climbable.GetCarryVelocity()))
+                    if (!Overlaps(climber, climbable) || !IsWithinGripSpeed(climber.Velocity - climbable.GetCarryVelocity()))
                     {
                         continue;
                     }
@@ -289,28 +293,25 @@ public class CollisionSystem
                 foreach (var hangable in hangables)
                 {
                     var carryVelocity = hangable.GetCarryVelocity();
-                    if (!IsWithinSnapSpeed(hanger.Velocity - carryVelocity)
-                        || !Overlaps(hanger, hangable) || !WouldSnapFromBelow(hanger, hangable))
+                    if (!IsWithinGripSpeed(hanger.Velocity - carryVelocity)
+                        || !Overlaps(hanger, hangable) || !IsAtHandLevel(hanger, hangable))
                     {
                         continue;
                     }
 
-                    // IsTouchingHangable is reported here even while SuppressHangUntilClear
-                    // is set below, so PhysicsSystem's debounce-release check ("once no
-                    // longer touching at all") only fires once the body has genuinely
-                    // cleared the surface's overlap, not the instant a jump/swing begins
-                    // while still overlapping it.
+                    // IsTouchingHangable is reported regardless of whether the body is hanging,
+                    // so PhysicsSystem can engage a grab next frame and its debounce-release
+                    // check ("once no longer touching at all") only fires once the body has
+                    // genuinely cleared the surface's overlap, not the instant a jump/swing
+                    // begins while still overlapping it.
                     hanger.IsTouchingHangable = true;
                     hanger.AddContact(ContactType.Hangable, hangable);
 
-                    // While IHangerBody.SuppressHangUntilClear is set (PhysicsSystem just made
-                    // the player jump/swing off, or explicitly let go, this same frame), skip
-                    // the actual snap/stop below even though overlap is still detected above -
-                    // otherwise the jump-off velocity set moments ago in PhysicsSystem would
-                    // be immediately zeroed and the body re-snapped right back. The overlap
-                    // keeps being reported above regardless, so the debounce is only released
-                    // once truly clear.
-                    if (hanger.SuppressHangUntilClear)
+                    // Only a body that is actually hanging is caught/snapped: touching alone
+                    // (no grab, or just jumped/swung off or let go - which clears IsHanging)
+                    // lets it keep moving through, so a jump-off velocity set moments ago in
+                    // PhysicsSystem is never zeroed and re-snapped right back.
+                    if (!hanger.IsHanging)
                     {
                         break;
                     }
@@ -318,7 +319,7 @@ public class CollisionSystem
                     // Detected and corrected synchronously, in this same call, rather than
                     // waiting for a flag set on a previous frame. Vertical velocity is matched
                     // to the surface's carry velocity rather than zeroed, so a rising/falling
-                    // pipe holds the body at rest relative to itself.
+                    // hangable holds the body at rest relative to itself.
                     hanger.Velocity = new Vector2D(hanger.Velocity.X, carryVelocity.Y);
                     SnapOntoHangable(hanger, hangable);
                     break;
@@ -329,10 +330,14 @@ public class CollisionSystem
 
     /// <summary>
     /// Corrects <paramref name="hanger"/>'s position so its own overall topmost collision edge
-    /// (see <see cref="WouldSnapFromBelow"/>) lands exactly on <paramref name="hangable"/>'s
+    /// (see <see cref="IsAtHandLevel"/>) lands exactly on <paramref name="hangable"/>'s
     /// bottom edge, hanging just underneath the surface rather than overlapping into/through it.
     /// Only the vertical axis is corrected - hanging/shimmying is a deliberate lateral action (see
     /// <see cref="Physics.PhysicsSystem"/>'s hang movement), so horizontal position is left alone.
+    /// A hard position correction (unlike climbing's gentle motor pull toward a climbable's centre -
+    /// see PhysicsSystem.GetClimbCenteringSpeed) because the hands must sit exactly on the surface
+    /// while gravity pulls down every frame. Measured from the collision rects rather than
+    /// Position/Size, since it is the real top edge of the hands that has to meet the surface.
     /// </summary>
     private static void SnapOntoHangable(IHangerBody hanger, Body2D hangable)
     {
@@ -347,12 +352,12 @@ public class CollisionSystem
     }
 
     /// <summary>
-    /// Whether <paramref name="body"/> is moving slowly enough to snap onto a climbable/hangable
-    /// surface on first touch, rather than passing straight through it - see
-    /// <see cref="PhysicsConstants.MaxSnapSpeed"/>. Checked against overall speed, not just one axis.
+    /// Whether <paramref name="velocity"/> is slow enough, relative to a climbable/hangable
+    /// surface, to grip it rather than passing straight through it - see
+    /// <see cref="PhysicsConstants.MaxGripSpeed"/>. Checked against overall speed, not just one axis.
     /// </summary>
-    private static bool IsWithinSnapSpeed(Vector2D velocity) =>
-        Math.Sqrt(velocity.X * velocity.X + velocity.Y * velocity.Y) <= PhysicsConstants.MaxSnapSpeed;
+    private static bool IsWithinGripSpeed(Vector2D velocity) =>
+        Math.Sqrt(velocity.X * velocity.X + velocity.Y * velocity.Y) <= PhysicsConstants.MaxGripSpeed;
 
     /// <summary>
     /// Combines two materials' friction coefficients for a single contact as their geometric mean
@@ -988,7 +993,7 @@ public class CollisionSystem
     /// overlap determines <see cref="Contact.Normal"/>'s sign. Shared by
     /// <see cref="ResolveAgainstSolid"/>, <see cref="ResolveAgainstMover"/>,
     /// <see cref="IsApproachingFromTop"/>, <see cref="SnapOntoHangable"/>, and
-    /// <see cref="WouldSnapFromBelow"/>. Returns false (with no <paramref name="contact"/>) if no
+    /// <see cref="IsAtHandLevel"/>. Returns false (with no <paramref name="contact"/>) if no
     /// rectangle pair overlaps at all.
     /// </summary>
     /// <param name="ownerA">
@@ -1182,16 +1187,15 @@ public class CollisionSystem
     }
 
     /// <summary>
-    /// Whether <paramref name="body"/> is underneath <paramref name="other"/> - i.e. no part of
-    /// <paramref name="body"/>'s own collision shape extends above <paramref name="other"/>'s top
-    /// edge. Compares the body's own overall topmost edge (the minimum <see cref="Rect.Top"/>
-    /// across all of its collision rects), so a multi-rect body (e.g. one whose feet sit well
-    /// below its head) only snaps once its true top row has cleared the surface, not as soon as
-    /// any single sub-rect overlaps it. Combined with the caller's <see cref="IsWithinSnapSpeed"/>
-    /// gate, this also rejects a body moving too fast to grab on even though it is geometrically
-    /// underneath.
+    /// Whether <paramref name="body"/>'s hands are at <paramref name="other"/>'s level - i.e. no
+    /// part of <paramref name="body"/>'s own collision shape extends above <paramref name="other"/>'s
+    /// top edge - whether rising up to it or falling down past it. Compares the body's own overall
+    /// topmost edge (the minimum <see cref="Rect.Top"/> across all of its collision rects), so a
+    /// multi-rect body (e.g. one whose feet sit well below its head) only qualifies once its true
+    /// top row is at the surface, not as soon as any single sub-rect overlaps it. Rejects merely
+    /// brushing the surface's top while landing on it.
     /// </summary>
-    private static bool WouldSnapFromBelow(IPhysicsBody body, Body2D other)
+    private static bool IsAtHandLevel(IPhysicsBody body, Body2D other)
     {
         if (!TryFindContact(body.CollisionRects, other.CollisionRects, out var contact))
         {

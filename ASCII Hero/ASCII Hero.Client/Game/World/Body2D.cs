@@ -104,7 +104,7 @@ public abstract class Body2D
     /// the vertical counterpart to <see cref="MoveIntentX"/> - same rationale: <see cref="IClimberBody.IsClimbing"/>'s
     /// vertical <see cref="IPhysicsBody.Velocity"/>.Y is downstream of the same mass-scaled
     /// motor force convergence as horizontal movement, so it asymptotically approaches (but
-    /// essentially never exactly reaches) its zero target while idle on a ladder - reading it
+    /// essentially never exactly reaches) its zero target while idle on a climbable - reading it
     /// directly for facing (see <see cref="ResolveVerticalFacing(double)"/>) would leave the climb
     /// pose stuck on Up/Down and never resolve to Idle.
     /// <see cref="Physics.PhysicsSystem.Step"/>, exactly like <see cref="MoveIntentX"/>.
@@ -138,29 +138,30 @@ public abstract class Body2D
     public string? SoundName { get; set; }
 
     /// <summary>
-    /// Whether the player can climb this static body (e.g. a ladder) - straight up/down movement,
+    /// Whether the player can climb this static body - straight up/down movement,
     /// held by a friction-limited grip (gravity stays on). Checked generically by <see cref="Physics.PhysicsSystem"/>
-    /// against the player's current overlap each frame, independent of concrete type - any static
-    /// placement (not just a dedicated "ladder" asset) can opt in via this flag. A climbable body
-    /// is not automatically passable; set <see cref="IsPassable"/> too if it shouldn't also block
-    /// movement (the usual case for an actual ladder).
+    /// against the player's current overlap each frame, independent of concrete type or look -
+    /// any static placement can opt in via this flag (typically an upright one: a vertical ladder
+    /// or pipe, a hanging rope). A climbable body is not automatically passable; set
+    /// <see cref="IsPassable"/> too if it shouldn't also block movement (the usual case).
     /// </summary>
     public bool IsClimbable { get; set; }
 
     /// <summary>
-    /// Whether the player can hang and move laterally from this static body (e.g. a pipe/bar) -
-    /// held by a friction-limited grip while overlapping from below. Checked generically by
+    /// Whether the player can hang and move laterally from this static body -
+    /// held by a friction-limited grip with hands at its level. Checked generically by
     /// <see cref="Physics.PhysicsSystem"/> against the player's current overlap each frame,
-    /// independent of concrete type, the same way <see cref="IsClimbable"/> is. A hangable body is
+    /// independent of concrete type or look, the same way <see cref="IsClimbable"/> is (typically
+    /// a lying-flat placement: a horizontal pipe or ladder, a stretched rope). A hangable body is
     /// not automatically passable; set <see cref="IsPassable"/> too if it shouldn't also block
-    /// movement (the usual case for an actual pipe/bar).
+    /// movement (the usual case).
     /// </summary>
     public bool IsHangable { get; set; }
 
     /// <summary>
     /// Speed (cells/second) at which this body's surface moves while the body itself stays put -
-    /// e.g. a vertical conveyor's moving rungs (<see cref="IsClimbable"/>) or a moving
-    /// rope (<see cref="IsHangable"/> or <see cref="IsClimbable"/>). Zero for an ordinary surface. Loaded from the
+    /// e.g. a running climbable (<see cref="IsClimbable"/>) or hangable (<see cref="IsHangable"/>),
+    /// such as moving rungs or a running rope. Zero for an ordinary surface. Loaded from the
     /// placement's <c>ConveyorDirection</c>/<c>ConveyorSpeed</c> keys, which only static bodies
     /// (<see cref="IsStatic"/>, including kinematic ones) accept - always zero on a movable body.
     /// Combined with the body's own velocity by <see cref="GetCarryVelocity"/>.
@@ -169,8 +170,8 @@ public abstract class Body2D
 
     /// <summary>
     /// The velocity something held onto or riding this body should be carried at: the body's own
-    /// <see cref="IPhysicsBody.Velocity"/> if it moves at all (e.g. a patrolling kinematic ladder;
-    /// zero for plain static terrain) plus its <see cref="ConveyorVelocity"/> (e.g. a fixed conveyor or rope).
+    /// <see cref="IPhysicsBody.Velocity"/> if it moves at all (e.g. a patrolling kinematic climbable;
+    /// zero for plain static terrain) plus its <see cref="ConveyorVelocity"/> (e.g. a fixed conveyor or running hangable).
     /// </summary>
     public Vector2D GetCarryVelocity()
     {
@@ -503,7 +504,7 @@ public abstract class Body2D
     /// actual movement (<see cref="ReferenceVelocityX"/>); ordinary stationary terrain has none, so this falls back
     /// to 0 exactly as it would without a moving platform involved at all. A support's
     /// <see cref="ConveyorVelocity"/> (a conveyor belt) is added on top, the same way
-    /// <see cref="GetCarryVelocity"/> does for gripped ladders/pipes.
+    /// <see cref="GetCarryVelocity"/> does for gripped climbables/hangables.
     /// </summary>
     public double GetSurfaceVelocityX()
     {

@@ -32,14 +32,22 @@ public static class GameDefaults
     public const double CrawlSpeed = 6.0;
 
     /// <summary>
-    /// Target horizontal speed while climbing a ladder - lets the player step off sideways onto an
-    /// adjacent floor/ladder while climbing rather than only ever being able to leave via a jump
+    /// Target horizontal speed while climbing - lets the player step off sideways onto an
+    /// adjacent floor/climbable while climbing rather than only ever being able to leave via a jump
     /// (see <see cref="Physics.PhysicsSystem.Step"/>). Not overridable via any ini file.
     /// </summary>
     public const double ClimbHorizontalSpeed = 8.0;
 
     /// <summary>
-    /// Target vertical climb speed while climbing a ladder. Not overridable via any ini file.
+    /// How strongly a climbing player with no Left/Right held drifts toward the horizontal centre
+    /// of the climbable (cells/second of side speed per cell off-centre, capped at
+    /// <see cref="ClimbHorizontalSpeed"/>) - a gentle pull rather than a hard snap, so climbing
+    /// stays smooth and Left/Right can still step off sideways. Not overridable via any ini file.
+    /// </summary>
+    public const double ClimbCenteringRate = 6.0;
+
+    /// <summary>
+    /// Target vertical climb speed while climbing. Not overridable via any ini file.
     /// If tweaked, recompute climb_up/climb_down's FrameDurationSeconds in Player_settings.ini via
     /// <c>2.4 / ClimbVerticalSpeed</c> (see the formula noted at the top of its <c>[Animation]</c>
     /// section) - climb is a vertical-only pose, so this is the one climb speed its animation rate
@@ -48,7 +56,7 @@ public static class GameDefaults
     public const double ClimbVerticalSpeed = 10.0;
 
     /// <summary>
-    /// Target movement speed while hanging from a pipe/bar - its own dedicated (slower) speed
+    /// Target movement speed while hanging from a hangable - its own dedicated (slower) speed
     /// rather than reusing the ground Walk/Crawl speeds, since swinging/shimmying along a
     /// hangable surface is its own distinct kind of locomotion. Not overridable via any ini file.
     /// If tweaked, recompute hang_left/hang_right's FrameDurationSeconds in Player_settings.ini via
@@ -106,13 +114,13 @@ public static class GameDefaults
     // whatever vertical velocity already exists - see the jump-off sites in
     // Physics.PhysicsSystem.Step) rather than a force integrated over time. Graded by how much of
     // the body's own momentum/leverage backs the push-off: solid ground under both feet gives the
-    // strongest launch, a ladder rung pushed off with the legs is weaker, and pulling up from a
-    // pipe/rope with the arms alone is weakest.
+    // strongest launch, a climbable pushed off with the legs is weaker, and pulling up from a
+    // hangable with the arms alone is weakest.
 
     /// <summary>Instantaneous vertical velocity kick for jumping off solid ground. Not overridable via any ini file.</summary>
     public const double WalkJumpSpeed = 22.0;
 
-    /// <summary>Instantaneous vertical velocity kick for jumping off a ladder. Not overridable via any ini file.</summary>
+    /// <summary>Instantaneous vertical velocity kick for jumping off a climbable. Not overridable via any ini file.</summary>
     public const double ClimbJumpSpeed = 14.0;
 
     /// <summary>Instantaneous vertical velocity kick for jumping off while hanging. Not overridable via any ini file.</summary>

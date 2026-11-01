@@ -14,10 +14,10 @@ namespace ASCII_Hero.Client.Game.World;
 /// <see cref="Body2D.CurrentMedium"/> is already resolved once per physics step for every moving
 /// body by <see cref="Physics.PhysicsSystem"/> regardless, so it alone is the "touching" signal swim
 /// needs. Engaging still requires a deliberate directional key press (mirroring how climbing
-/// requires a deliberate Up/Down press, unlike hanging's automatic grab) - see
+/// requires a deliberate Up/Down press, and hanging a deliberate Up) - see
 /// <see cref="Physics.PhysicsSystem.Step"/>. Grounded/climbing/hanging all take priority over
 /// swim: a solid floor stays solid underwater (walking/crawling keeps working exactly as on
-/// land), and a ladder/pipe's own capability check is independent of medium, so swim only
+/// land), and a climbable/hangable's own capability check is independent of medium, so swim only
 /// engages once none of those apply.
 /// </summary>
 public interface ISwimmerBody : IPhysicsBody

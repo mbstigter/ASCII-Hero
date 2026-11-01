@@ -87,7 +87,7 @@ public class SpriteClip
 /// <summary>
 /// Which way a pose's clip should face: <see cref="Idle"/> is a pose's neutral orientation (facing
 /// the viewer for a pose that moves horizontally, or whatever a pose's own neutral direction
-/// is otherwise, e.g. facing the ladder while climbing); <see cref="Left"/>/<see cref="Right"/>/
+/// is otherwise, e.g. facing the climbable while climbing); <see cref="Left"/>/<see cref="Right"/>/
 /// <see cref="Up"/>/<see cref="Down"/> are directional variants. A pose can freely declare any
 /// subset of these five - not just one axis - which is what a four-directional pose (e.g.
 /// swimming) needs. See <see cref="PoseDefinition"/>.

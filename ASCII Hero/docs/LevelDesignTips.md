@@ -31,7 +31,7 @@ changes gravity or the player's walk speed changes these numbers too.
 
 ## Climbing and hanging
 
-- A hangable object (pipe, rope) is in reach of a standing player's jump when it is **at most
+- A hangable object (e.g. a lying-flat pipe, ladder or rope) is in reach of a standing player's jump when it is **at most
   5 rows above the floor the player stands on**.
 - Anything climbable or hangable that the player is meant to step off onto a ledge should end
   level with (or just above) that ledge.

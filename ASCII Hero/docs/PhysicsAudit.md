@@ -169,7 +169,7 @@ Other significant findings:
 - **Airborne `targetX = v.X`:** gives a zero motor force, which is physically clean.
 - **One-way platforms:** velocity-gated, consistent.
 - **Separating-contact skip** (`v_n ≥ 0`): standard practice and correct.
-- **Snap speed gate** (`MaxSnapSpeed`): an explicit parameter.
+- **Snap speed gate** (`MaxGripSpeed`): an explicit parameter.
 
 ---
 

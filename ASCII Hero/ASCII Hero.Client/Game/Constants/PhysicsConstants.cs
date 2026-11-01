@@ -136,11 +136,11 @@ public static class PhysicsConstants
     // --- Climbing / hanging ---
 
     /// <summary>
-    /// Speed (in cells/second) above which a body is moving too fast to snap onto a
-    /// climbable/hangable surface on first touch; it keeps falling/moving through instead. Not
-    /// overridable via any ini file.
+    /// Speed (in cells/second), relative to the surface, above which a body is moving too fast to
+    /// grip a climbable/hangable surface - it can't grab on and keeps falling/moving through, and
+    /// an existing grip is lost. Not overridable via any ini file.
     /// </summary>
-    public const double MaxSnapSpeed = 24.0;
+    public const double MaxGripSpeed = 24.0;
 
     /// <summary>
     /// Amount <see cref="Physics.CollisionSystem.SnapOntoHangable"/> pulls the hanger's top edge

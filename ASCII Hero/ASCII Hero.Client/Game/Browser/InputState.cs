@@ -15,7 +15,7 @@ public class InputState
 
     public bool IsRightKeyDown => IsKeyDown("ArrowRight") || IsKeyDown("KeyD");
 
-    /// <summary>Directional up - posture/direction input only (ladder climb, hang-crawl pull-up,
+    /// <summary>Directional up - posture/direction input only (climb, hang grab, clamber pull-up,
     /// ground stand-up). Deliberately never includes jump keys - see <see cref="IsJumpKeyDown"/>.
     /// "Player 1" (arrow keys) and "Player 2" (WASD) each have their own physically-separate up
     /// key, mirrored by their own separate jump key below, rather than sharing one.</summary>
@@ -26,7 +26,7 @@ public class InputState
     /// <summary>Explicit jump/action input - always its own dedicated key, never doubling as
     /// <see cref="IsUpKeyDown"/> (unlike some platformers' convention of treating them as
     /// equivalent), so contexts needing both a directional "up" and a separate "action" input at
-    /// the same time (e.g. the hang pose ladder: Up pulls into Clamber, Jump swings/jumps
+    /// the same time (e.g. the hang stance sequence: Up pulls into Clamber, Jump swings/jumps
     /// off) can always tell them apart - including on the ground, where Up alone no longer jumps.
     /// "Player 1" (arrow keys) uses <c>Space</c>; "Player 2" (WASD) uses <c>ControlLeft</c> as its
     /// own equivalent jump key, positioned next to WASD the same way Space sits next to the arrow

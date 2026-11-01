@@ -350,7 +350,7 @@ Some assets — the player, and later any NPC that visibly changes posture or
 direction — need more than one whole-body pose, each of which can also face
 `Idle` (its neutral orientation - facing the viewer for a pose that moves
 horizontally, or whatever a pose's own neutral direction is otherwise, e.g.
-facing the ladder while climbing), or one of four directions: `Left`/`Right`
+facing the climbable while climbing), or one of four directions: `Left`/`Right`
 (horizontal - walking, crawling, jumping, hanging), `Up`/`Down` (vertical -
 climbing), or any combination of all four at once (e.g. swimming, which can
 move in all four directions). This is a second, orthogonal axis on top of
@@ -1285,14 +1285,20 @@ moving bodies, independent of its `Kind`:
   "secret passage"). These kinds default to `true` because a hazard is meant
   to be walked into and a collectable is picked up on contact.
 - **`Climbable`** — if `true`, the player can climb straight up/down while
-  overlapping this object (e.g. a ladder), holding on by grip: the object's
+  overlapping this object, holding on by grip: the object's
   material affects how well the hands hold (a very slippery one makes the
-  player slide). Usually paired with `Passable = true` so the object doesn't also
-  block horizontal movement.
+  player slide). The player grabs on by holding Up or Down while touching it,
+  and while climbing without Left/Right held is gently pulled toward its
+  horizontal centre. Usually paired with `Passable = true` so the object doesn't also
+  block horizontal movement. Use it on upright objects (a vertical ladder,
+  vertical pipe or hanging rope).
 - **`Hangable`** — if `true`, the player can hang from and move laterally
-  along this object while overlapping it from below (e.g. a pipe/bar), held by
-  grip in the same way as `Climbable`. Usually paired with
-  `Passable = true` for the same reason as `Climbable`.
+  along this object, held by grip in the same way as
+  `Climbable`. The player grabs on by holding Up while touching it with their
+  hands at its level (rising up to it or falling past it); without Up they pass
+  through. Usually paired with `Passable = true` for the same reason as
+  `Climbable`. Use it on lying-flat objects (a horizontal pipe, ladder or
+  stretched rope).
 - **`ConveyorDirection`** / **`ConveyorSpeed`** — give the object a moving
   surface while the object itself stays in place, like a conveyor or a rope
   (horizontal or vertical). `ConveyorDirection` is `Left`,

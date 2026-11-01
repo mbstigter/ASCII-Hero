@@ -18,7 +18,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   (`IWalkForceBody`/`UpdateWalkForce`) and a hazard's patrol force
   (`IPatrolBody`) both plug into the same accumulator as gravity. Climbing/
   hanging are likewise continuous convergence forces; only jump-off (stand,
-  ladder, hang-swing) remains a true one-time impulse (instantaneous
+  climb, hang-swing) remains a true one-time impulse (instantaneous
   Delta-v), since a real push-off happens in a single instant, unlike
   sustained locomotion.
 - **Collision response is a genuine impulse-based normal force plus real
@@ -215,11 +215,11 @@ capture the "why" behind a decision without needing a lengthy narrative.
   effect, open gate, switch, ladder) can leak its own material into the medium
   resolution and cause unintended buoyancy or swimming. `IsClimbable`/`IsHangable`
   terrain is still never a medium.
-- **Conveyors/ropes are not a body type**: a moving surface on a body that stays put
+- **Running surfaces (conveyors, running ropes) are not a body type**: a moving surface on a body that stays put
   is the per-placement `Body2D.ConveyorVelocity` (`ConveyorDirection`/`ConveyorSpeed`),
   orthogonal to `Kind` like `IsClimbable`/`IsHangable`. `Body2D.GetCarryVelocity()`
-  (own `Velocity` + `ConveyorVelocity`) is the single carry speed, so moving ladders/pipes
-  (kinematic patrol) and conveyors/ropes (horizontal and vertical) share one path: grips use it as
+  (own `Velocity` + `ConveyorVelocity`) is the single carry speed, so moving climbables/hangables
+  (kinematic patrol) and running surfaces (horizontal and vertical) share one path: grips use it as
   their reference frame, and resting contacts use it as the solid's collision velocity
   (friction drags riders along) and as the support speed for walking and jumping
   (`GetSurfaceVelocityX`). Named `Conveyor*` rather than
@@ -229,13 +229,19 @@ capture the "why" behind a decision without needing a lengthy narrative.
   collision response, not a prescribed speed, decides.
 - **Climbing/hanging are grip-based**: holding a climbable/hangable records a grip
   contact (`ContactType.Climbable`/`Hangable`); gravity stays on and the grip motor
-  (`UpdateWalkForce`) carries the weight. Climb/hang targets, snap/grab speed checks,
+  (`UpdateWalkForce`) carries the weight. Climb/hang targets, grip-speed checks,
   the hang snap's vertical velocity and jump-offs are all relative to the gripped
   body's `GetCarryVelocity()`. The whole grip force is limited by combined friction x
   weight x `GripTractionMultiplier`; beyond that the body slides along the surface
   (no separate grip-loss rule). A finite-mass gripped body receives the equal and
   opposite reaction; static/kinematic ones absorb it. Bodies passing a passable
-  ladder/pipe without gripping get no friction from it.
+  climbable/hangable without gripping get no friction from it.
+- **Climbable and hangable are behaviours, not object types**: the
+  per-placement `Climbable`/`Hangable` flags decide how the player holds on,
+  independent of what the object looks like. A ladder, pipe or rope sprite is
+  just a representation - typically climbable when upright and hangable when
+  lying flat (a rope can be either). Code and docs talk about climbables and
+  hangables, not ladders and pipes.
 - **Gates and switches share one two-state mechanism** (`TwoStateObject2D`): a
   `Gate2D` is a door/hatch whose `IsPassable` follows its state; a `Switch2D` is a
   passable button/lever; a `Device2D` is a machine-like object that only swaps clips (a
@@ -463,19 +469,37 @@ capture the "why" behind a decision without needing a lengthy narrative.
   - "Player 1" (arrows + `Space` + `Enter` as action) and "Player 2" (`WASD` + `Left Ctrl` + `E` as action).
 - **"Stance" is the stored choice, "pose" is the displayed result.** The
   player's `Stance` (`Walk` = upright/stretched, `Crawl` = compact/clamber) is
-  the only stored state (`IsClambering` is derived from it while hanging), and
-  resets to `Walk` on landing after being airborne. Pose (Walk, Crawl, Jump,
+  the only stored state (`IsClambering` is derived from it while hanging).
+  Crawl only exists on the ground (or as Clamber while hanging): the Crawl<->Walk
+  toggle is ground-only, and the stance is forced to `Walk` whenever airborne
+  without a grip, so there is no invisible mid-air crawl that would block a
+  climb grab or land the player crawling. Pose (Walk, Crawl, Jump,
   Climb, Hang, Clamber, Swim) is derived each frame from stance plus situation.
-- **Ground and hang each have their own structured "stance ladder"**
+- **Ground and hang each have their own structured "stance sequence"**
   (Crawl<->Walk on the ground; Clamber<->Hang while hanging, inverted to
   match arm position rather than screen direction), and each locomotion mode
   has its own jump-off speed (`WalkJumpSpeed`/`ClimbJumpSpeed`/`HangJumpSpeed`),
   graded by how much of the body's own leverage backs the push-off:
   `WalkJumpSpeed` (both feet on solid ground) > `ClimbJumpSpeed` (legs pushing off
-  a rung) > `HangJumpSpeed` (arms only).
-- **A short debounce** (`IHangerBody.SuppressHangUntilClear`, and the
-  climbing equivalent) prevents an immediate re-grab of the same
-  ladder/pipe the same frame a jump/swing-off begins.
+  a climbable) > `HangJumpSpeed` (arms only).
+- **Grabbing a climbable or hangable is always deliberate**, never automatic on touch,
+  so the player can jump or fall past either. A climbable needs Up or Down held
+  while touching it, and an upright stance (a crawling player stands up
+  first). A hangable needs Up held (not Down, which means "let go" while
+  hanging) while touching it at hand level, rising or falling; a crawling
+  player grabs straight into Clamber. Collision only catches/snaps a body
+  that is actually hanging (vertically onto the hangable). While climbing with no
+  Left/Right held, the climb motor gently pulls the player toward the
+  climbable's horizontal centre (`GameDefaults.ClimbCenteringRate`, capped at
+  the side-step speed) - motor-driven rather than a hard snap, so it stays
+  smooth and never fights a deliberate side-step.
+- **A short re-grab block** (private to `PhysicsSystem`, one for climbing and
+  one for hanging, same rules) stops a still-held grab key from re-grabbing
+  the moment a jump/swing-off or let-go begins. It only blocks a *held* key:
+  it is released as soon as the grab keys (Up/Down for climbing, Up for
+  hanging) are let go, so a fresh press re-grabs mid-air - even on the same
+  climbable/hangable - without having to land first. It is also released
+  once no surface of that kind is touched any more, or on landing.
 - **Swim detection is medium-based, not reach-based** (`ISwimmerBody`,
   `PhysicsSystem.IsSwimmableMedium`) - unlike `IClimberBody`/`IHangerBody`,
   which key off a specific `Body2D.IsClimbable`/`IsHangable` surface via a
@@ -484,14 +508,14 @@ capture the "why" behind a decision without needing a lengthy narrative.
   it against `PhysicsConstants.SwimMediumMinDensity`/`SwimMediumMinViscosity`
   (a medium qualifies if it clears *either* threshold, since density and
   viscosity are independent physical properties).
-  Engaging still mirrors climbing's deliberate-press model (a directional key
-  must actually be held while submerged), not hanging's automatic grab, since
+  Engaging mirrors climbing's and hanging's deliberate-press model (a directional key
+  must actually be held while submerged), since
   merely drifting through a passable fluid volume shouldn't force the pose
-  any more than brushing past a ladder auto-climbs. Grounded/climbing/hanging
+  any more than brushing past a climbable auto-climbs. Grounded/climbing/hanging
   all take priority and preempt swim entirely (`PhysicsSystem.Step`'s swim
   engage condition requires none of them apply) - a solid floor stays solid
   underwater (walking/crawling keeps working exactly as on land), and a
-  ladder/pipe's own capability check is entirely independent of medium, so
+  climbable/hangable's own capability check is entirely independent of medium, so
   submerging one doesn't need special-casing. Up/down while swimming are
   vertical thrust (depth control, via `GameDefaults.SwimVerticalSpeed`) using
   the same continuous motor-force model as climbing's vertical axis, not a

@@ -108,7 +108,7 @@ core's own force/collision/medium math.
   gravity-only body this is numerically identical to a direct `velocity.Y +=
   gravity * dt`, but it is the extension point for any non-gravity force
   source. Climbing/hanging use the same motor, limited by grip (combined
-  friction x weight) and relative to the gripped ladder/pipe's carry velocity,
+  friction x weight) and relative to the gripped climbable/hangable's carry velocity,
   with gravity still on; only jump-off impulses remain direct velocity
   assignments on purpose — a push-off happens in a single instant. There is no separate constraint-solver "normal
   force" term; a resting body's velocity along the contact normal is instead

@@ -33,9 +33,9 @@ not like a pixel-art game with ASCII characters placed on top.
 - Gravity and jumping.
 - Platform collision.
 - Smooth horizontal and vertical camera scrolling.
-- Ladders and pipes can move (along a path); conveyors and ropes (horizontal
-  and vertical) have a moving surface. The player holds on by grip and is
-  carried along. When a conveyor/rope carries the player past its end, the grip simply
+- Climbables and hangables can move (along a path), and can have a running
+  surface (horizontal or vertical, like a conveyor). The player holds on by grip and is
+  carried along. When a running surface carries the player past its end, the grip simply
   ends and the player falls - there is no automatic dismount; levels place a
   floor or ledge at the end where a landing is intended.
 - Stacks of movable objects cost substantially less once they have come to rest. While the
@@ -53,16 +53,13 @@ not like a pixel-art game with ASCII characters placed on top.
 
 ## Planned / Future Work
 
-- **Hang jump/swing debounce clears too late.** `IHangerBody.SuppressHangUntilClear`
-  (see [Decisions.md](Decisions.md)) now correctly keeps a jump/swing off a
-  pipe/rope from being instantly cancelled, but it isn't released again until
-  the player fully clears the hangable surface's overlap - for a modest jump
-  arc (e.g. swinging up to a pipe one character above, or sideways onto an
-  adjacent platform/wall) that point in the arc comes later than intended, so
-  the player can't yet snap onto a new hangable/solid surface reached mid-arc
-  as readily as ladder jump-off allows. Needs a mechanism closer to ladder's
-  (where the debounce is released on landing as well as loss of overlap) -
-  still to be designed.
+- **Grab debounce isn't per surface.** The climb/hang re-grab blocks in
+  `PhysicsSystem` (see [Decisions.md](Decisions.md)) apply to any surface of
+  that kind, not just the one let go of. They are released as soon as the grab
+  key is let go, so a fresh press always works; but keeping the key held
+  through a jump onto a different climbable/hangable that is reached before the
+  first one is cleared doesn't grab it. A per-surface block is still to be
+  designed if that turns out to matter in play.
 - **Material-Based Collision Response.** A body's
   `Density`/`Friction`/`Restitution` are resolved from a named
   material (`MaterialLibrary.ini`, see [Decisions.md](Decisions.md)) rather

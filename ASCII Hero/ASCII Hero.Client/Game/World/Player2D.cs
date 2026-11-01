@@ -25,14 +25,11 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     public bool IsClambering => IsHanging && Stance == "Crawl";
 
     /// <inheritdoc/>
-    public bool SuppressHangUntilClear { get; set; }
-
-    /// <inheritdoc/>
     public bool IsSwimming { get; set; }
 
     /// <summary>
     /// The player is always subject to normal world gravity - including while
-    /// <see cref="IsClimbing"/>/<see cref="IsHanging"/>: the grip on the ladder/pipe carries the
+    /// <see cref="IsClimbing"/>/<see cref="IsHanging"/>: the grip on the climbable/hangable carries the
     /// weight instead (see <see cref="Physics.PhysicsSystem.UpdateWalkForce"/>), limited by the
     /// combined friction of hands and surface, with an equal and opposite reaction on a finite-mass
     /// gripped body. <see cref="IsSwimming"/> likewise keeps gravity, offset by the ambient
@@ -47,7 +44,8 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// <summary>
     /// The player's deliberately chosen stance: "Walk" (upright / stretched) or "Crawl" (compact -
     /// shown as Clamber while hanging). Stored state toggled by Up/Down in <see cref="Physics.PhysicsSystem"/>
-    /// and reset to "Walk" on landing. Distinct from the pose, which is the displayed result: see
+    /// and forced back to "Walk" whenever airborne (crawling only exists on the ground, or as
+    /// Clamber while hanging). Distinct from the pose, which is the displayed result: see
     /// <see cref="ResolvedPose"/> and <see cref="UpdatePose"/>, which combine the stance with the
     /// current situation (climbing, hanging, swimming, airborne). See docs/AssetFormat.md §2.6.
     /// </summary>
@@ -211,10 +209,10 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     public void UpdatePose()
     {
         // "Jump" is a visual-only pose, not a distinct named pose the player can be toggled
-        // into/out of like Crawl - it's simply what's shown while airborne, regardless of which
-        // pose (Walk or Crawl) the player was in when they left the ground (e.g. crawling off a
-        // ledge still assumes the jump pose mid-air). Pose itself stays "Walk"/"Crawl" throughout;
-        // only the resolved pose swaps to the Jump pose's clips while not grounded. Climbing/
+        // into/out of like Crawl - it's simply what's shown while airborne. Mid-air the stance is
+        // always Walk anyway (crawling off a ledge stands the player up the moment they leave the
+        // ground - see PhysicsSystem.ReleaseAirborneCrawl), so only the resolved pose swaps to the
+        // Jump pose's clips while not grounded. Climbing/
         // hanging/swimming take priority over both: they're their own dedicated poses ("Climb",
         // "Hang"/"Clamber" depending on IsClambering, and "Swim"), shown regardless of IsGrounded.
         var resolvedPose = IsClimbing ? "Climb"

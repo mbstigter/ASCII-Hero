@@ -174,7 +174,7 @@ The live game state and the entity types that make it up.
   and exposes the per-instance `IsPassable`/`IsClimbable`/`IsHangable` flags
   that let any static placement opt into those behaviors without a dedicated
   subclass, plus `ConveyorVelocity` (a moving surface on a body that stays
-  put, e.g. conveyor/rope) and `GetCarryVelocity()` (own `Velocity` +
+  put, e.g. a conveyor or running rope) and `GetCarryVelocity()` (own `Velocity` +
   `ConveyorVelocity`, the speed something held onto or resting on the body is carried at;
   also used by `GetSurfaceVelocityX` and as a solid's collision velocity).
 - **Concrete body types**, all deriving from `Body2D`:
@@ -309,19 +309,17 @@ The live game state and the entity types that make it up.
 	`Player2D` is deliberately not an `IEffectTrigger`) as
 	independent, possibly-overlapping `EffectInstance2D`s, rather than being
 	limited to one fixed clip per body.
-  - `IClimberBody` - can climb an `IsClimbable` surface (e.g. a ladder);
+  - `IClimberBody` - can climb an `IsClimbable` surface;
 	carries `IsTouchingClimbable` (mere overlap, recomputed every frame) and
 	`IsClimbing` (actually engaged, driven by input). Independent of
 	`IHangerBody` - a body can implement either, both, or neither.
   - `IHangerBody` - can hang and shimmy laterally from an `IsHangable`
-	surface (e.g. a pipe/rope); carries `IsTouchingHangable`, `IsHanging`,
+	surface; carries `IsTouchingHangable`, `IsHanging` and
 	`IsClambering` (derived from the body's stance, not stored: hanging while in
 	the compact stance - regular fully-stretched hang vs. a compact clamber/
-	shimmy pose that fits through narrower spaces), and
-	`SuppressHangUntilClear` (debounce set by `PhysicsSystem` the instant the
-	player jumps/swings off or lets go, consulted by `CollisionSystem` so it
-	doesn't immediately re-snap the body while still overlapping the same
-	surface).
+	shimmy pose that fits through narrower spaces). The grab/re-grab debounce
+	after a jump-off or let-go is private `PhysicsSystem` state, not on the
+	body (same for climbing).
   - `ISwimmerBody` - can swim (directional thrust, left/right/up/down) while
 	`Body2D.CurrentMedium` is dense/viscous enough to swim in (see
 	`PhysicsSystem.IsSwimmableMedium`); carries only `IsSwimming` (actually
@@ -362,7 +360,7 @@ The live game state and the entity types that make it up.
   proportionally more drag than a smaller one of the same material) into the
   same accumulator. The player's
   sustained locomotion - walk/crawl
-  (including its vertical motion), and hanging/shimmying from a pipe/rope
+  (including its vertical motion), and hanging/shimmying from a hangable
   (including holding position against gravity, which stays on - the grip
   carries the weight) - is one such force
   source, all driven the same way: `Player2D` implements `IWalkForceBody`,
@@ -376,7 +374,7 @@ The live game state and the entity types that make it up.
   `PatrolForce` is scaled by the current medium; a viscous medium (e.g.
   `Water`) resists them only through the passive buoyancy/drag terms above.
   Jump-off
-  impulses (a standing jump, or letting go of a ladder/pipe with an upward
+  impulses (a standing jump, or letting go of a climbable/hangable with an upward
   launch) are the one exception to the continuous-force model, and
   deliberately so: each is a genuine instantaneous velocity kick applied
   once on the frame it triggers, not a sustained, ongoing motion to converge
@@ -385,8 +383,8 @@ The live game state and the entity types that make it up.
   drives. Also resolves
   the player's stance - the stored, deliberately chosen upright/stretched
   (`Walk`) vs. compact (`Crawl`, shown as `Clamber` while hanging) choice,
-  `Player2D.Stance`, toggled by input and reset to `Walk` on landing after
-  being airborne - and its pose, the displayed result (`Player2D.ResolvedPose`,
+  `Player2D.Stance`, toggled by input on the ground only and forced back to
+  `Walk` whenever airborne without a climb/hang grip - and its pose, the displayed result (`Player2D.ResolvedPose`,
   derived each frame by `UpdatePose` from the stance plus the situation:
   Climb, Hang/Clamber, Swim, or a visual-only "Jump" pose while airborne).
   It engages climbing/hanging (via
@@ -395,11 +393,15 @@ The live game state and the entity types that make it up.
   climbing requires a deliberate up/down key press while touching a climbable
   surface (grabbable from any side, including mid-air) and while already
   standing (`Stance == "Walk"` - a crawling player must explicitly stand up
-  first, as a separate step), and yields to landing on solid ground; hanging
-  engages automatically as soon as a hangable surface is touched from
-  underneath, picking the compact "clamber" pose if the stance was already
-  `Crawl` at the moment of grabbing on. Stance changes on the ground and
-  while hanging are driven by one shared, structured up/down "stance ladder":
+  first, as a separate step), and yields to landing on solid ground; while
+  climbing with no Left/Right held, the horizontal motor target also pulls the
+  player gently toward the climbable's horizontal centre; hanging
+  likewise requires a deliberate grab - Up held (Up only; Down means "let go"
+  while hanging) while touching a hangable surface at hand level, from the air
+  or the ground - and picks the compact "clamber" pose if the stance was already
+  `Crawl` at the moment of grabbing on (a crawling player grabs straight into
+  Clamber). Without a grab, the player passes through a hangable. Stance changes on the ground and
+  while hanging are driven by one shared, structured up/down "stance sequence":
   on the ground, Up always means "more upright" (Crawl -> Walk) and Down
   always means "more compact" (Walk -> Crawl); while hanging, the same keys
   are deliberately inverted to match arm position rather than screen
@@ -411,21 +413,21 @@ The live game state and the entity types that make it up.
   `InputState.IsUpKeyDown`/`IsJumpKeyDown` below - so a Jump press instead of
   Up/Down from `Hang` swings/jumps off with an upward-plus-current-lateral-
   velocity impulse (not available from `Clamber`), and a Jump press while
-  climbing likewise lets go of the ladder and launches upward. All three
+  climbing likewise lets go of the climbable and launches upward. All three
   launch impulses (ground jump, climb jump-off, hang jump-off) use their own
   progressively weaker speed constant, reflecting how much "grip"/momentum
   each stance has behind it. While climbing, vertical movement is locked to a
   fixed climb speed but horizontal input still applies at a slower dedicated
-  speed so the player can step off sideways onto a floor or another ladder;
+  speed so the player can step off sideways onto a floor or another climbable;
   while hanging, the player is held in place vertically (still laterally
   movable, at its own dedicated - and slower still while `Clambering` -
-  speed) until it lets go via the stance ladder above. Neither suspends
+  speed) until it lets go via the stance sequence above. Neither suspends
   gravity: the grip motor carries the weight, is limited by combined
   friction x weight (`GripTractionMultiplier`), pushes a finite-mass gripped
-  body the other way, and measures every target, snap check and jump-off
+  body the other way, and measures every target, grip-speed check and jump-off
   relative to the gripped body's `GetCarryVelocity()` (recorded as a
   `ContactType.Climbable`/`Hangable` contact by `CollisionSystem`), so moving
-  ladders/pipes and conveyors/ropes carry the player. Both resolve their own dedicated
+  moving and running climbables/hangables carry the player. Both resolve their own dedicated
   poses instead of the "Jump" swap - `Climb` (whose `Facing` is resolved
   along the vertical axis instead of horizontal, since it's a
   vertically-moving stance - see `SpriteAsset.Facing`/`StanceDefinition` - so
@@ -494,14 +496,16 @@ The live game state and the entity types that make it up.
   rectangle is re-measured along that same normal, and the worst of those
   depths is what actually gets corrected/responded to via one call to
   `ResolveContact`. Climbing and hanging engagement
-  share one generic snap-speed gate, measured relative to the surface's
-  `GetCarryVelocity()` (a body moving too fast does not snap on,
+  share one generic grip-speed gate, measured relative to the surface's
+  `GetCarryVelocity()` (a body moving too fast cannot grab on,
   matching a jump arc's peak still needing to finish naturally rather than
-  instantly catching on a passing platform/pipe/ladder); hanging additionally
-  requires approaching the surface from underneath, checked geometrically.
+  instantly catching on a passing platform or climbable/hangable); hanging additionally
+  requires the body's top edge to be at or below the surface's top edge (hands
+  at the surface's level, whether rising or falling), checked geometrically, and only
+  snaps a body that is actually hanging.
   Contacts are tracked per body as explicit `ContactType`
   flags (`SurfaceTop`
-  `Climbable`/`Hangable`, recorded by `CollisionSystem` for the ladder/pipe
+  `Climbable`/`Hangable`, recorded by `CollisionSystem` for the climbable/hangable
   currently gripped and read back by `PhysicsSystem` as the grip's reference
   frame and reaction target; the `IClimberBody.IsTouchingClimbable`/
   `IHangerBody.IsTouchingHangable` flags are kept alongside for engage/release),
@@ -843,7 +847,7 @@ large jumps after e.g. a tab switch):
    `EffectInstance2D` - and any `IClimberBody`/`IHangerBody`'s
    `IsTouchingClimbable`/`IsTouchingHangable` overlap against
    `IsClimbable`/`IsHangable` terrain, both speed-gated, with hanging
-   additionally requiring approaching the surface from underneath) once per
+   additionally requiring hands at surface level) once per
    fixed step - not once for the whole frame - so a large catch-up delta
    can't let a body integrate several times before ever being
    collision-checked. Collectable pickup itself branches on `Collectable2D.Type`

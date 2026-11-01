@@ -37,7 +37,8 @@ This page is a tour of what the engine lets you build. For exact syntax, see
   each placement. `Material`, `Friction`, `Restitution` and `Density` can each be overridden
   independently.
 - **Behavior flags on any object.** `Passable` makes solid-looking terrain walk-through, for
-  example a secret passage. `Climbable` makes a ladder. `Hangable` makes a pipe or bar. Combine
+  example a secret passage. `Climbable` lets the player climb it (e.g. an upright ladder, pipe or
+  rope). `Hangable` lets the player hang from it (e.g. a lying-flat pipe, ladder or rope). Combine
   them freely.
 - **Configurable display.** `Settings.ini` sets the font, cell size and viewport size in
   columns and rows.
@@ -151,10 +152,10 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
 ## Player abilities
 
 - Walk and crawl, with configurable `WalkSpeed`, `CrawlSpeed` and `WalkForceMultiplier`.
-- Jump, with a different launch strength when jumping from the ground, a ladder or a hanging
+- Jump, with a different launch strength when jumping from the ground, a climbable or a hanging
   surface.
-- **Climb** ladders, from any side including mid-air, with sideways step-off.
-- **Hang and shimmy** from pipes and ropes. Pull up into a compact clamber pose, swing off with
+- **Climb** climbable objects, from any side including mid-air, with sideways step-off.
+- **Hang and shimmy** from hangable objects. Pull up into a compact clamber pose, swing off with
   a jump, or let go.
 - **Swim** through water and other fluids.
 - Lives, a health bar with per-hazard damage, rings, respawn and checkpoints.
@@ -205,7 +206,7 @@ Climbable and hangable surfaces are ordinary terrain objects marked with `Climba
 - Hazards have no chase behavior yet.
 - Kinematic objects patrol between bounds (braking smoothly at each end) or move at constant
   velocity. Arbitrary movement paths are not supported yet.
-- Moving conveyors/ropes only move in a straight line (Left, Right, Up or Down); when they carry
+- Running surfaces (conveyors, running ropes) only move in a straight line (Left, Right, Up or Down); when they carry
   the player past their end, the player simply lets go.
 - Buttons and levers are operated only by the player; enemies cannot flip them yet.
 - Respawn has no invulnerability window.

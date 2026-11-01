@@ -17,17 +17,26 @@ public class PhysicsSystem
     private bool _wasUpKeyDown;
     private bool _wasDownKeyDown;
     private bool _wasJumpKeyDown;
-    private bool _wasAirborneSinceStance;
 
     /// <summary>
-    /// Set the instant the player jumps off a ladder (see the pose ladder in <see cref="Step"/>),
-    /// and held until <see cref="IClimberBody.IsTouchingClimbable"/> goes false again. Without
-    /// this, <see cref="GameDefaults.ClimbJumpSpeed"/> is slow enough that the player is still both overlapping
-    /// the same ladder and holding Up/Down on the very next frame or two, which would otherwise
-    /// immediately re-engage <see cref="IClimberBody.IsClimbing"/> before the jump is even visible
-    /// - mirroring <see cref="IHangerBody.SuppressHangUntilClear"/> for the same underlying reason.
+    /// Set the instant the player jumps off a climbable (see the stance sequence in <see cref="Step"/>).
+    /// Without this, <see cref="GameDefaults.ClimbJumpSpeed"/> is slow enough that the player is still both overlapping
+    /// the same climbable and holding Up/Down on the very next frame or two, which would otherwise
+    /// immediately re-engage <see cref="IClimberBody.IsClimbing"/> before the jump is even visible.
+    /// Released as soon as Up and Down are both let go (so a fresh press re-grabs mid-air, even on
+    /// the same climbable), when no climbable is touched any more, or on landing - the same rules
+    /// as <see cref="_suppressHangRegrab"/>.
     /// </summary>
-    private bool _suppressClimbUntilClear;
+    private bool _suppressClimbRegrab;
+
+    /// <summary>
+    /// Set the instant the player jumps/swings off or lets go of a hangable (see the stance sequence
+    /// in <see cref="Step"/>). Without this, a still-held Up would re-grab the same surface the very
+    /// next frame, since the overlap typically lasts a frame or two after letting go. Released as
+    /// soon as Up is let go (so a fresh press re-grabs mid-air), when no hangable is touched any
+    /// more, or on landing - the same rules as <see cref="_suppressClimbRegrab"/>.
+    /// </summary>
+    private bool _suppressHangRegrab;
 
     /// <summary>
     /// Clears all player-control state carried between frames, so a newly loaded world starts
@@ -40,8 +49,8 @@ public class PhysicsSystem
         _wasUpKeyDown = input.IsUpKeyDown;
         _wasDownKeyDown = input.IsDownKeyDown;
         _wasJumpKeyDown = input.IsJumpKeyDown;
-        _wasAirborneSinceStance = false;
-        _suppressClimbUntilClear = false;
+        _suppressClimbRegrab = false;
+        _suppressHangRegrab = false;
     }
 
     /// <summary>Whether the last-seen key state (the edge-detection baseline) has Up, Down and Jump held.</summary>
@@ -52,6 +61,7 @@ public class PhysicsSystem
         var player = world.Player;
         var velocity = player.Velocity;
 
+        ReleaseAirborneCrawl(player);
         var wasHanging = UpdateLocomotionModes(player, input);
         var stoodUpThisFrame = ApplyStanceInput(player, input, wasHanging, ref velocity);
         var (gripped, targetVelocityX, targetVelocityY) = ResolveMotorTargets(player, input, velocity);
@@ -69,46 +79,61 @@ public class PhysicsSystem
     }
 
     /// <summary>
+    /// Crawling only exists on the ground: whenever the player is airborne (or swimming) and not
+    /// gripping a climbable or hangable, the stance is upright. Crawling off a ledge or dropping
+    /// from a clamber therefore never leaves a hidden crawl stance that would block a climb grab,
+    /// turn a hang grab into a clamber, or land the player crawling. Runs before
+    /// <see cref="UpdateLocomotionModes"/> so this frame's grab checks already see the upright stance.
+    /// </summary>
+    private static void ReleaseAirborneCrawl(Player2D player)
+    {
+        if (!player.IsGrounded && !player.IsClimbing && !player.IsHanging)
+        {
+            player.Stance = "Walk";
+        }
+    }
+
+    /// <summary>
     /// Engages/disengages climbing, hanging and swimming from last frame's contacts and the held
-    /// keys. Returns whether the player was already hanging before this frame's update.
+    /// keys.
     /// </summary>
     private bool UpdateLocomotionModes(Player2D player, InputState input)
     {
         // Climbing/hanging: CollisionSystem set IsTouchingClimbable/IsTouchingHangable last frame
-        // from the player's current overlap (and snap-speed check) against Body2D.IsClimbable/
+        // from the player's current overlap (and grip-speed check) against Body2D.IsClimbable/
         // IsHangable terrain, but that alone doesn't engage either state - merely brushing
-        // past/through a passable ladder must never lock movement. Climbing requires a deliberate
-        // up/down press while touching one - including mid-jump, there is no grounded requirement, so a ladder can
+        // past/through a passable climbable must never lock movement. Climbing requires a deliberate
+        // up/down press while touching one - including mid-jump, there is no grounded requirement, so a climbable can
         // be grabbed out of the air. Crawling can't climb directly (too low a pose to reach a
         // rung) - engaging climb requires Stance == "Walk" already, so a crawling player must
         // first explicitly stand up (the ordinary Crawl->Walk pose toggle below, its own
-        // separate key press) before a later press can grab the ladder; there is no combined
-        // "stand up and grab on" shortcut. Hanging engages automatically as soon as the surface is
-        // touched from underneath. Both disengage the moment the
+        // separate key press) before a later press can grab the climbable; there is no combined
+        // "stand up and grab on" shortcut. Hanging likewise requires a deliberate grab - Up held
+        // (Up only: Down already means "let go" while hanging) while touching a hangable at
+        // hand level, from the air or the ground, so a player can jump or fall past a hangable without
+        // catching it. Unlike climbing, a crawling player can grab directly, straight into the
+        // compact clamber pose. Both disengage the moment the
         // player is no longer touching the corresponding surface; climbing additionally yields to
         // solid ground (landing on a real floor always takes priority over still nominally
-        // overlapping a passable ladder, and a Jump press while climbing lets go and launches -
+        // overlapping a passable climbable, and a Jump press while climbing lets go and launches -
         // see the climbing movement block below), and hanging additionally yields to an explicit
-        // "let go" or a Jump press (see the hang pose ladder below).
+        // "let go" or a Jump press (see the hang stance sequence below).
         if (player.IsClimbing && (!player.IsTouchingClimbable || player.IsGrounded))
         {
             player.IsClimbing = false;
         }
-        else if (!player.IsClimbing && player.IsTouchingClimbable && player.Stance == "Walk" && !_suppressClimbUntilClear && (input.IsUpKeyDown || input.IsDownKeyDown))
+        else if (!player.IsClimbing && player.IsTouchingClimbable && player.Stance == "Walk" && !_suppressClimbRegrab && (input.IsUpKeyDown || input.IsDownKeyDown))
         {
             player.IsClimbing = true;
         }
 
-        // The debounce lock is released either once the player is no longer touching the
-        // climbable surface at all (having actually jumped clear of it after the jump-off below -
-        // mirroring the equivalent hang debounce below), or once they land on solid ground -
-        // landing is already an unconditional "reset" moment for climbing (see the disengage
-        // check above), and a jump arc that lands back on/through the same ladder rect without
-        // ever fully clearing its overlap (a short hop rather than a big leap) would otherwise
-        // leave the debounce stuck forever, since IsTouchingClimbable never actually goes false.
-        if (!player.IsTouchingClimbable || player.IsGrounded)
+        // The debounce is released once the climb keys are let go - the block only exists to stop
+        // a still-held key from cancelling the jump, so a fresh Up/Down press re-grabs mid-air,
+        // even on the same climbable. Also released once no climbable is touched any more, or on
+        // landing (an unconditional reset moment for climbing - see the disengage check above).
+        if ((!input.IsUpKeyDown && !input.IsDownKeyDown) || !player.IsTouchingClimbable || player.IsGrounded)
         {
-            _suppressClimbUntilClear = false;
+            _suppressClimbRegrab = false;
         }
 
         var wasHanging = player.IsHanging;
@@ -116,19 +141,20 @@ public class PhysicsSystem
         {
             player.IsHanging = false;
         }
-        else if (!player.IsHanging && !player.IsClimbing && player.IsTouchingHangable && !player.SuppressHangUntilClear)
+        else if (!player.IsHanging && !player.IsClimbing && player.IsTouchingHangable && !_suppressHangRegrab && input.IsUpKeyDown)
         {
             player.IsHanging = true;
             // No stance change here: IsClambering is derived from the existing Stance, so a
-            // player who grabs on while crawling hangs in the compact clamber pose.
+            // player who grabs on while crawling (only possible from the ground - see
+            // ReleaseAirborneCrawl) hangs in the compact clamber pose. Engaging here, before
+            // ApplyStanceInput, also means that same Up press is not spent on standing up first.
         }
 
-        // Once the player is no longer touching the hangable surface at all (having actually
-        // fallen clear of it after an explicit "let go" below), the debounce lock is released so
-        // a later approach can grab on again normally.
-        if (!player.IsTouchingHangable)
+        // Same release rules as the climb debounce above: Up let go (a fresh press re-grabs
+        // mid-air), no hangable touched any more, or landing.
+        if (!input.IsUpKeyDown || !player.IsTouchingHangable || player.IsGrounded)
         {
-            player.SuppressHangUntilClear = false;
+            _suppressHangRegrab = false;
         }
 
         // Swim: medium-based, not reach-based (see ISwimmerBody's own doc comment) - there is no
@@ -136,10 +162,10 @@ public class PhysicsSystem
         // this same Step (in StepMovingBodyWithForces, via the world.Objects loop at the end), so
         // everything in this player block - swim engagement here, and the medium force scaling
         // of jumps and walk force below - sees the medium resolved during the previous step.
-        // Mirrors climbing's deliberate-press engagement (not
-        // hanging's automatic grab): a directional key must actually be held while submerged.
+        // Mirrors climbing's and hanging's deliberate-press engagement: a directional key must
+        // actually be held while submerged.
         // Grounded/climbing/hanging all take priority and preempt swim entirely - a solid floor
-        // stays solid underwater, and a ladder/pipe's own capability check is independent of
+        // stays solid underwater, and a climbable/hangable's own capability check is independent of
         // medium, so this only ever engages once none of those apply.
         if (player.IsSwimming && (!IsSwimmableMedium(player.CurrentMedium) || player.IsGrounded || player.IsClimbing || player.IsHanging))
         {
@@ -163,7 +189,7 @@ public class PhysicsSystem
     /// </summary>
     private bool ApplyStanceInput(Player2D player, InputState input, bool wasHanging, ref Vector2D velocity)
     {
-        // A single, structured up/down pose ladder, deliberately mirroring floor and hanging
+        // A single, structured up/down stance sequence, deliberately mirroring floor and hanging
         // as inverses of each other rather than two unrelated sets of key handling:
         //   Floor:    Up -> Walk (stand up from Crawl); Down -> Crawl (crouch down from Walk)
         //   Hanging:  Up -> Clamber (pull knees up from Hang); Down -> Hang (from Clamber);
@@ -171,7 +197,7 @@ public class PhysicsSystem
         //             off entirely instead
         // On the ground, Up always means "become more upright" (Crawl -> Walk) and Down always
         // means "become more compact" (Walk -> Crawl) - the ordinary pose toggle. Suspended from
-        // a pipe/rope, the sense of "up"/"down" is deliberately inverted to match the player's arm
+        // a hangable, the sense of "up"/"down" is deliberately inverted to match the player's arm
         // position rather than screen direction: Up pulls the knees up into the compact
         // clamber pose (mirroring Crawl), Down extends back out into the normal fully-stretched
         // hang (mirroring Walk) - and, since fully stretched is already the "least attached" pose,
@@ -182,19 +208,8 @@ public class PhysicsSystem
         // keeping the same rule on the ground and while climbing avoids a special case. All three
         // latches are edge-triggered (only the frame the key is first pressed) so holding a
         // direction doesn't repeatedly cycle through every step in one press.
-        // Landing always returns to the upright stance: crawling off a ledge, or dropping from a
-        // clamber, shouldn't leave the player crawling on touchdown. Deliberate crawling on flat
-        // ground never leaves the ground, so it is unaffected.
-        if (!player.IsGrounded && !player.IsClimbing && !player.IsHanging)
-        {
-            _wasAirborneSinceStance = true;
-        }
-        else if (player.IsGrounded && _wasAirborneSinceStance)
-        {
-            _wasAirborneSinceStance = false;
-            player.Stance = "Walk";
-        }
-
+        // The floor Crawl<->Walk toggle only applies while grounded: mid-air the stance is always
+        // upright (see ReleaseAirborneCrawl), so Up/Down in the air never toggle a crawl.
         var upKeyDown = input.IsUpKeyDown;
         var downKeyDown = input.IsDownKeyDown;
         var jumpKeyDown = input.IsJumpKeyDown;
@@ -202,7 +217,7 @@ public class PhysicsSystem
         var downPressedThisFrame = downKeyDown && !_wasDownKeyDown;
         var jumpPressedThisFrame = jumpKeyDown && !_wasJumpKeyDown;
         var stoodUpThisFrame = false;
-        if (!player.IsClimbing && !player.IsHanging)
+        if (player.IsGrounded && !player.IsClimbing && !player.IsHanging)
         {
             if (player.Stance == "Walk" && downPressedThisFrame)
             {
@@ -218,19 +233,19 @@ public class PhysicsSystem
         {
             if (jumpPressedThisFrame)
             {
-                // Lets go of the ladder entirely and launches upward (mirroring the Hang jump-off
-                // below) - weaker than a standing jump since a ladder grip has less legs-planted
+                // Lets go of the climbable entirely and launches upward (mirroring the Hang jump-off
+                // below) - weaker than a standing jump since a climbing grip has less legs-planted
                 // momentum behind it than solid ground. Same debounce concern as the hang jump-off
-                // below: ClimbJumpSpeed alone isn't fast enough to clear the ladder's overlap
+                // below: ClimbJumpSpeed alone isn't fast enough to clear the climbable's overlap
                 // (and Up/Down are still likely held) within a single frame, so without
-                // _suppressClimbUntilClear the very next frame would immediately re-grab the same
-                // ladder before the jump is ever visible. Relative to the gripped surface, like the
+                // _suppressClimbRegrab the very next frame would immediately re-grab the same
+                // climbable before the jump is ever visible. Relative to the gripped surface, like the
                 // ground jump is relative to its support.
                 var grip = GetGrippedBody(player, ContactType.Climbable);
                 player.IsClimbing = false;
                 velocity.Y = (grip?.GetCarryVelocity().Y ?? 0.0) - GameDefaults.ClimbJumpSpeed;
                 ApplyJumpReaction(player, grip, GameDefaults.ClimbJumpSpeed);
-                _suppressClimbUntilClear = true;
+                _suppressClimbRegrab = true;
             }
         }
         else if (player.IsHanging && wasHanging)
@@ -246,9 +261,9 @@ public class PhysicsSystem
             else if (!player.IsClambering && jumpPressedThisFrame)
             {
                 // Only the fully-stretched Hang (not the compact Clamber grip) can jump/swing
-                // off - representing letting go of a pipe/rope while swinging from it, which only
+                // off - representing letting go of a hangable while swinging from it, which only
                 // makes sense from the stretched-out pose. Jump alone swings straight upward (e.g.
-                // onto a pipe a little higher); combined with Left/Right it's a diagonal swing,
+                // onto a hangable a little higher); combined with Left/Right it's a diagonal swing,
                 // reusing whichever horizontal speed the player's current pose already grants
                 // (see the ordinary horizontal-movement block below) rather than a separate one.
                 // Same debounce as the explicit let-go below, so the player can't instantly
@@ -257,7 +272,7 @@ public class PhysicsSystem
                 player.IsHanging = false;
                 velocity.Y = (grip?.GetCarryVelocity().Y ?? 0.0) - GameDefaults.HangJumpSpeed;
                 ApplyJumpReaction(player, grip, GameDefaults.HangJumpSpeed);
-                player.SuppressHangUntilClear = true;
+                _suppressHangRegrab = true;
             }
             else if (!player.IsClambering && downPressedThisFrame)
             {
@@ -265,7 +280,7 @@ public class PhysicsSystem
                 // debounce lock above prevents an instant re-grab while still overlapping the
                 // same surface on the way down.
                 player.IsHanging = false;
-                player.SuppressHangUntilClear = true;
+                _suppressHangRegrab = true;
             }
         }
         _wasUpKeyDown = upKeyDown;
@@ -288,9 +303,9 @@ public class PhysicsSystem
         // IWalkForceBody), summed into the net force alongside gravity by
         // StepMovingBodyWithForces - consistent with every other body's force-based movement
         // (see DynamicObject2D.UpdatePatrolDirection) rather than a bespoke direct velocity-assignment path.
-        // While climbing a ladder, horizontal input still applies (at a slower, deliberate side
-        // speed) so the player can step off sideways onto an adjacent floor or ladder rather than
-        // only ever being able to leave via a jump; while hanging from a pipe/bar, lateral
+        // While climbing, horizontal input still applies (at a slower, deliberate side
+        // speed) so the player can step off sideways onto an adjacent floor or climbable rather than
+        // only ever being able to leave via a jump; while hanging from a hangable, lateral
         // movement uses its own dedicated (and slower still while Clambering) speed rather than
         // reusing the ground Walk/Crawl speeds, since swinging/shimmying along a hangable surface
         // is its own distinct kind of locomotion. While swimming, lateral movement uses its own
@@ -306,8 +321,8 @@ public class PhysicsSystem
         // would then fight CollisionSystem's friction-based drag pulling the player toward the
         // platform's own velocity every single frame - the two forces fighting is what made the
         // player appear unable to ride a horizontally moving platform at all. Climbing/hanging
-        // are likewise relative to the gripped surface's carry velocity (a moving ladder/pipe, or
-        // a conveyor/rope - see Body2D.GetCarryVelocity); swimming has no carry concept, so its
+        // are likewise relative to the gripped surface's carry velocity (a moving climbable/hangable,
+        // or a running one - see Body2D.GetCarryVelocity); swimming has no carry concept, so its
         // target speed stays absolute.
         var gripped = player.IsClimbing ? GetGrippedBody(player, ContactType.Climbable)
             : player.IsHanging ? GetGrippedBody(player, ContactType.Hangable)
@@ -324,6 +339,10 @@ public class PhysicsSystem
         if (input.IsRightKeyDown)
         {
             targetVelocityX += horizontalSpeed;
+        }
+        if (player.IsClimbing && gripped is not null && !input.IsLeftKeyDown && !input.IsRightKeyDown)
+        {
+            targetVelocityX += GetClimbCenteringSpeed(player, gripped);
         }
         if (!player.IsGrounded && !player.IsClimbing && !player.IsHanging && !player.IsSwimming && !input.IsLeftKeyDown && !input.IsRightKeyDown)
         {
@@ -376,7 +395,7 @@ public class PhysicsSystem
             // IsGrounded is derived from this frame's SurfaceBottom contact (see Body2D.IsGrounded);
             // clearing it immediately here (rather than waiting for the next collision pass) means
             // the player's pose/jump-gating reflects "climbing, not grounded" the same frame a
-            // ladder is grabbed, not one frame late.
+            // climbable is grabbed, not one frame late.
             player.RemoveContact(ContactType.SurfaceBottom);
         }
         else if (player.IsHanging)
@@ -431,7 +450,7 @@ public class PhysicsSystem
             // player's velocity converges toward over subsequent frames. The condition tests the
             // held Jump state (not a fresh press), so holding Jump launches again on each landing;
             // the immediate IsGrounded clear below is what limits it to one impulse per take-off.
-            // Same jump-off model as the ladder/hang variants above, just at the
+            // Same jump-off model as the climb/hang variants above, just at the
             // strongest magnitude since it launches off solid ground with both legs planted.
             // The impulse is the same in every medium; a viscous medium (e.g. water) limits the
             // resulting height only through its passive quadratic drag in StepMovingBodyWithForces.
@@ -496,6 +515,23 @@ public class PhysicsSystem
     /// </summary>
     private static Body2D? GetGrippedBody(Player2D player, ContactType type) =>
         player.GetContactingBodies(type).FirstOrDefault();
+
+    /// <summary>
+    /// Extra horizontal motor target speed that gently pulls a climbing player toward the
+    /// horizontal centre of the climbable they grip: proportional to the offset
+    /// (<see cref="GameDefaults.ClimbCenteringRate"/>), capped at
+    /// <see cref="GameDefaults.ClimbHorizontalSpeed"/>. The climbing counterpart of hanging's
+    /// vertical snap onto a hangable (CollisionSystem.SnapOntoHangable), but applied through the motor
+    /// rather than as a position correction: there is no gravity to hold against sideways, so a
+    /// smooth glide feels better than a jump and never fights a deliberate Left/Right side-step.
+    /// Measured from Position/Size rather than collision rects so the centre stays stable across
+    /// the climb animation's frames.
+    /// </summary>
+    private static double GetClimbCenteringSpeed(Player2D player, Body2D gripped)
+    {
+        var offsetX = (gripped.Position.X + gripped.Size.X / 2) - (player.Position.X + player.Size.X / 2);
+        return Math.Clamp(offsetX * GameDefaults.ClimbCenteringRate, -GameDefaults.ClimbHorizontalSpeed, GameDefaults.ClimbHorizontalSpeed);
+    }
 
     /// <summary>
     /// Equal and opposite reaction of a climb/hang jump-off on a finite-mass gripped body
@@ -710,7 +746,7 @@ public class PhysicsSystem
     {
         var mass = player.Mass > 0 ? player.Mass : 1.0;
 
-        // Climbing/hanging: the force goes through the hands into the gripped ladder/pipe. Gravity
+        // Climbing/hanging: the force goes through the hands into the gripped climbable/hangable. Gravity
         // stays on, so the grip also carries the body's weight (feed-forward, so the hold doesn't
         // sag below the target). The whole grip force is limited by combined friction x weight
         // (see PhysicsConstants.GripTractionMultiplier) - beyond that the body slides along the
