@@ -50,8 +50,8 @@ that is not a multiple of the unit ends with a partial unit; for a clean end, pi
 | Rope (running) | `horizontal_left`, `horizontal_right` | 3 wide | 1 tall |
 | Rope (still) | `vertical` | 2 tall | 1 wide |
 | Rope (running) | `vertical_up`, `vertical_down` | 3 tall | 1 wide |
-| Laser | `horizontal` | 3 wide | 1 tall |
-| Laser | `vertical` | 3 tall | 1 wide |
+| Laser | `left`, `right` | 3 wide | 1 tall |
+| Laser | `up`, `down` | 3 tall | 1 wide |
 | Conveyor | `horizontal_left`, `horizontal_right` | 2 wide | 1 tall |
 | Conveyor | `vertical_up`, `vertical_down` | 2 tall | 3 wide |
 | Ladder | `vertical` | 1 tall | 3 wide |

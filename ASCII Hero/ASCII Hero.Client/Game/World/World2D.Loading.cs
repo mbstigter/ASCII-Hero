@@ -1,4 +1,4 @@
-using ASCII_Hero.Client.Game.Assets;
+﻿using ASCII_Hero.Client.Game.Assets;
 using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.Rendering;
 
@@ -74,6 +74,7 @@ public partial class World2D
         world.EmptyChar = emptyChar;
         world.DefaultForeColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultForegroundColor"));
         world.DefaultBackColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
+        world.BackdropColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "BackdropColor"));
         world.StartingLives = IniValueParser.TryParseInt(settings.TryGetValue("World", "Lives"), out var startingLives) && startingLives > 0
             ? startingLives
             : GameDefaults.PlayerStartingLives;
@@ -141,10 +142,10 @@ public partial class World2D
         // Background/foreground layers are static level data - resolve every cell's actual
         // color once here (rather than every frame in WorldRenderer) now that the palette and
         // every color code/default this world will ever have are already final.
-        world.BackgroundForeColors = PrecomputeLayerColors(world.BackgroundFore, world.Palette, emptyChar, RenderConstants.DefaultForeColor, world.DefaultForeColor);
-        world.BackgroundBackColors = PrecomputeLayerColors(world.BackgroundBack, world.Palette, emptyChar, RenderConstants.DefaultBackColor, world.DefaultBackColor);
-        world.ForegroundForeColors = PrecomputeLayerColors(world.ForegroundFore, world.Palette, emptyChar, RenderConstants.DefaultForeColor, world.DefaultForeColor);
-        world.ForegroundBackColors = PrecomputeLayerColors(world.ForegroundBack, world.Palette, emptyChar, RenderConstants.DefaultBackColor, world.DefaultBackColor);
+        world.BackgroundForeColors = PrecomputeLayerColors(world.BackgroundFore, world.Palette, emptyChar, GlyphBuilder.DefaultForeColor, world.DefaultForeColor);
+        world.BackgroundBackColors = PrecomputeLayerColors(world.BackgroundBack, world.Palette, emptyChar, null, world.DefaultBackColor);
+        world.ForegroundForeColors = PrecomputeLayerColors(world.ForegroundFore, world.Palette, emptyChar, GlyphBuilder.DefaultForeColor, world.DefaultForeColor);
+        world.ForegroundBackColors = PrecomputeLayerColors(world.ForegroundBack, world.Palette, emptyChar, null, world.DefaultBackColor);
         progress?.Report(3);
 
         var objectsIniContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_objects.ini")

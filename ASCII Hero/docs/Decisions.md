@@ -73,12 +73,17 @@ capture the "why" behind a decision without needing a lengthy narrative.
   stack does not decay. A sleeping body is not integrated, keeps its last
   contacts (still grounded) and is skipped against solids and other sleepers.
   It wakes - together with its whole island - when an awake body or a moving
-  solid overlaps it, a reaction force (walk, jump, grip) is applied to it, or a
-  body it touches is removed.
+  solid overlaps it, a reaction force (walk, jump, grip) is applied to it, a
+  body it touches is removed, or its own animation changes its collision
+  shape. Any gate or switch state change wakes every sleeper: such changes are
+  rare, and waking all is simpler and safer than finding exactly which bodies
+  an opened gate or a switched flow affects.
 - **The narrow phase does not allocate per pair.** A pair whose Position/Size
   boxes don't overlap is rejected before any rectangle work; world-space
   collision rectangles are cached per body until its position or shape changes;
-  contact history is double-buffered rather than copied each step.
+  each body's contact lists hold only the current step's contacts and are
+  cleared and reused at the start of every step rather than reallocated (no
+  previous-step contact history is kept).
 - **Broad phase uses a spatial grid** (`SpatialGrid<T>`, one for solids and
   one for moving bodies) so collision cost scales with nearby objects, not
   the level's total object count. Narrow phase additionally requires actual
@@ -89,21 +94,22 @@ capture the "why" behind a decision without needing a lengthy narrative.
   transpose of each other), unioned together with duplicates removed**, so a
   curved/notched silhouette offers both shallow-vertical and
   shallow-horizontal rectangles along its flanks and the correct contact
-  normal wins wherever contact happens. Duplicates must be removed because
-  each rectangle is resolved independently per solver iteration; a
-  duplicate would double that contact's correction and impulse.
-- **Of a body's own overlapping collision rectangles against one other body/solid,
-  `ResolveAgainstOtherBody` resolves exactly one physical contact per solver iteration, not one
-  contact per overlapping rectangle.** The rectangle overlapping most deeply (by its own natural
-  axis) defines that contact's normal; every other overlapping rectangle is then re-measured
-  along that *same* normal axis, and the worst (largest) of those depths is what is actually
-  corrected. Every rectangle's overlap along the established contact direction is therefore
-  corrected in the same pass (no body slowly sinking into a wall), while only one
-  velocity/friction response and one contact recording happens per solid per iteration
-  (applying the impulse per rectangle would count one physical contact several times and
-  inflate e.g. jump height). Leftover overlap along a genuinely different axis (a separate
-  physical contact) is left for a later solver iteration, which re-detects fresh contacts
-  against the just-corrected position.
+  normal wins wherever contact happens. Duplicates are removed so the solver
+  does not test the same rectangle pair twice.
+- **Two bodies' compound shapes are resolved as one contact per body pair per
+  solver iteration, not one contact per overlapping rectangle.**
+  `ResolveAgainstOtherBody` checks every overlapping rectangle pair (on both
+  sides, measured against the same uncorrected positions) and, for each of
+  the four push directions, takes the largest push needed to separate every
+  pair in that direction. The smallest of those four worst-case pushes is the
+  contact's normal and depth. One correction therefore clears every
+  overlapping rectangle along that direction (no body slowly sinking into a
+  compound shape, no deep overlap hidden behind a grazing one, and the result
+  does not depend on which body is treated as the mover), while only one
+  velocity/friction response and one contact recording happens per pair per
+  iteration (an impulse per rectangle would count one physical contact several
+  times and inflate e.g. jump height). Remaining overlap along another axis is
+  left for a later solver iteration.
 - **A kinematic body** (`KinematicObject2D`) is static-for-collision-response
   (never pushed) but moves at a prescribed velocity, and a resting body
   matches that velocity in the platform's reference frame. This alone - no
@@ -148,7 +154,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   doesn't matter). Static/kinematic supports keep using their prescribed
   `Velocity` unchanged.
 - **Contacts are tracked as explicit `ContactType` flags** per body
-  (`Body2D.AddContact`/`HasContact`), snapshotted-and-cleared once per physics step;
+  (`Body2D.AddContact`/`HasContact`), cleared once per physics step (except on sleeping bodies);
   `IPhysicsBody.IsGrounded` is derived from this (`HasContact(SurfaceBottom)`),
   not a separately stored, ordering-bug-prone flag.
 - **Facing/patrol targets are resolved relative to the surface the body
@@ -497,11 +503,22 @@ capture the "why" behind a decision without needing a lengthy narrative.
 ## Rendering & Camera
 
 - **Interface colors live in `Global/InterfaceColors.ini`, separate from the
-  world/sprite `ColorPalette.ini`.** Named tints (green/amber/red/blue, dark/
-  normal/light, plus black) are the only source of HUD, menu, overlay and
-  message-box colors; all names are required. `RenderConstants.DefaultForeColor`
-  remains the world-content fallback, and `game-interop.js` keeps one green
-  bootstrap fallback for the canvas before C# draws its first frame. Callers
+  world/sprite `ColorPalette.ini`.** Named tint sections (green/amber/red/blue/white,
+  each Dark/Normal/Light) plus `[Defaults]` are the only source of HUD, menu,
+  overlay and message-box colors. `[Defaults] Foreground` selects which tint
+  section is the interface color, so the whole interface switches family at
+  once; the semantic end-screen boxes keep fixed families (Green/Amber/Red).
+  The interface normal tint is also the last fallback for uncolored world
+  content (`GlyphBuilder.DefaultForeColor`). The canvas (and the text
+  background of message boxes) is the world's `BackdropColor`, else
+  `[Defaults] Background`.
+- **Only two hardcoded colors**: green `#00ff00` and black `#000000`
+  (`RenderConstants.DefaultForegroundColor`/`DefaultBackgroundColor`), used
+  for anything missing from InterfaceColors.ini, or before/without it, so the
+  game is then green on black. `game-interop.js` holds no colors; the browser
+  styling (loading message, page behind the canvas) repeats the same pair in
+  CSS. A drawn cell without
+  a background color has no fill (null), not a default color. Callers
   pick tints explicitly (e.g. a label's `HighlightColor`); nothing derives a
   darker/lighter tint automatically. End-screen ripples use the light tint
   for the leading box and the dark tint for the trail; once settled, the box

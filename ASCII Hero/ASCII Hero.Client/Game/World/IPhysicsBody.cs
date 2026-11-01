@@ -40,8 +40,8 @@ public interface IPhysicsBody
     /// <summary>See <see cref="Body2D.RemoveContact"/>.</summary>
     void RemoveContact(Physics.ContactType type, Body2D? other = null);
 
-    /// <summary>See <see cref="World.Body2D.SnapshotContactsForNextFrame"/>.</summary>
-    void SnapshotContactsForNextFrame(double stepSeconds);
+    /// <summary>See <see cref="World.Body2D.ClearContactsForNewStep"/>.</summary>
+    void ClearContactsForNewStep(double stepSeconds);
 
     /// <summary>The body's collision shape, as one or more rectangles in world space.</summary>
     IReadOnlyList<Physics.Rect> CollisionRects { get; }

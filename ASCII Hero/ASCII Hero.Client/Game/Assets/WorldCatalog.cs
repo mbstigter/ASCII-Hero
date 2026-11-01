@@ -1,4 +1,4 @@
-namespace ASCII_Hero.Client.Game.Assets;
+﻿namespace ASCII_Hero.Client.Game.Assets;
 
 /// <summary>One frame of a world's thumbnail art: a char grid plus its parallel foreground/background-color grids.</summary>
 public class ThumbnailFrame
@@ -32,12 +32,11 @@ public class WorldSummary
     /// <summary>This world's own resolved Global+World color palette, for rendering thumbnail cells.</summary>
     public ColorPalette Palette { get; }
 
-    /// <summary>
-    /// Color code this world's own <c>[Colors] DefaultBackgroundColor</c> settings.ini key resolves
-    /// to, used as the fallback for a thumbnail cell whose own background color code is
-    /// absent/empty. Null when not set, in which case no fill (fully transparent) applies.
-    /// </summary>
+    /// <summary>This world's <c>[Colors] DefaultBackgroundColor</c>, the same fallback the world itself uses for drawn cells.</summary>
     public char? DefaultBackColor { get; }
+
+    /// <summary>This world's <c>[Colors] BackdropColor</c>, filling the thumbnail behind everything.</summary>
+    public char? BackdropColor { get; }
 
     private readonly double? _frameDurationSeconds;
     private readonly AnimationMode _animationMode;
@@ -52,6 +51,7 @@ public class WorldSummary
         char emptyChar,
         ColorPalette palette,
         char? defaultBackColor,
+        char? backdropColor,
         double? frameDurationSeconds,
         AnimationMode animationMode,
         int defaultFrameIndex)
@@ -62,6 +62,7 @@ public class WorldSummary
         EmptyChar = emptyChar;
         Palette = palette;
         DefaultBackColor = defaultBackColor;
+        BackdropColor = backdropColor;
         _frameDurationSeconds = frameDurationSeconds;
         _animationMode = animationMode;
 
@@ -198,6 +199,7 @@ public static class WorldCatalog
         }
 
         var defaultBackColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
+        var backdropColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "BackdropColor"));
 
         // An optional [Animation.Thumbnail] section (same keys/semantics as a sprite clip's own
         // [Animation]/[Animation.{clipName}] section) times the thumbnail's frames. Absent
@@ -217,7 +219,7 @@ public static class WorldCatalog
         var palette = await ColorPalette.LoadAsync(fileProvider, worldName);
 
         return new WorldSummary(
-            worldName, title, thumbnailFrames, emptyChar, palette, defaultBackColor,
+            worldName, title, thumbnailFrames, emptyChar, palette, defaultBackColor, backdropColor,
             frameDurationSeconds, animationMode, defaultFrameIndex);
     }
 

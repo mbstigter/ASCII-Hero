@@ -59,13 +59,13 @@ public sealed class ContactImpactTests
     }
 
     [TestMethod]
-    public void SnapshotContactsForNextFrame_ClearsContactsAndImpactSpeeds()
+    public void ClearContactsForNewStep_ClearsContactsAndImpactSpeeds()
     {
         var body = new StaticHazard2D();
         var other = new StaticHazard2D();
         body.AddContact(ContactType.SurfaceBottom, other, impactSpeed: 7.0);
 
-        body.SnapshotContactsForNextFrame(PhysicsConstants.FixedPhysicsStepSeconds);
+        body.ClearContactsForNewStep(PhysicsConstants.FixedPhysicsStepSeconds);
 
         Assert.IsFalse(body.HasSurfaceContactWith(other));
         Assert.AreEqual(0.0, body.GetContactImpactSpeed(ContactType.SurfaceBottom, other));

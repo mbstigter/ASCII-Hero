@@ -121,8 +121,8 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
 - **Colors are part of the ASCII language.** Each cell has a foreground and a background color.
 - **One-character color codes** (`0`-`9`, `A`-`Z`) map to a shared palette in `ColorPalette.ini`.
   A preview page is included.
-- **Layered defaults:** a per-cell code, then an asset default, then a world default, then an
-  engine fallback. A sprite can therefore be one color with no color files at all.
+- **Layered defaults:** a per-cell code, then an asset default, then a world default, then the
+  interface color. A sprite can therefore be one color with no color files at all.
 - **World palettes.** A world can add or recolor codes, for example icy blues for a winter level.
 
 ## Materials and physics

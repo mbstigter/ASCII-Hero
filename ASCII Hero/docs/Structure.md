@@ -71,11 +71,15 @@ palettes, materials) from disk/HTTP into in-memory game objects.
   `Global/Sprites/` for every other sprite it uses.
 - **`ColorPalette`** - the resolved single-character color code -> CSS color
   lookup, merging a world's own optional `ColorPalette.ini` over `Global/ColorPalette.ini`.
-- **`InterfaceColors`** - the named interface colors (green/amber/red/blue tints
-  plus black) from `Global/InterfaceColors.ini`, loaded once in
-  `GameLoop.StartAsync` and passed to the HUD/overlay widgets, end-screen boxes,
-  `WorldSelectRenderer` and `WorldLoadingRenderer`. Separate from `ColorPalette`,
-  which is for world/sprite assets only. Every name is required.
+- **`InterfaceColors`** - the interface colors from `Global/InterfaceColors.ini`:
+  `ColorTints` (Dark/Normal/Light) for Green/Amber/Red/Blue/White, the active
+  `Interface` tints chosen by `[Defaults] Foreground`, and `Background`.
+  Loaded once in `GameLoop.StartAsync` (which also sets
+  `GlyphBuilder.DefaultForeColor`) and passed to the HUD/overlay widgets,
+  `WorldSelectRenderer` and `WorldLoadingRenderer`; `GameLoop` picks the
+  end-screen tints itself. Separate from `ColorPalette`, which is for
+  world/sprite assets only. Missing values fall back to green on black
+  (`InterfaceColors.Fallback`).
 - **`MaterialLibrary`** - the resolved material-name -> `Material` (`Density`,
   `Friction`, `Restitution`, optional `ForegroundColor`/`BackgroundColor`/
   `Character`) lookup, merging a world's own optional `MaterialLibrary.ini` over
@@ -502,8 +506,9 @@ The live game state and the entity types that make it up.
   frame and reaction target; the `IClimberBody.IsTouchingClimbable`/
   `IHangerBody.IsTouchingHangable` flags are kept alongside for engage/release),
   via `Body2D.AddContact`/`HasContact`/`GetContactingBodies`.
-  `Resolve` snapshots and clears every body's contacts (via
-  `Body2D.SnapshotContactsForNextFrame`) at the very start of each frame, and
+  `Resolve` clears every awake body's contacts (via
+  `Body2D.ClearContactsForNewStep`) at the very start of each step (sleeping
+  bodies keep theirs), and
   records each body's horizontal displacement since the end of the previous
   collision pass (`Body2D.MarkResolvedPosition`), excluding collision pushes
   (`Body2D.LastStepDisplacementX`/`ReferenceVelocityX`) - the real speed of a
@@ -547,22 +552,17 @@ The live game state and the entity types that make it up.
   transpose - merging vertical runs, then merging horizontally-identical runs
   across columns), deduplicating any rectangle the two passes produce
   identically (the common case for a blocky rectangular sprite - a platform,
-  a wall). Deduplication matters, not just for rectangle-count hygiene:
-  `CollisionSystem` resolves each of a body's own rectangles independently,
-  one at a time, per solver iteration, so a leftover duplicate would
-  silently double that contact's position correction and velocity impulse
-  every iteration - invisible for a body at rest, but capable of injecting
-  real extra velocity into a fast-moving contact. For
+  a wall). Deduplication keeps the solver from testing the same rectangle
+  pair twice. `CollisionSystem` does not resolve rectangles one by one: per
+  solver iteration it resolves one contact per body pair, choosing the
+  direction whose worst-case push separates every overlapping rectangle pair
+  with the least correction (see `ResolveAgainstOtherBody`). For
   a curved/notched silhouette (e.g. a round `Ball` sprite), the row-run pass
-  alone produces very short, wide rectangles along the shape's flanks (each
-  row's run width differs slightly from its neighbors, so the vertical merge
-  rarely fires) - and `CollisionSystem`'s minimum-translation-vector contact
-  rule always treats a short rectangle's shallow vertical overlap as the
-  contact direction, even where the true overlap is deep horizontally,
-  letting a body slide sideways through the shape's middle. The column-run
-  pass's tall, narrow rectangles along those same flanks give contact
-  resolution a rectangle whose horizontal overlap is shallow there instead,
-  so the correct horizontal contact normal wins.
+  alone produces very short, wide rectangles along the shape's flanks, whose
+  shallow vertical overlaps can make a vertical push look cheapest even where
+  the true overlap is deep horizontally. The column-run pass's tall, narrow
+  rectangles along those same flanks give the shape an accurate horizontal
+  extent there too, so the correct horizontal contact normal wins.
 - **`Rect`** - a simple axis-aligned rectangle in world cells, used to
   describe a piece of a body's collision shape and test overlap.
 - **`SpatialGrid<T>`** - a small reusable broad-phase spatial hash grid:
@@ -576,7 +576,10 @@ The live game state and the entity types that make it up.
   rested long enough, or wakes it (`Body2D.Wake`) when any member was
   disturbed. Sleeping bodies are skipped by `PhysicsSystem` integration and by
   the solver except where an awake body or moving solid reaches them;
-  `World2D.ApplyPendingRemovals` wakes sleepers that touched a removed body.
+  `World2D.ApplyPendingRemovals` wakes sleepers that touched a removed body,
+  `World2D.TryOpenGate`/`TryOperateSwitch` wake all sleepers after a state
+  change (an opened gate or switched flow), and `Body2D` wakes itself when an
+  animation frame changes its collision shape.
 
 
 
@@ -631,10 +634,11 @@ The live game state and the entity types that make it up.
   glyph construction, and box-drawing-border helpers used by `WorldRenderer`,
   `WorldSelectRenderer`, and `UIRenderer` alike, since all three need the
   same few small operations just with different precedence chains/coordinate
-  spaces/placements. `RenderConstants.DefaultForeColor` is the fallback for
-  world content (and any glyph built without a color); interface colors come
-  from `InterfaceColors`. `game-interop.js` keeps its own single green
-  fallback only for the canvas before the first real frame.
+  spaces/placements. `GlyphBuilder.DefaultForeColor` (the interface Normal
+  tint once loaded, `RenderConstants.DefaultForegroundColor` before that) is
+  the fallback for world content and any glyph built without a foreground
+  color; a glyph without a background color has no fill. The canvas is filled
+  with the world's `BackdropColor`, else `InterfaceColors.Background`.
 - **`UIFrame`** / **`UILabel`** / **`UIBar`** - the independent screen-space drawable
   primitives, laid out directly in viewport cell coordinates, unaffected by
   the camera: a box-drawing border, one or more lines of text, and a gauge.
@@ -643,7 +647,7 @@ The live game state and the entity types that make it up.
   centered message needs no box) - any screen (world HUD, world-select, or a
   future screen) can draw just one, or several side by side. Each has its own
   optional foreground/background color (callers pass `InterfaceColors` values),
-  falling back to `RenderConstants.DefaultForeColor` when unset; `UILabel`'s width/line-count
+  falling back to `GlyphBuilder.DefaultForeColor` when unset; `UILabel`'s width/line-count
   caps are fixed rather than auto-sized to its current content, so a
   reserved screen area keeps a stable footprint frame to frame even as the
   text updates (e.g. a live score) - an overly long line or an overflowing
@@ -653,17 +657,17 @@ The live game state and the entity types that make it up.
   available to any future screen-space overlay. A label with a `HighlightColor`
   draws text wrapped in `{}` in that color (braces not drawn, no space taken;
   `GetVisibleLength` measures such a line); used for the HUD numbers and the
-  menu's control keys, both in `GreenDark`.
+  menu's control keys, both in the interface Dark tint.
 - **`WorldSelectRenderer`** - builds the world-selection screen's glyph list
   (thumbnails, titles, selector box). Unlike `WorldRenderer` it has no camera
   and no `World2D` - it lays out directly in viewport cell coordinates, since
   the selection screen exists before any world is loaded. Titles wider than a
   thumbnail are truncated, except the selected one, which slides back and
   forth (equal pause at each end) driven by `WorldSelectScreen.TitleScrollSeconds`.
-  The logo is drawn per glyph with a vertical green gradient (light top two
+  The logo is drawn per glyph with a vertical gradient of the interface tints (light top two
   rows, normal middle two, dark bottom row), and the scroll chevrons likewise
   (light top row, normal middle, dark bottom row). The selector box is drawn
-  `GreenDark` for a moment after the selection moves, so it appears to fade in.
+  in the interface Dark tint for a moment after the selection moves, so it appears to fade in.
   While `WorldSelectScreen.IsIntroComplete` is false only the logo is drawn,
   with "ASCII" sliding in from the left and "Hero" from the right
   (`WorldSelectScreen.IntroSeconds`; menu input is ignored until it finishes).
@@ -878,7 +882,8 @@ large jumps after e.g. a tab switch):
    `_hudText`/`_hudBar`) to that same list, so the HUD is always drawn last -
    on top of the foreground layer and everything else - before
    `CanvasBridge.DrawFrameAsync` sends the complete list to JavaScript to
-   paint onto the canvas (`drawFrame` fills backgrounds as cell rectangles and copies
+   paint onto the canvas (`drawFrame` first fills the whole canvas with the world's
+   `BackdropColor`, if set, then fills backgrounds as cell rectangles and copies
    each character from a cache of pre-rendered images, one per character/color
    combination, cleared when the font or cell size changes). `_hudText` is refreshed every `Playing` frame from
    `World2D.Player.Lives`/`.Rings`/`.Score` on its first row; its second row is a

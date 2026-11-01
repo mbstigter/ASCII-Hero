@@ -88,3 +88,42 @@ Then run the MSTest suite in `ASCII Hero/ASCII Hero.Tests` (Test Explorer or `do
   8. Run the test by clicking the `Run All` button in the Test Explorer.
   9. Check the test results in the Test Explorer window.
   10. Update and expand your tests as needed, following the naming and organizational conventions you establish.
+
+## Visual Studio Workflow and Terminal Reliability
+
+You are operating inside Visual Studio 2026. Prefer the most reliable available tools for working with the open solution.
+
+### Tool selection
+
+* Use IDE-aware tools for code navigation, symbol references, and code understanding when available.
+* Prefer appropriate Visual Studio build, testing, and diagnostic capabilities when directly accessible.
+* Use terminal commands when they are necessary or provide a clear advantage.
+* Do not assume an IDE capability is available to you just because it exists in the Visual Studio interface.
+
+### Terminal stability
+
+* Never send multiline commands directly to the integrated terminal.
+* Prefer short, single-line commands with simple quoting.
+* Avoid multiline PowerShell expressions, large inline payloads, complex command chaining, and commands that require interactive input.
+* For complex operations, create a script using file-editing tools and execute it with a short, single-line command.
+* Never create a multiline script by passing its contents directly through the terminal.
+* Execute commands sequentially and verify their results before proceeding.
+
+### Build and test
+
+* Make focused changes and validate them incrementally.
+* Use the smallest relevant build or test operation first.
+* Inspect errors and test results before deciding on the next action.
+* Do not repeatedly retry a failed or apparently hung command without investigating the cause.
+
+### Recovery
+
+If terminal execution hangs:
+
+1. Stop sending commands to the affected terminal.
+2. Check whether the shell is waiting for additional input or a process is still running.
+3. Interrupt the operation if necessary.
+4. Use a fresh terminal session if the existing one is unusable.
+5. Retry using a simpler command or a script file.
+
+Prioritize reliable execution and accurate verification over minimizing the number of commands.

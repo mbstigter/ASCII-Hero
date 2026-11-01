@@ -45,12 +45,12 @@ public class CollisionSystem
 
     /// <summary>
     /// Wakes a sleeping body that something awake has just reached during this step's solve. Its
-    /// kept contacts are snapshotted first, exactly as every awake body's were at the start of
+    /// kept contacts are cleared first, exactly as every awake body's were at the start of
     /// <see cref="Resolve"/>, so this step records its contacts fresh.
     /// </summary>
     private void WakeDuringResolve(Body2D body)
     {
-        body.SnapshotContactsForNextFrame(_stepSeconds);
+        body.ClearContactsForNewStep(_stepSeconds);
         body.Wake();
     }
 
@@ -72,15 +72,15 @@ public class CollisionSystem
 
         // Every body (static or moving) can be on the receiving end of a recorded contact this
         // frame (e.g. a static platform records SurfaceTop when something lands on it), so every
-        // body's contact set is snapshotted-and-cleared up front, before anything for this new
-        // frame is resolved/recorded - see Body2D.SnapshotContactsForNextFrame.
+        // body's contact set is cleared up front, before anything for this new
+        // frame is resolved/recorded - see Body2D.ClearContactsForNewStep.
         // A sleeping body is not re-resolved, so it keeps its last contacts as they were (still
         // grounded, still linked to its island) - see SleepSystem.
         foreach (var contactBody in world.Objects)
         {
             if (!contactBody.IsSleeping)
             {
-                contactBody.SnapshotContactsForNextFrame(stepSeconds);
+                contactBody.ClearContactsForNewStep(stepSeconds);
             }
         }
 
@@ -920,7 +920,7 @@ public class CollisionSystem
     }
 
     /// <summary>
-    /// Whether <paramref name="body"/> is the player
+    /// Whether <paramref name="body"/> is the player moving on its feet, whose
     /// ground friction is already its traction-limited walk force - see
     /// <see cref="World.Player2D.UsesFeetLocomotion"/>.
     /// </summary>

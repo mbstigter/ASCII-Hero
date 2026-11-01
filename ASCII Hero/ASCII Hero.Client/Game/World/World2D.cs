@@ -70,6 +70,23 @@ public partial class World2D
     }
 
     /// <summary>
+    /// Wakes every sleeping body. Called after a switch or gate changes state: that can open a
+    /// gate under a resting body or start a flow around it, which a sleeping body would not notice
+    /// by itself. State changes are rare, so waking everything is simpler than working out which
+    /// bodies are affected - see Physics.SleepSystem.
+    /// </summary>
+    private void WakeAllSleepingBodies()
+    {
+        foreach (var body in Objects)
+        {
+            if (body.IsSleeping)
+            {
+                body.Wake();
+            }
+        }
+    }
+
+    /// <summary>
     /// Background layer of the world, purely visual - one glyph per world cell, sized to
     /// <see cref="WidthCells"/>/<see cref="HeightCells"/>. Optional: a world with no
     /// <c>{WorldName}_background_characters.txt</c> file gets an all-empty grid here (draws
@@ -136,8 +153,16 @@ public partial class World2D
     /// </summary>
     public char? DefaultForeColor { get; private set; }
 
-    /// <summary>See <see cref="DefaultForeColor"/>.</summary>
+    /// <summary>See <see cref="DefaultForeColor"/>. Only colors cells that draw a character; never empty cells (see <see cref="BackdropColor"/>).</summary>
     public char? DefaultBackColor { get; private set; }
+
+    /// <summary>
+    /// Color code from this world's <c>[Colors] BackdropColor</c> settings.ini key: the color the
+    /// whole canvas is filled with before anything is drawn, so empty cells show it instead of
+    /// black. It never colors drawn characters' cells.
+    /// Null when not set (black). See docs/AssetFormat.md.
+    /// </summary>
+    public char? BackdropColor { get; private set; }
 
     /// <summary>
     /// The resolved Global+World material library. Each body resolves its
@@ -262,6 +287,7 @@ public partial class World2D
 
             Player.Keys.RemoveAt(keyIndex);
             gate.SetState(true);
+            WakeAllSleepingBodies();
             PlaySound(gate.SoundName);
             return true;
         }
@@ -287,6 +313,7 @@ public partial class World2D
 
             if (switchObject.Operate())
             {
+                WakeAllSleepingBodies();
                 PlaySound(switchObject.SoundName);
                 return true;
             }

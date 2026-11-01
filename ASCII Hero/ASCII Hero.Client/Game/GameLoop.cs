@@ -1,4 +1,4 @@
-using ASCII_Hero.Client.Game.Assets;
+﻿using ASCII_Hero.Client.Game.Assets;
 using ASCII_Hero.Client.Game.Audio;
 using ASCII_Hero.Client.Game.Browser;
 using ASCII_Hero.Client.Game.Constants;
@@ -116,7 +116,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private const string ConfirmExitWooshSoundName = "ConfirmExitWoosh";
 
     /// <summary>Interface colors (Global/InterfaceColors.ini), loaded in <see cref="StartAsync"/>.</summary>
-    private InterfaceColors _colors = null!;
+    private InterfaceColors _colors = InterfaceColors.Fallback;
 
     // ---------------------------------------------------------------------------------------
     // HUD (top-left): frame, text row, health bar and key icon
@@ -231,16 +231,16 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private void ApplyInterfaceColors(InterfaceColors colors)
     {
         _colors = colors;
+        GlyphBuilder.DefaultForeColor = colors.Interface.Normal;
 
-        _hudBox.ForeColor = colors.Green;
-        _hudText.ForeColor = colors.Green;
-        _hudText.HighlightColor = colors.GreenDark;
-        _hudBar.ForeColor = colors.Green;
-        _hudKeyLabel.ForeColor = colors.Green;
-        _hudKeyLabel.HighlightColor = colors.GreenDark;
-        _fpsLabel.ForeColor = colors.Green;
-        _objectCounterLabel.ForeColor = colors.Green;
-        _endScreenRenderer.ApplyColors(colors);
+        _hudBox.ForeColor = colors.Interface.Normal;
+        _hudText.ForeColor = colors.Interface.Normal;
+        _hudText.HighlightColor = colors.Interface.Dark;
+        _hudBar.ForeColor = colors.Interface.Normal;
+        _hudKeyLabel.ForeColor = colors.Interface.Normal;
+        _hudKeyLabel.HighlightColor = colors.Interface.Dark;
+        _fpsLabel.ForeColor = colors.Interface.Normal;
+        _objectCounterLabel.ForeColor = colors.Interface.Normal;
     }
 
     private void ApplyCellMetrics(CellMetrics cellMetrics, int viewportColumns, int viewportRows)
@@ -522,7 +522,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         var glyphs = _renderer.BuildFrame(_world, _camera, _viewportWidthCells, _viewportHeightCells);
         AddHud(glyphs);
         AddDebugOverlays(glyphs);
-        await DrawAsync(glyphs);
+        await DrawWorldAsync(glyphs);
     }
 
     /// <summary>
@@ -696,11 +696,11 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         var glyphs = _renderer.BuildFrame(_world, _camera, _viewportWidthCells, _viewportHeightCells);
         AddHud(glyphs);
         AddEndScreenMessage(glyphs);
-        await DrawAsync(glyphs);
+        await DrawWorldAsync(glyphs);
     }
 
     /// <summary>
-    /// Draws the frozen frame with an "Exit Game?"
+    /// Draws the frozen frame
     /// selection; a fresh Escape press cancels and resumes play.
     /// </summary>
     private async Task OnConfirmExitFrameAsync(double deltaSeconds)
@@ -731,7 +731,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         var glyphs = _renderer.BuildFrame(_world, _camera, _viewportWidthCells, _viewportHeightCells);
         AddHud(glyphs);
         AddEndScreenMessage(glyphs);
-        await DrawAsync(glyphs);
+        await DrawWorldAsync(glyphs);
     }
 
     /// <summary>
@@ -743,12 +743,10 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         var isLevelComplete = _mode == GameMode.LevelComplete;
         var isConfirmExit = _mode == GameMode.ConfirmExit;
         var text = isConfirmExit ? "Exit Game?" : isLevelComplete ? "Level Complete!" : "Game Over!";
-        var (darkColor, color, lightColor) = isConfirmExit ? (_colors.AmberDark, _colors.Amber, _colors.AmberLight)
-            : isLevelComplete ? (_colors.GreenDark, _colors.Green, _colors.GreenLight)
-            : (_colors.RedDark, _colors.Red, _colors.RedLight);
+        var tints = isConfirmExit ? _colors.Amber : isLevelComplete ? _colors.Green : _colors.Red;
 
         _endScreenRenderer.AddMessage(
-            glyphs, text, darkColor, color, lightColor, _endScreenElapsedSeconds,
+            glyphs, text, tints.Dark, tints.Normal, tints.Light, WorldBackdropColor, _endScreenElapsedSeconds,
             _viewportWidthCells, _viewportHeightCells, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
     }
 
@@ -757,5 +755,13 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     // ---------------------------------------------------------------------------------------
 
     private Task DrawAsync(List<Glyph> glyphs) =>
-        canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs);
+        canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs, backdropColor: _colors.Background);
+
+    /// <summary>Draws a frame of the loaded world, filling the canvas with its <see cref="World2D.BackdropColor"/> first.</summary>
+    private Task DrawWorldAsync(List<Glyph> glyphs) =>
+        canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs,
+            backdropColor: WorldBackdropColor);
+
+    /// <summary>The loaded world's canvas color: its <see cref="World2D.BackdropColor"/>, else the interface background.</summary>
+    private string WorldBackdropColor => GlyphBuilder.ResolveColor(_world.Palette, _colors.Background, _world.BackdropColor)!;
 }

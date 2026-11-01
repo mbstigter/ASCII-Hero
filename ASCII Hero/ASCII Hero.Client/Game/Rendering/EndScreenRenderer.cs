@@ -1,4 +1,3 @@
-using ASCII_Hero.Client.Game.Assets;
 using ASCII_Hero.Client.Game.Menu;
 
 namespace ASCII_Hero.Client.Game.Rendering;
@@ -32,14 +31,12 @@ public class EndScreenRenderer
     /// <summary>Border around the end screen message, reused for every ripple box.</summary>
     private readonly UIFrame _frame = new(col: 0, row: 0, width: 0, height: 0);
 
-    /// <summary>Sets the label's solid background color.</summary>
-    public void ApplyColors(InterfaceColors colors) => _label.BackColor = colors.Black;
-
-    /// <summary>Adds the ripple/glow box and (once settled) the message for the given elapsed time.</summary>
+    /// <summary>Adds the ripple/glow box and (once settled) the message for the given elapsed time, with <paramref name="backColor"/> behind the text (the canvas color, so the box blends into the world).</summary>
     public void AddMessage(
-        List<Glyph> glyphs, string text, string darkColor, string color, string lightColor, double elapsedSeconds,
+        List<Glyph> glyphs, string text, string darkColor, string color, string lightColor, string backColor, double elapsedSeconds,
         double viewportWidthCells, double viewportHeightCells, double cellWidthPixels, double cellHeightPixels)
     {
+        _label.BackColor = backColor;
         var finalWidth = text.Length + 4;
         var finalHeight = 3;
 

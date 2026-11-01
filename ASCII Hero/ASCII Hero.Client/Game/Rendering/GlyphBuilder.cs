@@ -1,4 +1,4 @@
-using ASCII_Hero.Client.Game.Assets;
+﻿using ASCII_Hero.Client.Game.Assets;
 using ASCII_Hero.Client.Game.Constants;
 
 namespace ASCII_Hero.Client.Game.Rendering;
@@ -11,6 +11,12 @@ namespace ASCII_Hero.Client.Game.Rendering;
 /// </summary>
 public static class GlyphBuilder
 {
+    /// <summary>
+    /// Last-resort foreground color for anything without a color of its own: the interface color
+    /// (<see cref="InterfaceColors.Interface"/>), set once at startup. Until then (and in tests)
+    /// it is the hardcoded <see cref="RenderConstants.DefaultForegroundColor"/>.
+    /// </summary>
+    public static string DefaultForeColor { get; set; } = RenderConstants.DefaultForegroundColor;
 
     /// <summary>
     /// Resolves a cell's color by trying each code in <paramref name="codesInPrecedenceOrder"/> in
@@ -36,9 +42,9 @@ public static class GlyphBuilder
         return hardcodedFallback;
     }
 
-    /// <summary>Builds a glyph at an already-resolved pixel position, falling back to <see cref="RenderConstants.DefaultForeColor"/>/<see cref="RenderConstants.DefaultBackColor"/> if <paramref name="foreColor"/>/<paramref name="backColor"/> are null.</summary>
+    /// <summary>Builds a glyph at an already-resolved pixel position, falling back to <see cref="DefaultForeColor"/> if <paramref name="foreColor"/> is null (a null <paramref name="backColor"/> means no cell fill).</summary>
     public static Glyph BuildGlyph(double pixelX, double pixelY, char character, string? foreColor, string? backColor) =>
-        new(pixelX, pixelY, character, foreColor ?? RenderConstants.DefaultForeColor, backColor ?? RenderConstants.DefaultBackColor);
+        new(pixelX, pixelY, character, foreColor ?? DefaultForeColor, backColor);
 
     /// <summary>
     /// Returns <paramref name="code"/> unless it equals the grid's "no code here" marker

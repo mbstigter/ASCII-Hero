@@ -2,18 +2,13 @@
 // This module intentionally contains no game logic: it only forwards keyboard events
 // to C#, drives the requestAnimationFrame loop, and draws glyphs onto the canvas.
 
-// Fallback glyph color applied when the canvas context is (re)configured, before the first real
-// frame is drawn (every actual glyph draw sets its own color from the C#-supplied per-glyph data -
-// see drawFrame - so this value is never otherwise visible). Interface colors themselves live in
-// Assets/Global/InterfaceColors.ini.
-const FALLBACK_FORE_COLOR = '#00ff00';
-
 let ctx = null;
 let font = null;
 // Pre-rendered glyph images: color -> (character -> canvas). Rendering text is far more expensive
-// than copying an image, and a frame repeats the same few character/color combinations thousands
-// of times, so each combination is rendered once and then copied. Cleared whenever the font or
-// cell size changes (see applyFontToContext).
+// than copying an image, and a frame repeats the same character/color combinations many times,
+// so each combination is rendered once and then copied. Each image is exactly one cell, so any
+// part of a glyph drawn outside its cell is clipped - check this if the font changes. Cleared
+// whenever the font or cell size changes (see applyFontToContext).
 const glyphCache = new Map();
 let cacheCellWidth = 0;
 let cacheCellHeight = 0;
@@ -70,7 +65,7 @@ export async function initialize(canvasElementId, dotNetObjectRef, fontFamily, v
     return { cellWidthPixels: fontWidthPixels, cellHeightPixels: fontHeightPixels };
 }
 
-// Applies the configured font (and the fillStyle/textBaseline drawing glyphs rely on) to the
+// Applies the configured font (and the textBaseline drawing glyphs rely on) to the
 // canvas context. Must run *after* the canvas element's width/height are set, since resizing a
 // canvas resets its 2D context state.
 function applyFontToContext(fontFamily, cellHeightPixels) {
@@ -78,7 +73,6 @@ function applyFontToContext(fontFamily, cellHeightPixels) {
     // height is used as the font-size verbatim - no further scaling/derivation needed.
     ctx.font = `${cellHeightPixels}px ${fontFamily}`;
     ctx.textBaseline = 'top';
-    ctx.fillStyle = FALLBACK_FORE_COLOR;
     font = ctx.font;
     glyphCache.clear();
 }
@@ -127,12 +121,17 @@ function onAnimationFrame(timestamp) {
 
 // Each glyph has a foreground color and an optional background color (null = none). A background
 // is a plain cell-sized rectangle; a character is copied from its cached image (see getGlyphImage).
-export function drawFrame(width, height, cellWidthPixels, cellHeightPixels, characters, xs, ys, foreColors, backColors) {
+// backdropColor (null = none, leaving the canvas black) fills the whole canvas first.
+export function drawFrame(width, height, cellWidthPixels, cellHeightPixels, backdropColor, characters, xs, ys, foreColors, backColors) {
     if (!ctx) {
         return;
     }
 
     ctx.clearRect(0, 0, width, height);
+    if (backdropColor) {
+        ctx.fillStyle = backdropColor;
+        ctx.fillRect(0, 0, width, height);
+    }
 
     for (let i = 0; i < characters.length; i++) {
         const x = xs[i];

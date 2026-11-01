@@ -1,4 +1,4 @@
-namespace ASCII_Hero.Client.Game.Constants;
+﻿namespace ASCII_Hero.Client.Game.Constants;
 
 /// <summary>
 /// Centralized rendering tuning values shared across the render pipeline
@@ -60,19 +60,15 @@ public static class RenderConstants
     public const double DefaultCellHeightPixels = 28;
 
     /// <summary>
-    /// Default foreground color for world content (<see cref="Rendering.WorldRenderer"/> and the
-    /// menu's world thumbnails) when nothing more specific is resolved (no palette match), and the
-    /// last-resort fallback of <see cref="Rendering.GlyphBuilder"/>. Interface colors (menu, HUD,
-    /// message boxes) come from Global/InterfaceColors.ini instead (see
-    /// <see cref="Assets.InterfaceColors"/>). Not overridable via any ini file.
+    /// One of the application's only two hardcoded colors: the foreground used when
+    /// Global/InterfaceColors.ini (see <see cref="Assets.InterfaceColors"/>) is missing a value or
+    /// fails to load, and before it is loaded. Matches the shipped <c>GreenNormal</c>.
     /// </summary>
-    public const string DefaultForeColor = "#00ff00";
+    public const string DefaultForegroundColor = "#00ff00";
 
     /// <summary>
-    /// Default background color used by any renderer when nothing more specific is resolved -
-    /// null means no fill (fully transparent, letting the canvas show through). The single
-    /// app-wide place this default is defined, so it isn't hardcoded independently in each
-    /// renderer. Not overridable via any ini file.
+    /// The other hardcoded color: the background (canvas fill) used when
+    /// Global/InterfaceColors.ini has no <c>[Defaults] Background</c> or fails to load.
     /// </summary>
-    public const string? DefaultBackColor = null;
+    public const string DefaultBackgroundColor = "#000000";
 }

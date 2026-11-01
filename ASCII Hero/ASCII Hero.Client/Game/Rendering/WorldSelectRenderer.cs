@@ -1,4 +1,4 @@
-using ASCII_Hero.Client.Game.Assets;
+﻿using ASCII_Hero.Client.Game.Assets;
 using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.Menu;
 
@@ -183,7 +183,7 @@ public static class WorldSelectRenderer
         for (var row = 0; row < LogoLines.Length; row++)
         {
             var line = LogoLines[row];
-            var color = row < 2 ? colors.GreenLight : row < 4 ? colors.Green : colors.GreenDark;
+            var color = row < 2 ? colors.Interface.Light : row < 4 ? colors.Interface.Normal : colors.Interface.Dark;
             for (var col = 0; col < line.Length; col++)
             {
                 var character = line[col];
@@ -208,9 +208,9 @@ public static class WorldSelectRenderer
         double cellWidthPixels, double cellHeightPixels)
     {
         var width = ControlsLines.Max(UIRenderer.GetVisibleLength);
-        var label = new UILabel((viewportWidthCells - width) / 2, row, width: width, height: ControlsLines.Length, foreColor: colors.Green)
+        var label = new UILabel((viewportWidthCells - width) / 2, row, width: width, height: ControlsLines.Length, foreColor: colors.Interface.Normal)
         {
-            HighlightColor = colors.GreenDark,
+            HighlightColor = colors.Interface.Dark,
         };
         label.Lines.AddRange(ControlsLines);
         UIRenderer.AddLabel(glyphs, label, cellWidthPixels, cellHeightPixels);
@@ -227,7 +227,7 @@ public static class WorldSelectRenderer
         {
             var line = arrowLines[row];
             // Light top row, normal middle rows, dark bottom row.
-            var color = row == 0 ? colors.GreenLight : row == arrowLines.Length - 1 ? colors.GreenDark : colors.Green;
+            var color = row == 0 ? colors.Interface.Light : row == arrowLines.Length - 1 ? colors.Interface.Dark : colors.Interface.Normal;
             for (var col = 0; col < line.Length; col++)
             {
                 var character = line[col];
@@ -258,7 +258,7 @@ public static class WorldSelectRenderer
             : world.Title;
         var titleStartCol = thumbCol + (WorldCatalog.ThumbnailWidth - title.Length) / 2.0;
 
-        var label = new UILabel(titleStartCol, titleRow, width: title.Length, height: 1, foreColor: colors.Green);
+        var label = new UILabel(titleStartCol, titleRow, width: title.Length, height: 1, foreColor: colors.Interface.Normal);
         label.Lines.Add(title);
         UIRenderer.AddLabel(glyphs, label, cellWidthPixels, cellHeightPixels);
     }
@@ -304,32 +304,38 @@ public static class WorldSelectRenderer
         double cellWidthPixels, double cellHeightPixels)
     {
         var top = thumbRow - SlotVerticalPadding;
-        var color = selectedSeconds < SelectionFadeInSeconds ? colors.GreenDark : colors.Green;
+        var color = selectedSeconds < SelectionFadeInSeconds ? colors.Interface.Dark : colors.Interface.Normal;
         var frame = new UIFrame(slotOriginCol, top, SlotPitch, WorldCatalog.ThumbnailHeight + SlotVerticalPadding + 1, foreColor: color);
         UIRenderer.AddFrame(glyphs, frame, cellWidthPixels, cellHeightPixels);
     }
 
-    /// <summary>Adds a world's current thumbnail animation frame, skipping empty cells.</summary>
+    /// <summary>Adds a world's current thumbnail animation frame. Empty cells show the world's backdrop color, if any.</summary>
     private static void AddThumbnail(
         List<Glyph> glyphs, WorldSummary world, double thumbCol, double thumbRow,
         double cellWidthPixels, double cellHeightPixels)
     {
         var frame = world.CurrentThumbnailFrame;
+        var backdropColor = GlyphBuilder.ResolveColor(world.Palette, null, world.BackdropColor);
 
         for (var row = 0; row < WorldCatalog.ThumbnailHeight; row++)
         {
             for (var col = 0; col < WorldCatalog.ThumbnailWidth; col++)
             {
+                var pixelX = (thumbCol + col) * cellWidthPixels;
+                var pixelY = (thumbRow + row) * cellHeightPixels;
                 var character = frame.Chars[row, col];
                 if (character == world.EmptyChar)
                 {
+                    if (backdropColor is not null)
+                    {
+                        glyphs.Add(GlyphBuilder.BuildGlyph(pixelX, pixelY, ' ', null, backdropColor));
+                    }
                     continue;
                 }
 
-                var foreColor = GlyphBuilder.ResolveColor(world.Palette, RenderConstants.DefaultForeColor, GlyphBuilder.NullIfEmpty(frame.Fore[row, col], world.EmptyChar));
-                var backColor = GlyphBuilder.ResolveColor(world.Palette, RenderConstants.DefaultBackColor, GlyphBuilder.NullIfEmpty(frame.Back[row, col], world.EmptyChar), world.DefaultBackColor);
-                glyphs.Add(GlyphBuilder.BuildGlyph(
-                    (thumbCol + col) * cellWidthPixels, (thumbRow + row) * cellHeightPixels, character, foreColor, backColor));
+                var foreColor = GlyphBuilder.ResolveColor(world.Palette, GlyphBuilder.DefaultForeColor, GlyphBuilder.NullIfEmpty(frame.Fore[row, col], world.EmptyChar));
+                var backColor = GlyphBuilder.ResolveColor(world.Palette, backdropColor, GlyphBuilder.NullIfEmpty(frame.Back[row, col], world.EmptyChar), world.DefaultBackColor);
+                glyphs.Add(GlyphBuilder.BuildGlyph(pixelX, pixelY, character, foreColor, backColor));
             }
         }
     }

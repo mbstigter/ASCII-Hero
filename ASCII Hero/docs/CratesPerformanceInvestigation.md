@@ -205,7 +205,7 @@ are active, and drawing (30-56 ms per frame) in every busy scene.
 | Contact lists reused per step; unused previous-frame contact history (`HadContactLastFrame`) removed | Unchanged - nothing read it |
 | Mover pairing uses a stored index instead of `IndexOf` | Unchanged |
 | Solver stops iterating once an iteration changes nothing significant | Unchanged for converged contacts; at most 8 iterations as before |
-| Sleeping islands (`SleepSystem`): bodies joined by surface contacts sleep together once all are at rest for 0.5 s; woken by contact from an awake body or loss of support | Resting bodies stop being simulated; they were already still, so nothing visible changes. A sleeping body is at rest by definition (velocity zero) |
+woken by contact from an awake body, loss of support, a gate or switch state change, or a change of its own collision shape |
 | Compound-shape collision fix: every overlapping rectangle pair is checked and the deepest push per direction is used | **Correctness fix**: the player (several rectangles) could sink a full cell into a crate. Regression test `PlayerMovingAmongCrates_NeverSinksIntoThem` |
 
 Not done, and why:
@@ -216,7 +216,7 @@ Not done, and why:
 - **No catch-up cap change**: still at most six steps per frame, as before.
 - **Warm starting not added**: it would let a loaded stack converge faster, but the player never
   sleeps, so a stack the player stands on stays awake anyway. Accepted as a known limit (ignored
-  test `BodyStandingOnStack_StackSettlesAndSleeps`) and documented as level-design guidance in
+  test `BodyStandingOnStack_StackSettles`)
   Design.md: keep stacks the player stands on small.
 
 ### 7.2 Drawing changes
@@ -234,8 +234,9 @@ Not done, and why:
 
 - Crates runs at a smooth frame rate, including with the player on a stack and while crates move
   (checked with the in-game FPS overlay; no final per-section numbers, the counters were removed).
-- Settled stacks with nothing standing on them cost close to nothing.
-- MSTest: 61 passed, 1 skipped (the known limit above), 0 failed.
+- Settled stacks with nothing standing on them cost substantially less: they are no longer
+  integrated or solved, though some bookkeeping and broad-phase work remains.
+- MSTest: 62 passed, 1 skipped (the known limit above), 0 failed.
 
 ### 7.4 Assessment
 
@@ -243,5 +244,8 @@ Not done, and why:
   what C# sends and contains no game logic. Rendering is still not used as the game loop.
 - **Physics**: no behaviour was approximated or tuned for the Crates level. All changes either
   skip provably redundant work (rejection, early exit, sleeping of bodies at rest) or fix a
-  correctness bug. Sleeping is the one behaviour-sensitive change; its wake-up rules are covered
-  by `RemovingSupport_WakesStackAndItFalls` and `BodyLandingOnSleepingCrate_WakesItAndRestsOnTop`.
+  correctness bug. Sleeping is the one behaviour-sensitive change. Tests cover waking by loss of
+  support (`RemovingSupport_WakesStackAndItFalls`), by an awake body landing
+  (`BodyLandingOnSleepingCrate_WakesItAndRestsOnTop`) and by a gate opening underneath
+  (`OpeningGateUnderSleepingCrate_WakesItAndItFalls`). Waking on a collision-shape change has no
+  automated test (no shipped movable object changes shape).

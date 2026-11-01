@@ -1,4 +1,4 @@
-using ASCII_Hero.Client.Game.Assets;
+﻿using ASCII_Hero.Client.Game.Assets;
 using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.World;
 
@@ -172,8 +172,8 @@ public class WorldRenderer
                 var cellForeCode = GlyphBuilder.NullIfEmpty(frame.Fore[row, col], emptyChar);
                 var cellBackCode = GlyphBuilder.NullIfEmpty(frame.Back[row, col], emptyChar);
                 var material = world.Materials.Get(gameObject.MaterialName);
-                var foreColor = GlyphBuilder.ResolveColor(palette, RenderConstants.DefaultForeColor, cellForeCode, gameObject.ForeColorOverride, gameObject.Sprite.DefaultForeColor, material.ForegroundColor, world.DefaultForeColor);
-                var backColor = GlyphBuilder.ResolveColor(palette, RenderConstants.DefaultBackColor, cellBackCode, gameObject.BackColorOverride, gameObject.Sprite.DefaultBackColor, material.BackgroundColor, world.DefaultBackColor);
+                var foreColor = GlyphBuilder.ResolveColor(palette, GlyphBuilder.DefaultForeColor, cellForeCode, gameObject.ForeColorOverride, gameObject.Sprite.DefaultForeColor, material.ForegroundColor, world.DefaultForeColor);
+                var backColor = GlyphBuilder.ResolveColor(palette, null, cellBackCode, gameObject.BackColorOverride, gameObject.Sprite.DefaultBackColor, material.BackgroundColor, world.DefaultBackColor);
                 glyphs.Add(ToGlyph(cellPosition, character, foreColor, backColor, camera));
             }
         }

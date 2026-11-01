@@ -113,7 +113,9 @@ core's own force/collision/medium math.
   assignments on purpose — a push-off happens in a single instant. There is no separate constraint-solver "normal
   force" term; a resting body's velocity along the contact normal is instead
   resolved by `CollisionSystem`'s own impulse-based response each frame it
-  remains in contact (see below).
+  remains in contact (see below). The exception is a sleeping body (a group of
+  movable objects that has come to rest, see `SleepSystem`): it is not
+  integrated or re-resolved until something disturbs it.
 - Every body lives in an ambient medium (`Body2D.CurrentMedium`), resolved
   fresh each frame by `PhysicsSystem` — `Air` by default, overridden to
   whichever overlapping `Medium = true` placement (e.g. a `Water` volume) has

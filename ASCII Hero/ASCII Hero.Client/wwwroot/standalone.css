@@ -23,3 +23,39 @@ html, body {
     height: 100%;
     overflow: hidden;
 }
+
+/*
+    Loading message shown by index.html until the game starts, in the same green on black as
+    RenderConstants.DefaultForegroundColor/DefaultBackgroundColor - keep them in step.
+    28px is twice the font's native 14px height, so the text stays crisp.
+*/
+.loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: fixed;
+    inset: 0;
+    background: #000000;
+    color: #00ff00;
+    font-family: 'Web437IbmVga8x14', monospace;
+    font-size: 28px;
+}
+
+/* Fixed width of three characters, so "Loading" doesn't shift as the dots appear. */
+.loading-dots {
+    display: inline-block;
+    width: 3ch;
+    text-align: left;
+}
+
+.loading-dots::after {
+    content: '';
+    animation: loading-dots 1.2s steps(1) infinite;
+}
+
+@keyframes loading-dots {
+    0% { content: ''; }
+    25% { content: '.'; }
+    50% { content: '..'; }
+    75% { content: '...'; }
+}

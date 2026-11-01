@@ -544,13 +544,19 @@ public abstract class Body2D
     /// <summary>
     /// Applies a specific frame (with optional tiling) to this body, updating Frame, Size, and
     /// collision rectangles. Used by both SetFrame (at spawn) and AdvanceAnimation (each frame
-    /// advance during playback).
+    /// advance during playback). A sleeping body whose collision shape changes is woken, since its
+    /// kept contacts no longer describe how it rests.
     /// </summary>
     private void ApplyFrame(SpriteFrame sourceFrame)
     {
         Frame = SpriteFrameTiler.Tile(sourceFrame, Clip.TileAxis, _span);
         Size = new Vector2D(Frame.Width, Frame.Height);
+        var previousRects = _localCollisionRects;
         _localCollisionRects = CollisionShapeBuilder.DeriveRectangles(Frame.Chars, Sprite.EmptyChar);
+        if (IsSleeping && !previousRects.SequenceEqual(_localCollisionRects))
+        {
+            Wake();
+        }
     }
 
     /// <summary>
@@ -558,7 +564,8 @@ public abstract class Body2D
     /// set of other bodies contacted for that flag (e.g. <see cref="Physics.ContactType.SurfaceBottom"/>
     /// maps to whichever solid(s) this body is currently resting on). Rebuilt from scratch every
     /// frame by <see cref="Physics.CollisionSystem"/> as contacts are resolved, and never carried
-    /// forward as "still true until told otherwise". The only other edit is an explicit
+    /// forward as "still true until told otherwise" - except while this body sleeps, when its last
+    /// contacts are deliberately kept (see <see cref="IsSleeping"/>). The only other edit is an explicit
     /// <see cref="RemoveContact"/> (e.g. a jump dropping its ground contact for the rest of the frame).
     /// See docs/Decisions.md for why contacts are recorded per side rather than inferred from
     /// overlap depth alone, and why <see cref="IPhysicsBody.IsGrounded"/> is derived from them.
@@ -566,7 +573,8 @@ public abstract class Body2D
     private readonly Dictionary<Physics.ContactType, List<Body2D>> _contacts = [];
 
     /// <summary>
-    /// This frame's
+    /// This step's impact speed per contact: the closing speed along the contact normal between
+    /// this body and the
     /// contacted body, in cells/second, measured before the collision response. Keyed by side so a
     /// hard side impact can never be read back as a bottom (landing) impact. Cleared together with
     /// <see cref="_contacts"/>; see <see cref="GetContactImpactSpeed"/>.
@@ -597,7 +605,7 @@ public abstract class Body2D
         return false;
     }
 
-    /// <summary>The other bodies currently contacted
+    /// <summary>The other bodies currently contacted on the given (single-flag) <paramref name="type"/> side.</summary>
     public IReadOnlyList<Body2D> GetContactingBodies(Physics.ContactType type) =>
         _contacts.TryGetValue(type, out var bodies) ? bodies : [];
 
@@ -694,7 +702,7 @@ public abstract class Body2D
     /// the length of the (sub)step just integrated, used to turn displacement into
     /// <see cref="ReferenceVelocityX"/> and friction velocity changes into distance.
     /// </summary>
-    public void SnapshotContactsForNextFrame(double stepSeconds)
+    public void ClearContactsForNewStep(double stepSeconds)
     {
         // The lists are emptied and reused rather than reallocated every step.
         foreach (var bodies in _contacts.Values)

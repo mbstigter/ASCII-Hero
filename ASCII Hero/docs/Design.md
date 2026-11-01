@@ -38,7 +38,7 @@ not like a pixel-art game with ASCII characters placed on top.
   carried along. When a conveyor/rope carries the player past its end, the grip simply
   ends and the player falls - there is no automatic dismount; levels place a
   floor or ledge at the end where a landing is intended.
-- Stacks of movable objects cost nothing once they have come to rest. While the
+- Stacks of movable objects cost substantially less once they have come to rest. While the
   player (or anything else that keeps moving) stands on a stack, the whole stack
   is simulated every step, so keep stacks the player can stand on small - a few
   objects rather than a large pile.
@@ -92,6 +92,10 @@ not like a pixel-art game with ASCII characters placed on top.
 - **Enhance sprites**, especially Crawl and Clamber, which currently feel
   underdeveloped compared to Walk/Hang - consider adding a third animation
   frame for these (and other) animated clips.
+- **Show load errors in the game (low priority).** A world that fails to load
+  (e.g. a `Link` with no matching switch) only reports the reason in the
+  browser console and silently returns to world selection. Consider showing
+  the message on screen, e.g. on the world selection screen.
 - **Losing a life is a short event, not an instant reset**: the player's
   `died` effect and the hazard's sound play with physics frozen for about two
   seconds, then

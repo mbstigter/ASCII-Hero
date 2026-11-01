@@ -17,8 +17,9 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// so it still reports grounded and still links its island. It is woken by: an awake body making
 /// contact with it (see <see cref="CollisionSystem"/>), any velocity applied to it from outside
 /// (see <see cref="PhysicsSystem"/>), removal of a body it touches (see
-/// <see cref="World2D.ApplyPendingRemovals"/>), its support starting to move, or any other member
-/// of its island waking.
+/// <see cref="World2D.ApplyPendingRemovals"/>), its support starting to move, any other member
+/// of its island waking, a change of its own collision shape (see <c>Body2D.ApplyFrame</c>), or
+/// any switch or gate changing state (see <see cref="World2D.TryOperateSwitch"/>).
 /// </remarks>
 public class SleepSystem
 {

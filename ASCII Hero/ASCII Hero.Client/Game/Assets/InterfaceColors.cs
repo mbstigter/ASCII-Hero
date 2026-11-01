@@ -1,68 +1,61 @@
-namespace ASCII_Hero.Client.Game.Assets;
+﻿namespace ASCII_Hero.Client.Game.Assets;
 
 /// <summary>
-/// The named interface colors (Global/InterfaceColors.ini): CSS hex colors for menus, HUD,
-/// overlays and message boxes. Separate from <see cref="ColorPalette"/>, which is for world and
-/// sprite assets. Every color is required; a missing entry is a load error. Loading is handled by
-/// the shared <see cref="IniOverrideLoader"/> (global file only).
+/// The interface colors (Global/InterfaceColors.ini): CSS hex colors for menus, HUD, overlays and
+/// message boxes. Separate from <see cref="ColorPalette"/>, which is for world and sprite assets.
+/// Each color section (<c>[Green]</c>, <c>[Amber]</c>, ...) holds a Dark, Normal and Light tint;
+/// <c>[Defaults] Foreground</c> names the section used for the whole interface (Green if unset), and
+/// <c>[Defaults] Background</c> is the canvas color. Any value that is missing (or the
+/// whole file) falls back to <see cref="Constants.RenderConstants.DefaultForegroundColor"/> for every
+/// tint and <see cref="Constants.RenderConstants.DefaultBackgroundColor"/> for the background, so
+/// the game is then simply green on black.
 /// </summary>
 public class InterfaceColors
 {
-    private readonly Dictionary<string, string> _colors;
-
-    private InterfaceColors(Dictionary<string, string> colors)
+    private InterfaceColors(IniDocument ini)
     {
-        _colors = colors;
-
-        Black = Get("Black");
-        GreenDark = Get("GreenDark");
-        Green = Get("Green");
-        GreenLight = Get("GreenLight");
-        AmberDark = Get("AmberDark");
-        Amber = Get("Amber");
-        AmberLight = Get("AmberLight");
-        RedDark = Get("RedDark");
-        Red = Get("Red");
-        RedLight = Get("RedLight");
-        BlueDark = Get("BlueDark");
-        Blue = Get("Blue");
-        BlueLight = Get("BlueLight");
+        Green = GetTints(ini, "Green");
+        Amber = GetTints(ini, "Amber");
+        Red = GetTints(ini, "Red");
+        Blue = GetTints(ini, "Blue");
+        White = GetTints(ini, "White");
+        Interface = GetTints(ini, ini.TryGetValue("Defaults", "Foreground") ?? "Green");
+        Background = ini.TryGetValue("Defaults", "Background") ?? Constants.RenderConstants.DefaultBackgroundColor;
     }
 
-    public string Black { get; }
+    /// <summary>The interface color (menu, logo, HUD, loading bar, ...), chosen by <c>[Defaults] Foreground</c>. Also the fallback color of uncolored world characters.</summary>
+    public ColorTints Interface { get; }
 
-    public string GreenDark { get; }
-    public string Green { get; }
-    public string GreenLight { get; }
+    /// <summary>The color behind everything (<c>[Defaults] Background</c>), unless a world has its own backdrop.</summary>
+    public string Background { get; }
 
-    public string AmberDark { get; }
-    public string Amber { get; }
-    public string AmberLight { get; }
+    /// <summary>The Level Complete box.</summary>
+    public ColorTints Green { get; }
 
-    public string RedDark { get; }
-    public string Red { get; }
-    public string RedLight { get; }
+    /// <summary>The exit confirmation box.</summary>
+    public ColorTints Amber { get; }
 
-    public string BlueDark { get; }
-    public string Blue { get; }
-    public string BlueLight { get; }
+    /// <summary>The Game Over box.</summary>
+    public ColorTints Red { get; }
+
+    /// <summary>Available as the interface color.</summary>
+    public ColorTints Blue { get; }
+
+    /// <summary>Available as the interface color.</summary>
+    public ColorTints White { get; }
+
+    /// <summary>Colors used when no InterfaceColors.ini is available: green on black.</summary>
+    public static InterfaceColors Fallback { get; } = new(IniDocument.Parse(string.Empty));
 
     public static async Task<InterfaceColors> LoadAsync(IAssetFileProvider fileProvider)
     {
-        var colors = await IniOverrideLoader.LoadAsync<string, string>(fileProvider, null, "InterfaceColors.ini", Merge, StringComparer.OrdinalIgnoreCase);
-        return new InterfaceColors(colors);
+        var content = await fileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/InterfaceColors.ini");
+        return content is null ? Fallback : new InterfaceColors(IniDocument.Parse(content));
     }
 
-    private string Get(string name) =>
-        _colors.TryGetValue(name, out var value)
-            ? value
-            : throw new InvalidOperationException($"Global/InterfaceColors.ini is missing a required [Colors] {name} value.");
+    private static ColorTints GetTints(IniDocument ini, string name) =>
+        new(Get(ini, name, $"{name}Dark"), Get(ini, name, $"{name}Normal"), Get(ini, name, $"{name}Light"));
 
-    private static void Merge(Dictionary<string, string> colors, IniDocument ini)
-    {
-        foreach (var (key, value) in ini.Section("Colors"))
-        {
-            colors[key] = value;
-        }
-    }
+    private static string Get(IniDocument ini, string section, string key) =>
+        ini.TryGetValue(section, key) ?? Constants.RenderConstants.DefaultForegroundColor;
 }

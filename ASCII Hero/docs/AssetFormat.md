@@ -224,10 +224,10 @@ the color analog of `[Physics] DefaultMaterial` (§2.3):
   falling through whenever a step doesn't apply (code absent) or doesn't resolve
   (code not found in the palette): the cell's own per-cell code (from
   `_foregroundcolors.txt`/`_backgroundcolors.txt`) > this asset's
-  `[Colors]` default > the world's own `[Colors]` default (see §3, `Level1_settings.ini`) > a
-  hardcoded engine fallback (green foreground, no/transparent background fill).
+  the world's own `[Colors]` default (see §3) > the interface color
+  (§4.2) for the foreground; no fill for the background.
   This lets an asset be authored with no color layer files at all (e.g. a
-  single-color platform or ball) while still overriding the hardcoded fallback,
+  single-color platform or ball) while still overriding the interface color,
   or with color layer files that only mark a few special cells and leave
   everything else to fall through to this default.
 
@@ -545,14 +545,21 @@ Gravity = 40
 **`[Layout]`** — `EmptyChar` (default `' '`), same meaning as for a sprite asset,
 applied to this world's own background/object-placement grids.
 
-**`[Colors]`** (optional) — `DefaultForegroundColor`/`DefaultBackgroundColor`,
-the world-scoped fallback in the same color-resolution precedence chain
-described in §2.4: checked after a cell's own per-cell code and after the
-sprite's own `[Colors]` default (for object cells; background cells have no
-owning sprite so skip straight to this world default), before finally falling
-back to the hardcoded engine default. Lets an entire world nudge its default
-palette (e.g. a colder/warmer background tint) without touching every asset's
-own settings.ini.
+**`[Colors]`** (optional)
+- `DefaultForegroundColor`/`DefaultBackgroundColor` — the world-scoped
+  fallback in the same color-resolution precedence chain described in §2.4:
+  checked after a cell's own per-cell code and after the sprite's own
+  `[Colors]` default (background cells have no owning sprite so skip straight
+  to this world default), before finally falling back to the interface
+  color (§4.2) for the foreground and no fill for the background. They only color cells that
+  draw a character; they never fill empty cells. Leave
+  `DefaultBackgroundColor` unset to let drawn characters show the backdrop
+  behind them.
+- `BackdropColor` — the world's background: the whole view (and the world's
+  thumbnail on the world-selection screen) is filled with this color before
+  anything is drawn, so every empty cell shows it instead of black. It never
+  changes the colors of drawn characters. Use it instead of a background
+  layer that is just spaces with a background color.
 
 **`[Physics]`** (optional) — `Gravity`, this world's gravity acceleration in
 world cells per second squared; falls back to `Global/Settings.ini` (§4.4).
@@ -594,8 +601,9 @@ Level1_thumb_backgroundcolors.txt   (optional)
   first (or `DefaultFrame`) frame forever, same as an un-configured sprite clip.
 - Background color follows the same resolution precedence as an in-game cell
   (§2.4): a cell's own `_thumb_backgroundcolors.txt` code, then this world's
-  own `[Colors] DefaultBackgroundColor` (§3), then the hardcoded engine
-  default (no fill). A thumbnail has no material - it is a small
+  own `[Colors] DefaultBackgroundColor` (§3), then the world's
+  `BackdropColor`, which also fills the thumbnail's empty cells.
+  A thumbnail has no material - it is a small
   decorative preview, not a physical/collidable object, so that concept
   doesn't apply.
 - Entirely optional per world; a world with no `_thumb_characters.txt` simply
@@ -1251,7 +1259,7 @@ ForegroundColor = Y
   per-cell layer file > this section's override > the sprite asset's own
   `[Colors]` default > this object's resolved material's own
   `ForegroundColor`/`BackgroundColor` (see §4.3) > the level's own `[Colors]`
-  default (§3, above) > a hardcoded engine fallback. Absent at any tier means
+  default (§3, above) > the interface color (§4.2; foreground only). Absent at any tier means
   that tier has no color of its own and the chain continues unchanged.
 
 Any non-`Player` object type may also set `Passable`, `Climbable`, and/or
@@ -1341,19 +1349,33 @@ meaning of that same code rather than the world's own repurposed one.
 
 ### 4.2 `Global/InterfaceColors.ini`
 
-Defines the named colors of the game interface (menu, HUD, overlays and
-message boxes), separate from the world/sprite palette in §4.1. One
-`[Colors]` section mapping a fixed name to a `#RRGGBB` hex value. Global
-only (no world-local override). Every name is required; a missing one is a
-startup error:
+Defines the colors of the game interface (menu, HUD, overlays and message
+boxes), separate from the world/sprite palette in §4.1. Values are `#RRGGBB`
+hex colors. Global only (no world-local override). Anything missing (or the
+whole file) falls back to green (#00ff00) on black (#000000).
 
-- `Black` - message box text background.
-- `GreenDark`, `Green`, `GreenLight` - `Green` is the standard interface
-  color; the menu logo is shaded vertically from `GreenLight` (top) through
-  `Green` to `GreenDark` (bottom).
-- `AmberDark`, `Amber`, `AmberLight` - `Amber` colors the exit confirmation box.
-- `RedDark`, `Red`, `RedLight` - `Red` colors the Game Over box.
-- `BlueDark`, `Blue`, `BlueLight` - spare tints for future interface use.
+```ini
+[Defaults]
+Foreground = Green   ; name of the color section used for the whole interface
+Background = #000000
+
+[Green]
+GreenDark = #008f00
+GreenNormal = #00ff00
+GreenLight = #9dff9d
+```
+
+- `[Defaults] Foreground` - names one of the color sections. Its Dark, Normal
+  and Light tints color the entire interface (menu, logo, arrows, control
+  keys, HUD, loading bar), so switching it (e.g. to `Blue`) recolors
+  everything at once. Its Normal tint is also the last-resort color of any
+  world character with no color of its own. Defaults to `Green`.
+- `[Defaults] Background` - the canvas color wherever nothing else is drawn,
+  unless the world sets a `BackdropColor`. Message boxes use the same canvas
+  color behind their text, so they blend into the world.
+- `[Green]`, `[Amber]`, `[Red]`, `[Blue]`, `[White]` - each holds
+  `<Name>Dark`, `<Name>Normal` and `<Name>Light`. Green always colors the
+  Level Complete box, Amber the exit confirmation box and Red the Game Over box.
 
 Each message box (Level Complete, Game Over, exit confirmation) opens with a
 shrinking ripple drawn in its light tint at the front and its dark tint

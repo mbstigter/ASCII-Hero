@@ -27,7 +27,7 @@ public class CanvasBridge(IJSRuntime jsRuntime) : IAsyncDisposable
         return await _module.InvokeAsync<CellMetrics>("initialize", canvasElementId, _dotNetRef, fontFamily, viewportColumns, viewportRows, fontWidthPixels, fontHeightPixels);
     }
 
-    public async Task DrawFrameAsync(int width, int height, double cellWidthPixels, double cellHeightPixels, IReadOnlyList<Rendering.Glyph> glyphs)
+    public async Task DrawFrameAsync(int width, int height, double cellWidthPixels, double cellHeightPixels, IReadOnlyList<Rendering.Glyph> glyphs, string? backdropColor)
     {
         if (_module is null)
         {
@@ -50,7 +50,7 @@ public class CanvasBridge(IJSRuntime jsRuntime) : IAsyncDisposable
             backColors[i] = glyph.BackColor;
         }
 
-        await _module.InvokeVoidAsync("drawFrame", width, height, cellWidthPixels, cellHeightPixels, new string(characters), xs, ys, foreColors, backColors);
+        await _module.InvokeVoidAsync("drawFrame", width, height, cellWidthPixels, cellHeightPixels, backdropColor, new string(characters), xs, ys, foreColors, backColors);
     }
 
     public async ValueTask DisposeAsync()

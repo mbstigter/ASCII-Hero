@@ -1,4 +1,5 @@
 .page {
+    /* Same black as RenderConstants.DefaultBackgroundColor; shows behind the canvas until the first frame. */
     position: relative;
     display: flex;
     flex-direction: column;
@@ -9,7 +10,7 @@
     margin: 0;
     padding: 0;
     overflow: hidden;
-    background: black;
+    background: #000000;
 }
 
 #blazor-error-ui {
