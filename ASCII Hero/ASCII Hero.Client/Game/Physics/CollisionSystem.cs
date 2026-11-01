@@ -14,6 +14,16 @@ public class CollisionSystem
     /// <summary>Reused across frames to avoid an allocation every call for what is normally a tiny list.</summary>
     private readonly List<IPhysicsBody> _movingBodies = [];
 
+    /// <summary>Each moving body's index in <see cref="_movingBodies"/>, so each unordered pair is resolved once without a list search.</summary>
+    private readonly Dictionary<IPhysicsBody, int> _movingBodyIndices = new(ReferenceEqualityComparer.Instance);
+
+    /// <summary>
+    /// How many contact responses this solver iteration changed a position or velocity
+    /// noticeably (see <see cref="PhysicsConstants.SolverVelocityTolerance"/>); zero means the
+    /// iteration has converged.
+    /// </summary>
+    private int _changesThisIteration;
+
     /// <summary>Broad-phase spatial grid over this frame's static, non-passable solids - see <see cref="SpatialGrid{T}"/>.</summary>
     private readonly SpatialGrid<Body2D> _solidsGrid = new(PhysicsConstants.GridCellSize);
 
@@ -27,6 +37,23 @@ public class CollisionSystem
     /// </summary>
     private HashSet<(Body2D Hazard, IPhysicsBody Body)> _activeHazardContacts = [];
 
+    /// <summary>Puts resting groups of bodies to sleep and wakes disturbed ones - see <see cref="SleepSystem"/>.</summary>
+    private readonly SleepSystem _sleep = new();
+
+    /// <summary>The length of the step currently being resolved.</summary>
+    private double _stepSeconds;
+
+    /// <summary>
+    /// Wakes a sleeping body that something awake has just reached during this step's solve. Its
+    /// kept contacts are snapshotted first, exactly as every awake body's were at the start of
+    /// <see cref="Resolve"/>, so this step records its contacts fresh.
+    /// </summary>
+    private void WakeDuringResolve(Body2D body)
+    {
+        body.SnapshotContactsForNextFrame(_stepSeconds);
+        body.Wake();
+    }
+
     /// <summary>Forgets hazard contacts carried between frames, so a newly loaded world starts fresh.</summary>
     public void Reset() => _activeHazardContacts.Clear();
 
@@ -39,15 +66,22 @@ public class CollisionSystem
     /// </summary>
     public void Resolve(World2D world, double stepSeconds)
     {
+        _stepSeconds = stepSeconds;
         _movingBodies.Clear();
+        _movingBodyIndices.Clear();
 
         // Every body (static or moving) can be on the receiving end of a recorded contact this
         // frame (e.g. a static platform records SurfaceTop when something lands on it), so every
         // body's contact set is snapshotted-and-cleared up front, before anything for this new
         // frame is resolved/recorded - see Body2D.SnapshotContactsForNextFrame.
+        // A sleeping body is not re-resolved, so it keeps its last contacts as they were (still
+        // grounded, still linked to its island) - see SleepSystem.
         foreach (var contactBody in world.Objects)
         {
-            contactBody.SnapshotContactsForNextFrame(stepSeconds);
+            if (!contactBody.IsSleeping)
+            {
+                contactBody.SnapshotContactsForNextFrame(stepSeconds);
+            }
         }
 
         foreach (var body in world.Objects)
@@ -61,6 +95,7 @@ public class CollisionSystem
                 continue;
             }
 
+            _movingBodyIndices[movingBody] = _movingBodies.Count;
             _movingBodies.Add(movingBody);
         }
 
@@ -89,44 +124,66 @@ public class CollisionSystem
         // the current, already partially corrected, positions.
         for (var iteration = 0; iteration < PhysicsConstants.SolverIterations; iteration++)
         {
-            foreach (var body in _movingBodies)
-            {
-                foreach (var solid in GetCandidateSolids(body))
-                {
-                    ResolveAgainstSolid(body, solid);
-                }
-            }
+            _changesThisIteration = 0;
+            ResolveAgainstSolids();
 
             // Every moving body can also collide with every other moving body (e.g. the player
             // and the bouncing ball) - checked once per unordered pair, gathered from the same
             // spatial grid so this scales with nearby movers only, not every mover in the level.
+            // Two sleeping bodies are at rest against each other by definition and are skipped; an
+            // awake body pairs with every sleeping neighbour, waking it on overlap.
             for (var i = 0; i < _movingBodies.Count; i++)
             {
-                foreach (var other in GetCandidateMovingBodies(_movingBodies[i]))
+                var body = _movingBodies[i];
+                if (((Body2D)body).IsSleeping)
                 {
-                    if (_movingBodies.IndexOf(other) > i)
+                    continue;
+                }
+
+                foreach (var other in _movingBodiesGrid.GetCandidates(body.Position, body.Size))
+                {
+                    var otherBody = (Body2D)other;
+                    if (otherBody.IsSleeping)
                     {
-                        ResolveAgainstMover(_movingBodies[i], other);
+                        if (!BoundsOverlap((Body2D)body, otherBody))
+                        {
+                            continue;
+                        }
+
+                        WakeDuringResolve(otherBody);
+                        ResolveAgainstMover(body, other);
+                    }
+                    // Self has index i, so the ordering check also excludes the body itself.
+                    else if (_movingBodyIndices[other] > i)
+                    {
+                        ResolveAgainstMover(body, other);
                     }
                 }
             }
-        }
 
-        // Final cleanup: mover-vs-mover corrections in the last iteration can push a body back
-        // into a solid. Solids are immovable, so one last solids-only pass guarantees no body
-        // ends the frame overlapping static terrain.
-        foreach (var body in _movingBodies)
-        {
-            foreach (var solid in GetCandidateSolids(body))
+            // Converged: no contact response in this iteration moved a body out of an overlap
+            // deeper than the slop or changed a velocity noticeably, so further iterations would
+            // not change the outcome in any meaningful way.
+            if (_changesThisIteration == 0)
             {
-                ResolveAgainstSolid(body, solid);
+                break;
             }
         }
 
+        // Final cleanup: mover-vs-mover
+        // into a solid. Solids are immovable, so one last solids-only pass guarantees no body
+        // ends the frame overlapping static terrain.
+        ResolveAgainstSolids();
+
         foreach (var body in _movingBodies)
         {
-            ResolveWorldBounds(world, body);
+            if (!((Body2D)body).IsSleeping)
+            {
+                ResolveWorldBounds(world, body);
+            }
         }
+
+        _sleep.Update(_movingBodies, stepSeconds);
 
         ResolveHazardsAndCollectables(world);
 
@@ -137,7 +194,7 @@ public class CollisionSystem
     }
 
     // ---------------------------------------------------------------------------------------
-    // Broad phase: nearby-candidate lookup only (see SpatialGrid<T>) - no rectangle/character
+    // Broad phase: nearby-candidate lookup only
     // testing happens here; that is all narrow phase, further down this file.
     // Both helpers return each grid's shared candidate buffer (lazily, for moving bodies), so a
     // caller must not start a second query on the same grid while still enumerating the first.
@@ -148,17 +205,32 @@ public class CollisionSystem
     /// The broad-phase candidate solids for <paramref name="body"/> this frame - the spatial-grid
     /// bucket contents (see <see cref="SpatialGrid{T}"/>), not every solid in the level.
     /// </summary>
-    private IEnumerable<Body2D> GetCandidateSolids(IPhysicsBody body) =>
+    private HashSet<Body2D> GetCandidateSolids(IPhysicsBody body) =>
         _solidsGrid.GetCandidates(body.Position, body.Size);
 
-    /// <summary>Same as <see cref="GetCandidateSolids"/>, but for other moving bodies (excluding <paramref name="body"/> itself).</summary>
-    private IEnumerable<IPhysicsBody> GetCandidateMovingBodies(IPhysicsBody body)
+    /// <summary>
+    /// Resolves every moving body against its candidate solids. A sleeping body is at rest against
+    /// stationary terrain, so only a moving solid (a kinematic platform) can reach it - overlapping
+    /// one wakes it and resolves it normally.
+    /// </summary>
+    private void ResolveAgainstSolids()
     {
-        foreach (var other in _movingBodiesGrid.GetCandidates(body.Position, body.Size))
+        foreach (var body in _movingBodies)
         {
-            if (!ReferenceEquals(other, body))
+            var bodyBase = (Body2D)body;
+            foreach (var solid in GetCandidateSolids(body))
             {
-                yield return other;
+                if (bodyBase.IsSleeping)
+                {
+                    if (solid is not IPhysicsBody || !BoundsOverlap(bodyBase, solid))
+                    {
+                        continue;
+                    }
+
+                    WakeDuringResolve(bodyBase);
+                }
+
+                ResolveAgainstSolid(body, solid);
             }
         }
     }
@@ -504,7 +576,7 @@ public class CollisionSystem
     /// add a moving surface (<see cref="Body2D.ConveyorVelocity"/>, e.g. a conveyor belt), which
     /// friction then drags resting bodies along with (see <see cref="Body2D.GetCarryVelocity"/>).
     /// </summary>
-    private static void ResolveAgainstSolid(IPhysicsBody body, Body2D solid)
+    private void ResolveAgainstSolid(IPhysicsBody body, Body2D solid)
     {
         var solidVelocity = solid.GetCarryVelocity();
         ResolveAgainstOtherBody(body, solid, other: null, solidVelocity, otherInverseMass: 0.0);
@@ -554,95 +626,103 @@ public class CollisionSystem
     /// iteration - see <see cref="Resolve"/> - which re-detects fully fresh contacts against the
     /// body's just-corrected position, so it is not permanently ignored.
     /// </remarks>
-    private static void ResolveAgainstOtherBody(
+    private void ResolveAgainstOtherBody(
         IPhysicsBody body,
         Body2D otherContactTarget,
         IPhysicsBody? other,
         Vector2D otherVelocity,
         double otherInverseMass)
     {
-        var restitution = CombineRestitution((Body2D)body, otherContactTarget);
-        var friction = CombineFriction(body.Friction, otherContactTarget.Friction);
-        var bodyRects = body.CollisionRects;
-
-        // First pass: every one of the body's own rects that overlaps this iteration, all
-        // measured against the same not-yet-corrected position, so they're directly comparable.
-        var contacts = new List<Contact>();
-        for (var rectIndex = 0; rectIndex < bodyRects.Count; rectIndex++)
-        {
-            if (!TryFindContact([bodyRects[rectIndex]], otherContactTarget.CollisionRects, out var contact, (Body2D)body, otherContactTarget))
-            {
-                continue;
-            }
-
-            contacts.Add(contact);
-        }
-
-        if (contacts.Count == 0)
+        // Broad rejection: every collision rectangle lies within its body's Position/Size box, so
+        // if the two boxes don't overlap no rectangle pair can either.
+        var bodyBase = (Body2D)body;
+        if (!BoundsOverlap(bodyBase, otherContactTarget))
         {
             return;
         }
 
-        // Second pass: for each of the four push directions, the worst-case (largest) push
-        // distance needed to separate every real overlapping rectangle pair in that direction -
-        // computed straight from each pair's own overlap, never from a fabricated bounding shape.
+        var bodyRects = body.CollisionRects;
+        var otherRects = otherContactTarget.CollisionRects;
+
+        // Every overlapping rectangle pair - each of the body's own rects against each of the other
+        // side's rects - all measured against the same not-yet-corrected positions so they're
+        // directly comparable. For each of the four push directions the worst-case (largest) push
+        // distance needed to separate every real overlapping pair in that direction is tracked,
+        // computed straight from each pair's own overlap. Every pair counts, on both sides: keeping
+        // only the shallowest of the other side's rects would let a deep overlap hide behind a
+        // grazing one, and make the outcome depend on which body of the pair is resolved as "body".
+        var found = false;
         var worstPushLeft = double.MinValue;
         var worstPushRight = double.MinValue;
         var worstPushUp = double.MinValue;
         var worstPushDown = double.MinValue;
-        var leftContactIndex = 0;
-        var rightContactIndex = 0;
-        var upContactIndex = 0;
-        var downContactIndex = 0;
-        for (var i = 0; i < contacts.Count; i++)
+        Contact leftContact = default, rightContact = default, upContact = default, downContact = default;
+        for (var rectIndex = 0; rectIndex < bodyRects.Count; rectIndex++)
         {
-            var contact = contacts[i];
-            var pushLeft = contact.BodyRect.Right - contact.OtherRect.Left;
-            var pushRight = contact.OtherRect.Right - contact.BodyRect.Left;
-            var pushUp = contact.BodyRect.Bottom - contact.OtherRect.Top;
-            var pushDown = contact.OtherRect.Bottom - contact.BodyRect.Top;
-
-            if (pushLeft > worstPushLeft)
+            var bodyRect = bodyRects[rectIndex];
+            for (var otherIndex = 0; otherIndex < otherRects.Count; otherIndex++)
             {
-                worstPushLeft = pushLeft;
-                leftContactIndex = i;
-            }
+                var otherRect = otherRects[otherIndex];
+                if (!bodyRect.Overlaps(otherRect)
+                    || !HasCharacterOverlap(bodyBase, otherContactTarget, bodyRect, otherRect))
+                {
+                    continue;
+                }
 
-            if (pushRight > worstPushRight)
-            {
-                worstPushRight = pushRight;
-                rightContactIndex = i;
-            }
+                found = true;
+                var contact = new Contact(default, 0, bodyRect, otherRect);
+                var pushLeft = bodyRect.Right - otherRect.Left;
+                var pushRight = otherRect.Right - bodyRect.Left;
+                var pushUp = bodyRect.Bottom - otherRect.Top;
+                var pushDown = otherRect.Bottom - bodyRect.Top;
 
-            if (pushUp > worstPushUp)
-            {
-                worstPushUp = pushUp;
-                upContactIndex = i;
-            }
+                if (pushLeft > worstPushLeft)
+                {
+                    worstPushLeft = pushLeft;
+                    leftContact = contact;
+                }
 
-            if (pushDown > worstPushDown)
-            {
-                worstPushDown = pushDown;
-                downContactIndex = i;
+                if (pushRight > worstPushRight)
+                {
+                    worstPushRight = pushRight;
+                    rightContact = contact;
+                }
+
+                if (pushUp > worstPushUp)
+                {
+                    worstPushUp = pushUp;
+                    upContact = contact;
+                }
+
+                if (pushDown > worstPushDown)
+                {
+                    worstPushDown = pushDown;
+                    downContact = contact;
+                }
             }
+        }
+
+        if (!found)
+        {
+            return;
         }
 
         // Whichever of the four candidate pushes is smallest is this iteration's true MTV - see
         // remarks.
-        var (bestPush, bestNormal, bestContactIndex) = (worstPushLeft, new Vector2D(-1, 0), leftContactIndex);
+        var (bestPush, bestNormal, bestContact) = (worstPushLeft, new Vector2D(-1, 0), leftContact);
         if (worstPushRight < bestPush)
         {
-            (bestPush, bestNormal, bestContactIndex) = (worstPushRight, new Vector2D(1, 0), rightContactIndex);
+            (bestPush, bestNormal, bestContact) = (worstPushRight, new Vector2D(1, 0), rightContact);
         }
 
         if (worstPushUp < bestPush)
         {
-            (bestPush, bestNormal, bestContactIndex) = (worstPushUp, new Vector2D(0, -1), upContactIndex);
+            (bestPush, bestNormal, bestContact) = (worstPushUp, new Vector2D(0, -1), upContact);
         }
 
         if (worstPushDown < bestPush)
         {
-            (bestPush, bestNormal, bestContactIndex) = (worstPushDown, new Vector2D(0, 1), downContactIndex);
+            (bestPush, bestNormal, bestContact) = (worstPushDown, new Vector2D(0, 1), downContact);
         }
 
         if (bestPush <= 0)
@@ -650,9 +730,18 @@ public class CollisionSystem
             return;
         }
 
-        var resolvedContact = contacts[bestContactIndex] with { Normal = bestNormal, Depth = bestPush };
-        ResolveContact(resolvedContact, body, otherContactTarget, other, otherVelocity, otherInverseMass, restitution, friction);
+        var restitution = CombineRestitution(bodyBase, otherContactTarget);
+        var friction = CombineFriction(body.Friction, otherContactTarget.Friction);
+        var resolvedContact = bestContact with { Normal = bestNormal, Depth = bestPush };
+        if (ResolveContact(resolvedContact, body, otherContactTarget, other, otherVelocity, otherInverseMass, restitution, friction))
+        {
+            _changesThisIteration++;
+        }
     }
+
+    /// <summary>Whether two bodies' Position/Size boxes overlap with positive area.</summary>
+    private static bool BoundsOverlap(Body2D a, Body2D b) =>
+        a.Left < b.Right && a.Right > b.Left && a.Top < b.Bottom && a.Bottom > b.Top;
 
     // ---------------------------------------------------------------------------------------
     // Narrow phase: shared contact resolution, used identically whether the other side is an
@@ -701,7 +790,12 @@ public class CollisionSystem
     /// when it is one, or a solid's own reference-frame velocity otherwise.
     /// </param>
     /// <param name="otherInverseMass">The other side's inverse mass - 0 for an immovable solid, <see cref="GetInverseMass"/> of its mass otherwise.</param>
-    private static void ResolveContact(
+    /// <returns>
+    /// Whether the response noticeably changed anything - a position correction (overlap deeper
+    /// than <see cref="PhysicsConstants.ContactSlopCells"/>) or a velocity change above
+    /// <see cref="PhysicsConstants.SolverVelocityTolerance"/> - used for the solver's convergence check.
+    /// </returns>
+    private static bool ResolveContact(
         Contact contact,
         IPhysicsBody body,
         Body2D otherContactTarget,
@@ -717,18 +811,28 @@ public class CollisionSystem
         {
             // Both sides immovable - not expected to be reachable, kept as a defensive guard
             // against a divide-by-zero below.
-            return;
+            return false;
         }
 
         var bodyShare = bodyInverseMass / totalInverseMass;
         var otherShare = otherInverseMass / totalInverseMass;
 
         // Position correction: push body and other directly apart along Normal, split by their
-        // relative inverse mass.
-        body.Position += contact.Normal * (contact.Depth * bodyShare);
-        if (other is not null)
+        // relative inverse mass. Overlap up to the contact slop is left alone (the contact is
+        // still recorded below); deeper overlap is corrected back to half the slop, so the next
+        // iteration does not find the same contact needing correction again - see
+        // PhysicsConstants.ContactSlopCells.
+        var changed = false;
+        if (contact.Depth > PhysicsConstants.ContactSlopCells)
         {
-            other.Position -= contact.Normal * (contact.Depth * otherShare);
+            var correction = contact.Depth - PhysicsConstants.ContactSlopCells / 2;
+            body.Position += contact.Normal * (correction * bodyShare);
+            if (other is not null)
+            {
+                other.Position -= contact.Normal * (correction * otherShare);
+            }
+
+            changed = true;
         }
 
         // Along-normal velocity response: a mass-weighted impulse along Normal, using the pair's
@@ -751,7 +855,7 @@ public class CollisionSystem
         if (normalRelativeSpeed >= 0)
         {
             RecordContact(body, otherContactTarget, contact.Normal);
-            return;
+            return changed;
         }
 
         var normalImpulse = -(1.0 + EffectiveRestitution(restitution, -normalRelativeSpeed)) * normalRelativeSpeed / totalInverseMass;
@@ -809,6 +913,10 @@ public class CollisionSystem
         }
 
         RecordContact(body, otherContactTarget, contact.Normal, -normalRelativeSpeed);
+
+        // Total velocity change this response applied to the pair, along and across the normal.
+        var velocityChange = Math.Abs(normalImpulse) * totalInverseMass + Math.Abs(tangentialDelta);
+        return changed || velocityChange > PhysicsConstants.SolverVelocityTolerance;
     }
 
     /// <summary>
@@ -905,39 +1013,66 @@ public class CollisionSystem
 
         foreach (var rectA in aRects)
         {
-            foreach (var rectB in bRects)
+            if (TryFindContact(rectA, bRects, out var rectContact, ownerA, ownerB)
+                && rectContact.Depth < bestPenetration)
             {
-                if (!rectA.Overlaps(rectB))
-                {
-                    continue;
-                }
+                bestPenetration = rectContact.Depth;
+                contact = rectContact;
+                found = true;
+            }
+        }
 
-                // Additionally requires the two bodies' actual rendered (non-empty) characters to
-                // overlap somewhere within this rectangle pair's intersection, not just the merged
-                // collision rectangles themselves - see HasCharacterOverlap.
-                if (ownerA is not null && ownerB is not null
-                    && !HasCharacterOverlap(ownerA, ownerB, rectA, rectB))
-                {
-                    continue;
-                }
+        return found;
+    }
 
-                var overlapLeft = rectA.Right - rectB.Left;
-                var overlapRight = rectB.Right - rectA.Left;
-                var overlapTop = rectA.Bottom - rectB.Top;
-                var overlapBottom = rectB.Bottom - rectA.Top;
+    /// <summary>
+    /// <see cref="TryFindContact(IReadOnlyList{Rect}, IReadOnlyList{Rect}, out Contact, Body2D?, Body2D?)"/>
+    /// for a single rectangle <paramref name="rectA"/> on the first side.
+    /// </summary>
+    private static bool TryFindContact(
+        Rect rectA,
+        IReadOnlyList<Rect> bRects,
+        out Contact contact,
+        Body2D? ownerA = null,
+        Body2D? ownerB = null)
+    {
+        contact = default;
+        var bestPenetration = double.MaxValue;
+        var found = false;
 
-                var minHorizontal = Math.Min(overlapLeft, overlapRight);
-                var minVertical = Math.Min(overlapTop, overlapBottom);
-                var penetration = Math.Min(minHorizontal, minVertical);
-                if (penetration < bestPenetration)
-                {
-                    bestPenetration = penetration;
-                    var normal = minVertical < minHorizontal
-                        ? new Vector2D(0, overlapTop < overlapBottom ? -1 : 1)
-                        : new Vector2D(overlapLeft < overlapRight ? -1 : 1, 0);
-                    contact = new Contact(normal, penetration, rectA, rectB);
-                    found = true;
-                }
+        for (var i = 0; i < bRects.Count; i++)
+        {
+            var rectB = bRects[i];
+            if (!rectA.Overlaps(rectB))
+            {
+                continue;
+            }
+
+            // Additionally requires the two bodies' actual rendered (non-empty) characters to
+            // overlap somewhere within this rectangle pair's intersection, not just the merged
+            // collision rectangles themselves - see HasCharacterOverlap.
+            if (ownerA is not null && ownerB is not null
+                && !HasCharacterOverlap(ownerA, ownerB, rectA, rectB))
+            {
+                continue;
+            }
+
+            var overlapLeft = rectA.Right - rectB.Left;
+            var overlapRight = rectB.Right - rectA.Left;
+            var overlapTop = rectA.Bottom - rectB.Top;
+            var overlapBottom = rectB.Bottom - rectA.Top;
+
+            var minHorizontal = Math.Min(overlapLeft, overlapRight);
+            var minVertical = Math.Min(overlapTop, overlapBottom);
+            var penetration = Math.Min(minHorizontal, minVertical);
+            if (penetration < bestPenetration)
+            {
+                bestPenetration = penetration;
+                var normal = minVertical < minHorizontal
+                    ? new Vector2D(0, overlapTop < overlapBottom ? -1 : 1)
+                    : new Vector2D(overlapLeft < overlapRight ? -1 : 1, 0);
+                contact = new Contact(normal, penetration, rectA, rectB);
+                found = true;
             }
         }
 
@@ -1077,7 +1212,7 @@ public class CollisionSystem
     /// just with <paramref name="b"/>'s real (finite) mass/velocity instead of an immovable
     /// solid's.
     /// </summary>
-    private static void ResolveAgainstMover(IPhysicsBody a, IPhysicsBody b) =>
+    private void ResolveAgainstMover(IPhysicsBody a, IPhysicsBody b) =>
         ResolveAgainstOtherBody(a, (Body2D)b, b, b.Velocity, GetInverseMass(b.Mass));
 }
 

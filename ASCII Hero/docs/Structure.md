@@ -570,6 +570,13 @@ The live game state and the entity types that make it up.
   answers "what's near this AABB" without testing every item. Used by
   `CollisionSystem` for both solids and moving bodies; contains no
   collision-specific logic of its own.
+- **`SleepSystem`** - run by `CollisionSystem` at the end of each step: groups
+  awake and sleeping moving bodies into islands through their surface
+  contacts and puts an island to sleep (`Body2D.Sleep`) once every member has
+  rested long enough, or wakes it (`Body2D.Wake`) when any member was
+  disturbed. Sleeping bodies are skipped by `PhysicsSystem` integration and by
+  the solver except where an awake body or moving solid reaches them;
+  `World2D.ApplyPendingRemovals` wakes sleepers that touched a removed body.
 
 
 
@@ -871,7 +878,9 @@ large jumps after e.g. a tab switch):
    `_hudText`/`_hudBar`) to that same list, so the HUD is always drawn last -
    on top of the foreground layer and everything else - before
    `CanvasBridge.DrawFrameAsync` sends the complete list to JavaScript to
-   paint onto the canvas. `_hudText` is refreshed every `Playing` frame from
+   paint onto the canvas (`drawFrame` fills backgrounds as cell rectangles and copies
+   each character from a cache of pre-rendered images, one per character/color
+   combination, cleared when the font or cell size changes). `_hudText` is refreshed every `Playing` frame from
    `World2D.Player.Lives`/`.Rings`/`.Score` on its first row; its second row is a
    "Health:" caption followed by the `_hudBar` gauge (`Player2D.Health`), and a key icon
    followed by a superscript count (`¹`-`⁹`, `ⁿ` for more than 9) appears while a key is held.

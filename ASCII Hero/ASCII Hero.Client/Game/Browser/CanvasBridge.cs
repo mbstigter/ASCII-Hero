@@ -34,13 +34,23 @@ public class CanvasBridge(IJSRuntime jsRuntime) : IAsyncDisposable
             return;
         }
 
-        var characters = new string(glyphs.Select(g => g.Character).ToArray());
-        var xs = glyphs.Select(g => g.PixelX).ToArray();
-        var ys = glyphs.Select(g => g.PixelY).ToArray();
-        var foreColors = glyphs.Select(g => g.ForeColor).ToArray();
-        var backColors = glyphs.Select(g => g.BackColor).ToArray();
+        var count = glyphs.Count;
+        var characters = new char[count];
+        var xs = new double[count];
+        var ys = new double[count];
+        var foreColors = new string[count];
+        var backColors = new string?[count];
+        for (var i = 0; i < count; i++)
+        {
+            var glyph = glyphs[i];
+            characters[i] = glyph.Character;
+            xs[i] = glyph.PixelX;
+            ys[i] = glyph.PixelY;
+            foreColors[i] = glyph.ForeColor;
+            backColors[i] = glyph.BackColor;
+        }
 
-        await _module.InvokeVoidAsync("drawFrame", width, height, cellWidthPixels, cellHeightPixels, characters, xs, ys, foreColors, backColors);
+        await _module.InvokeVoidAsync("drawFrame", width, height, cellWidthPixels, cellHeightPixels, new string(characters), xs, ys, foreColors, backColors);
     }
 
     public async ValueTask DisposeAsync()

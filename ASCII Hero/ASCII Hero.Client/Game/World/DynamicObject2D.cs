@@ -32,6 +32,9 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     /// <summary>Whether this object is currently patrolling (see <see cref="SetPatrol"/>).</summary>
     public bool IsPatrolling { get; set; }
 
+    /// <summary>A passive object may sleep; a patrolling one drives itself and never does.</summary>
+    public override bool CanSleep => !IsPatrolling;
+
     /// <summary>Left bound of the horizontal patrol range, in world cells. Equal to <see cref="PatrolMaxX"/> when the body holds its spawn column instead of patrolling.</summary>
     public double? PatrolMinX { get; set; }
 

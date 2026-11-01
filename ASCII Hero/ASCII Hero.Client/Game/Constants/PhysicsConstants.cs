@@ -69,11 +69,46 @@ public static class PhysicsConstants
     /// <summary>
     /// Number of times the solids-and-movers narrow phase re-detects and re-resolves every
     /// candidate contact each step, so simultaneous contacts (a corner formed by two solids, a
-    /// body sandwiched between two others, a stack of crates with the player on top) converge
+    /// body sandwiched between two others, a stack of movable objects with the player on top) converge
     /// instead of fighting - see the remarks in <see cref="Physics.CollisionSystem.Resolve"/>.
     /// Not overridable via any ini file.
     /// </summary>
     public const int SolverIterations = 8;
+
+    /// <summary>
+    /// Overlap depth (cells) a resting contact may keep without being pushed apart. Gravity sinks a
+    /// resting body slightly into its support every step; correcting that fully each time keeps
+    /// every resting contact "new" forever, so a stack never settles. A contact deeper than this
+    /// is corrected back to half of it (hysteresis), so the next iteration finds nothing left to
+    /// correct. The contact is still detected and recorded either way. Far below one rendered
+    /// pixel at normal cell sizes. Not overridable via any ini file.
+    /// </summary>
+    public const double ContactSlopCells = 0.02;
+
+    /// <summary>
+    /// Smallest velocity change (cells/second) a contact response counts as progress when
+    /// deciding whether another solver iteration is needed - see
+    /// <see cref="Physics.CollisionSystem.Resolve"/>. Iterations stop early once a whole
+    /// iteration changes no position and no velocity by more than this. Not overridable via any
+    /// ini file.
+    /// </summary>
+    public const double SolverVelocityTolerance = 0.05;
+
+    /// <summary>
+    /// Speed (cells/second) at or below which a body may count as at rest for sleeping - see
+    /// <see cref="Physics.SleepSystem"/>, which additionally requires the body not to have actually
+    /// moved. Set just above what default gravity adds in one fixed step, like
+    /// <see cref="RestingBounceSpeedThreshold"/>: a resting body's contacts cancel that gain every
+    /// step, but the iterative solver can leave part of it behind. Not overridable via any ini file.
+    /// </summary>
+    public const double SleepVelocityThreshold = 1.0;
+
+    /// <summary>
+    /// How long (seconds) every body in a group of touching bodies must have been at rest before
+    /// the whole group is put to sleep - see <see cref="Physics.SleepSystem"/>. Not overridable
+    /// via any ini file.
+    /// </summary>
+    public const double TimeToSleepSeconds = 0.5;
 
     /// <summary>
     /// Impact speed (cells/second, along the contact normal) below which a collision is treated

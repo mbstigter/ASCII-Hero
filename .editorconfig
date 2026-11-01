@@ -1,0 +1,2 @@
+[*.{ini,txt}]
+charset = utf-8

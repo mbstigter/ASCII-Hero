@@ -40,6 +40,52 @@ public abstract class Body2D
     public bool IsStatic { get; protected init; }
 
     /// <summary>
+    /// Whether this body may be put to sleep at all once it and everything it touches come to
+    /// rest (see <see cref="Physics.SleepSystem"/>). False by default; only passive bodies with no
+    /// motor or intent of their own opt in, so a body that can start moving by itself never sleeps.
+    /// </summary>
+    public virtual bool CanSleep => false;
+
+    /// <summary>
+    /// Whether this body is currently asleep: excluded from force integration and from collision
+    /// resolution against solids and other sleeping bodies, with its velocity held at zero and its
+    /// last resolved contacts kept as-is (so it still reports grounded/supported). Set and cleared
+    /// only through <see cref="Sleep"/>/<see cref="Wake"/>.
+    /// </summary>
+    public bool IsSleeping { get; private set; }
+
+    /// <summary>
+    /// How long (seconds) this body has continuously stayed near <see cref="RestAnchor"/> while
+    /// awake - reset whenever it moves away or is disturbed. See <see cref="Physics.SleepSystem"/>.
+    /// </summary>
+    public double RestSeconds { get; set; }
+
+    /// <summary>Where this body was when its current rest period (<see cref="RestSeconds"/>) started.</summary>
+    public Vector2D RestAnchor { get; set; }
+
+    /// <summary>
+    /// Puts this body to sleep: velocity is zeroed (it is at rest by definition) and its measured
+    /// step motion cleared, so bodies resting on it are judged against a stationary support.
+    /// </summary>
+    public void Sleep()
+    {
+        if (this is IPhysicsBody physicsBody)
+        {
+            physicsBody.Velocity = Vector2D.Zero;
+        }
+
+        LastStepDisplacementX = 0.0;
+        IsSleeping = true;
+    }
+
+    /// <summary>Wakes this body so it is integrated and collided normally again, restarting its rest timer.</summary>
+    public void Wake()
+    {
+        IsSleeping = false;
+        RestSeconds = 0.0;
+    }
+
+    /// <summary>
     /// This frame's raw horizontal move/patrol intent (-1 = left, 0 = none/holding position,
     /// +1 = right), owned and set by whatever drives this body's own movement decisions - the
     /// player's input (<see cref="Player2D"/>, from <c>InputState.IsLeftKeyDown</c>/
@@ -115,7 +161,8 @@ public abstract class Body2D
     /// Speed (cells/second) at which this body's surface moves while the body itself stays put -
     /// e.g. a vertical conveyor's moving rungs (<see cref="IsClimbable"/>) or a moving
     /// rope (<see cref="IsHangable"/> or <see cref="IsClimbable"/>). Zero for an ordinary surface. Loaded from the
-    /// placement's <c>ConveyorDirection</c>/<c>ConveyorSpeed</c> keys; independent of concrete type.
+    /// placement's <c>ConveyorDirection</c>/<c>ConveyorSpeed</c> keys, which only static bodies
+    /// (<see cref="IsStatic"/>, including kinematic ones) accept - always zero on a movable body.
     /// Combined with the body's own velocity by <see cref="GetCarryVelocity"/>.
     /// </summary>
     public Vector2D ConveyorVelocity { get; set; }
@@ -251,15 +298,39 @@ public abstract class Body2D
     /// </summary>
     public IReadOnlyList<Rect> LocalCollisionRects => _localCollisionRects;
 
-    /// <summary>The body's collision shape translated into world-space rectangles.</summary>
+    /// <summary>
+    /// The body's collision shape translated into world-space rectangles. Cached until
+    /// <see cref="Position"/> or the collision shape changes; a fresh array is built on change, so a
+    /// list obtained earlier keeps describing the position it was read at.
+    /// </summary>
     public IReadOnlyList<Rect> CollisionRects
     {
         get
         {
             var position = Position;
-            return LocalCollisionRects.Select(rect => rect.Translate(position)).ToList();
+            if (_worldCollisionRects is null
+                || !ReferenceEquals(_worldCollisionRectsSource, _localCollisionRects)
+                || _worldCollisionRectsPosition.X != position.X
+                || _worldCollisionRectsPosition.Y != position.Y)
+            {
+                var rects = new Rect[_localCollisionRects.Count];
+                for (var i = 0; i < rects.Length; i++)
+                {
+                    rects[i] = _localCollisionRects[i].Translate(position);
+                }
+
+                _worldCollisionRects = rects;
+                _worldCollisionRectsSource = _localCollisionRects;
+                _worldCollisionRectsPosition = position;
+            }
+
+            return _worldCollisionRects;
         }
     }
+
+    private Rect[]? _worldCollisionRects;
+    private IReadOnlyList<Rect>? _worldCollisionRectsSource;
+    private Vector2D _worldCollisionRectsPosition;
 
     /// <summary>Edges of the body's <see cref="Position"/>/<see cref="Size"/> box in world space (not derived from the individual collision rectangles).</summary>
     public double Left => Position.X;
@@ -440,7 +511,7 @@ public abstract class Body2D
                 // Static solids (kinematic platforms) prescribe their motion, so Velocity is exact.
                 // Finite-mass supports have Velocity altered by contact friction with this rider,
                 // so their actual displacement over the last step is the real carry speed.
-                return solid.IsStatic ? solid.GetCarryVelocity().X : solid.ReferenceVelocityX + solid.ConveyorVelocity.X;
+                return solid.IsStatic ? solid.GetCarryVelocity().X : solid.ReferenceVelocityX;
             }
 
             if (solid.ConveyorVelocity.X != 0.0)
@@ -495,18 +566,7 @@ public abstract class Body2D
     private readonly Dictionary<Physics.ContactType, List<Body2D>> _contacts = [];
 
     /// <summary>
-    /// A read-only snapshot of <see cref="_contacts"/> as it stood at the end of the *previous*
-    /// frame, taken by <see cref="SnapshotContactsForNextFrame"/> right before this frame's
-    /// contacts are cleared and rebuilt. Used purely to disambiguate direction/approach (e.g. "was
-    /// a moving platform already remembered as what this body rests on" for vertical/horizontal
-    /// carry); this frame's contacts themselves are always
-    /// resolved fresh.
-    /// </summary>
-    private IReadOnlyDictionary<Physics.ContactType, List<Body2D>> _previousContacts =
-        new Dictionary<Physics.ContactType, List<Body2D>>();
-
-    /// <summary>
-    /// This frame's highest closing (approach) speed along the contact normal per contact side and
+    /// This frame's
     /// contacted body, in cells/second, measured before the collision response. Keyed by side so a
     /// hard side impact can never be read back as a bottom (landing) impact. Cleared together with
     /// <see cref="_contacts"/>; see <see cref="GetContactImpactSpeed"/>.
@@ -537,31 +597,7 @@ public abstract class Body2D
         return false;
     }
 
-    /// <summary>
-    /// Whether this body's contacts *as of the end of last frame* included the given
-    /// <paramref name="type"/> with <paramref name="other"/> specifically (or with anything, if
-    /// <paramref name="other"/> is null). Used only for direction/approach disambiguation - see
-    /// <see cref="_previousContacts"/>.
-    /// </summary>
-    public bool HadContactLastFrame(Physics.ContactType type, Body2D? other = null)
-    {
-        foreach (var flag in EnumerateFlags(type))
-        {
-            if (!_previousContacts.TryGetValue(flag, out var bodies))
-            {
-                continue;
-            }
-
-            if (other is null ? bodies.Count > 0 : bodies.Contains(other))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /// <summary>The other bodies currently contacted for the given single <paramref name="type"/> flag, or empty if none.</summary>
+    /// <summary>The other bodies currently contacted
     public IReadOnlyList<Body2D> GetContactingBodies(Physics.ContactType type) =>
         _contacts.TryGetValue(type, out var bodies) ? bodies : [];
 
@@ -652,26 +688,22 @@ public abstract class Body2D
     }
 
     /// <summary>
-    /// Clears every recorded contact for this frame, first
-    /// "previous frame" (see <see cref="_previousContacts"/>) for the next frame's direction
-    /// disambiguation. Called once per body at the start of <see cref="Physics.CollisionSystem.Resolve"/>,
+    /// Clears every recorded contact, ready for this step's contacts to be resolved fresh.
+    /// Called once per body at the start of <see cref="Physics.CollisionSystem.Resolve"/>,
     /// before any contact for the new frame is resolved/recorded. <paramref name="stepSeconds"/> is
     /// the length of the (sub)step just integrated, used to turn displacement into
     /// <see cref="ReferenceVelocityX"/> and friction velocity changes into distance.
     /// </summary>
     public void SnapshotContactsForNextFrame(double stepSeconds)
     {
-        var snapshot = new Dictionary<Physics.ContactType, List<Body2D>>(_contacts.Count);
-        foreach (var (type, bodies) in _contacts)
+        // The lists are emptied and reused rather than reallocated every step.
+        foreach (var bodies in _contacts.Values)
         {
-            snapshot[type] = [.. bodies];
+            bodies.Clear();
         }
-
-        _previousContacts = snapshot;
-        _contacts.Clear();
         _contactImpactSpeeds.Clear();
 
-        // Measured
+        // Measured from the position at the end of the previous collision resolution (see
         // MarkResolvedPosition), so it is this body's own motion over the physics step only -
         // positional pushes from collision corrections are not mistaken for movement.
         LastStepDisplacementX = _hasSnapshotPosition ? Position.X - _positionAtLastSnapshotX : 0.0;

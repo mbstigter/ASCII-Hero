@@ -59,7 +59,7 @@ public sealed class HazardInteractionTests
     }
 
     [TestMethod]
-    public async Task HardSide
+    public async Task HardSideHitOnSolidHazard_HurtsInsteadOfKilling()
     {
         var (world, snake) = await LoadSnakeAsync();
         var player = world.Player;

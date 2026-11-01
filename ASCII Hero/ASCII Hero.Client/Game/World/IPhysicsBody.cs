@@ -25,9 +25,6 @@ public interface IPhysicsBody
     /// <summary>See <see cref="Body2D.HasContact"/>.</summary>
     bool HasContact(Physics.ContactType type);
 
-    /// <summary>See <see cref="Body2D.HadContactLastFrame"/>.</summary>
-    bool HadContactLastFrame(Physics.ContactType type, Body2D? other = null);
-
     /// <summary>See <see cref="Body2D.GetContactingBodies"/>.</summary>
     IReadOnlyList<Body2D> GetContactingBodies(Physics.ContactType type);
 

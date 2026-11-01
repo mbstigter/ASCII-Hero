@@ -41,15 +41,19 @@ public class SpatialGrid<T>
 
         foreach (var item in items)
         {
-            foreach (var cell in GetOverlappingCells(getPosition(item), getSize(item)))
+            var (minX, maxX, minY, maxY) = GetCellRange(getPosition(item), getSize(item));
+            for (var x = minX; x <= maxX; x++)
             {
-                if (!_buckets.TryGetValue(cell, out var bucket))
+                for (var y = minY; y <= maxY; y++)
                 {
-                    bucket = [];
-                    _buckets[cell] = bucket;
-                }
+                    if (!_buckets.TryGetValue((x, y), out var bucket))
+                    {
+                        bucket = [];
+                        _buckets[(x, y)] = bucket;
+                    }
 
-                bucket.Add(item);
+                    bucket.Add(item);
+                }
             }
         }
     }
@@ -65,39 +69,35 @@ public class SpatialGrid<T>
     /// order items were added during <see cref="Rebuild"/>; collision resolution is order-sensitive,
     /// so changing how candidates are collected or ordered can change gameplay outcomes.
     /// </summary>
-    public IEnumerable<T> GetCandidates(Vector2D position, Vector2D size)
+    public HashSet<T> GetCandidates(Vector2D position, Vector2D size)
     {
         _candidateBuffer.Clear();
-        foreach (var cell in GetOverlappingCells(position, size))
+        var (minX, maxX, minY, maxY) = GetCellRange(position, size);
+        for (var x = minX; x <= maxX; x++)
         {
-            if (!_buckets.TryGetValue(cell, out var bucket))
+            for (var y = minY; y <= maxY; y++)
             {
-                continue;
-            }
+                if (!_buckets.TryGetValue((x, y), out var bucket))
+                {
+                    continue;
+                }
 
-            foreach (var item in bucket)
-            {
-                _candidateBuffer.Add(item);
+                foreach (var item in bucket)
+                {
+                    _candidateBuffer.Add(item);
+                }
             }
         }
 
         return _candidateBuffer;
     }
 
-    /// <summary>Every grid cell coordinate an AABB at <paramref name="position"/>/<paramref name="size"/> spans.</summary>
-    private IEnumerable<(int X, int Y)> GetOverlappingCells(Vector2D position, Vector2D size)
-    {
-        var minX = (int)Math.Floor(position.X / _cellSize);
-        var maxX = (int)Math.Floor((position.X + size.X) / _cellSize);
-        var minY = (int)Math.Floor(position.Y / _cellSize);
-        var maxY = (int)Math.Floor((position.Y + size.Y) / _cellSize);
-
-        for (var x = minX; x <= maxX; x++)
-        {
-            for (var y = minY; y <= maxY; y++)
-            {
-                yield return (x, y);
-            }
-        }
-    }
+    /// <summary>The inclusive range of grid cell coordinates an AABB at <paramref name="position"/>/<paramref name="size"/> spans.</summary>
+    private (int MinX, int MaxX, int MinY, int MaxY) GetCellRange(Vector2D position, Vector2D size) =>
+    (
+        (int)Math.Floor(position.X / _cellSize),
+        (int)Math.Floor((position.X + size.X) / _cellSize),
+        (int)Math.Floor(position.Y / _cellSize),
+        (int)Math.Floor((position.Y + size.Y) / _cellSize)
+    );
 }

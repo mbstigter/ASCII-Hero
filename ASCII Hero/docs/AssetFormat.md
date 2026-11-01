@@ -1282,7 +1282,10 @@ moving bodies, independent of its `Kind`:
   crawling or resting on top, is carried along at that speed (a walking player can walk with or
   against it, in which case both movements add up). When the surface carries the player
   past the end of the object, the player simply lets go and falls - place a
-  floor or ledge there if they should land somewhere.
+  floor or ledge there if they should land somewhere. Only objects that stay in
+  place or follow a fixed path (`StaticObject`, `StaticHazard`,
+  `KinematicObject`, `KinematicHazard`, and the like) can have a moving surface;
+  setting either key on a `DynamicObject` or `DynamicHazard` is a load error.
 
 ```ini
 [Ladder]

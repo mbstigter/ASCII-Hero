@@ -53,7 +53,32 @@ capture the "why" behind a decision without needing a lengthy narrative.
   sandwiched between two others, a crate stack with the player on top)
   reconcile within one step instead of fighting each other. A final solids-only
   pass afterwards guarantees no body ends the step overlapping immovable terrain
-  after a mover-vs-mover correction.
+  after a mover-vs-mover correction. Iterations stop early once one converges:
+  no response moved a body out of an overlap deeper than the slop or changed a
+  velocity by more than `SolverVelocityTolerance`.
+- **Resting contacts keep a small allowed overlap (`ContactSlopCells`).** Overlap
+  up to the slop is not pushed apart (the contact is still recorded); deeper
+  overlap is corrected back to half the slop. Without this, gravity's per-step
+  sink into a support was fully corrected every step, so stacks never settled
+  and every solver iteration always ran.
+- **Resting groups of bodies sleep (`SleepSystem`).** Contact slop alone cannot
+  stop a stack's solver work: sequential impulses keep passing gravity's
+  per-step gain up and down the stack in every iteration. Passive bodies
+  (`Body2D.CanSleep`; never the player, a patrolling body or a kinematic one)
+  are grouped into islands through surface contacts each step; an island
+  sleeps only as a whole, once every member has stayed within the contact slop
+  of where it came to rest, below `SleepVelocityThreshold`, for
+  `TimeToSleepSeconds`, and none touches a moving platform or conveyor. Rest is
+  judged by actual displacement, because the solver's residual velocity in a
+  stack does not decay. A sleeping body is not integrated, keeps its last
+  contacts (still grounded) and is skipped against solids and other sleepers.
+  It wakes - together with its whole island - when an awake body or a moving
+  solid overlaps it, a reaction force (walk, jump, grip) is applied to it, or a
+  body it touches is removed.
+- **The narrow phase does not allocate per pair.** A pair whose Position/Size
+  boxes don't overlap is rejected before any rectangle work; world-space
+  collision rectangles are cached per body until its position or shape changes;
+  contact history is double-buffered rather than copied each step.
 - **Broad phase uses a spatial grid** (`SpatialGrid<T>`, one for solids and
   one for moving bodies) so collision cost scales with nearby objects, not
   the level's total object count. Narrow phase additionally requires actual
@@ -193,6 +218,9 @@ capture the "why" behind a decision without needing a lengthy narrative.
   (friction drags riders along) and as the support speed for walking and jumping
   (`GetSurfaceVelocityX`). Named `Conveyor*` rather than
   `Flow*` because it prescribes a carry velocity, not a push force inside a medium.
+  Only static (including kinematic) bodies may have one; the loader rejects the keys on
+  movable bodies, whose surface already moves with the body and whose motion the
+  collision response, not a prescribed speed, decides.
 - **Climbing/hanging are grip-based**: holding a climbable/hangable records a grip
   contact (`ContactType.Climbable`/`Hangable`); gravity stays on and the grip motor
   (`UpdateWalkForce`) carries the weight. Climb/hang targets, snap/grab speed checks,

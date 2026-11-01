@@ -56,6 +56,16 @@ public partial class World2D
             Objects.Remove(body);
         }
 
+        // A sleeping body that touched a removed one may have lost its support (or a neighbour
+        // holding it in place), so it is woken to fall/settle again - see Physics.SleepSystem.
+        foreach (var body in Objects)
+        {
+            if (body.IsSleeping && _pendingRemovals.Exists(body.HasSurfaceContactWith))
+            {
+                body.Wake();
+            }
+        }
+
         _pendingRemovals.Clear();
     }
 

@@ -447,6 +447,7 @@ public class PhysicsSystem
                 var supportMass = support.Mass > 0 ? support.Mass : 1.0;
                 var supportVelocity = movableSupport.Velocity;
                 supportVelocity.Y += GameDefaults.WalkJumpSpeed * playerMass / supportMass;
+                support.Wake();
                 movableSupport.Velocity = supportVelocity;
             }
             // Clears IsGrounded immediately so the jump's own frame already shows airborne (jump
@@ -456,11 +457,20 @@ public class PhysicsSystem
         }
     }
 
-    /// <summary>Moves every kinematic body and force-integrates every other physics body.</summary>
+    /// <summary>
+    /// Moves every kinematic body and force-integrates every other awake physics body. A sleeping
+    /// body is at rest with its forces balanced by its supports, so it is left untouched until
+    /// something wakes it - see <see cref="SleepSystem"/>.
+    /// </summary>
     private void IntegrateBodies(World2D world, double deltaSeconds)
     {
         foreach (var body in world.Objects)
         {
+            if (body.IsSleeping)
+            {
+                continue;
+            }
+
             switch (body)
             {
                 case KinematicObject2D kinematicObject:
@@ -499,6 +509,7 @@ public class PhysicsSystem
             var grippedMass = gripped.Mass > 0 ? gripped.Mass : 1.0;
             var grippedVelocity = grippedBody.Velocity;
             grippedVelocity.Y += jumpSpeed * playerMass / grippedMass;
+            gripped.Wake();
             grippedBody.Velocity = grippedVelocity;
         }
     }
@@ -724,6 +735,7 @@ public class PhysicsSystem
                 var grippedVelocity = grippedBody.Velocity;
                 grippedVelocity.X -= gripForceX / grippedMass * deltaSeconds;
                 grippedVelocity.Y -= gripForceY / grippedMass * deltaSeconds;
+                gripped.Wake();
                 grippedBody.Velocity = grippedVelocity;
             }
 
@@ -762,6 +774,7 @@ public class PhysicsSystem
                     var supportMass = support.Mass > 0 ? support.Mass : 1.0;
                     var supportVelocity = supportBody.Velocity;
                     supportVelocity.X -= forceX / supportMass * deltaSeconds;
+                    support.Wake();
                     supportBody.Velocity = supportVelocity;
                 }
             }

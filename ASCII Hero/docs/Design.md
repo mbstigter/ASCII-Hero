@@ -38,6 +38,10 @@ not like a pixel-art game with ASCII characters placed on top.
   carried along. When a conveyor/rope carries the player past its end, the grip simply
   ends and the player falls - there is no automatic dismount; levels place a
   floor or ledge at the end where a landing is intended.
+- Stacks of movable objects cost nothing once they have come to rest. While the
+  player (or anything else that keeps moving) stands on a stack, the whole stack
+  is simulated every step, so keep stacks the player can stand on small - a few
+  objects rather than a large pile.
 
 ## Experience Goals
 

@@ -472,6 +472,13 @@ public partial class World2D
         body.IsClimbable = section.Flag("Climbable");
         body.IsHangable = section.Flag("Hangable");
         body.IsMediumCandidate = section.Flag("Medium");
+        // A moving surface belongs to an object that stays in place (or follows a fixed path); a
+        // movable object's surface already moves with the object itself.
+        if (!body.IsStatic && (section.Values.ContainsKey("ConveyorDirection") || section.Values.ContainsKey("ConveyorSpeed")))
+        {
+            throw section.Error($"is a {kind} and cannot have 'ConveyorDirection' or 'ConveyorSpeed'; only objects that stay in place or follow a fixed path can have a moving surface");
+        }
+
         body.ConveyorVelocity = ReadConveyorVelocity(section, clipName);
         body.ForeColorOverride = IniValueParser.ParseColorCode(section.Values.TryGetValue("ForegroundColor", out var foreColorText) ? foreColorText : null);
         body.BackColorOverride = IniValueParser.ParseColorCode(section.Values.TryGetValue("BackgroundColor", out var backColorText) ? backColorText : null);

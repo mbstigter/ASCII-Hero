@@ -9,6 +9,14 @@
 const FALLBACK_FORE_COLOR = '#00ff00';
 
 let ctx = null;
+let font = null;
+// Pre-rendered glyph images: color -> (character -> canvas). Rendering text is far more expensive
+// than copying an image, and a frame repeats the same few character/color combinations thousands
+// of times, so each combination is rendered once and then copied. Cleared whenever the font or
+// cell size changes (see applyFontToContext).
+const glyphCache = new Map();
+let cacheCellWidth = 0;
+let cacheCellHeight = 0;
 let dotNetRef = null;
 let rafHandle = null;
 let lastTimestamp = null;
@@ -18,6 +26,8 @@ let lastTimestamp = null;
 let keydownHandler = null;
 let keyupHandler = null;
 let pointerdownHandler = null;
+// Glyphs cached before the web font finished loading were rendered in a fallback font.
+const fontsLoadedHandler = () => glyphCache.clear();
 
 export async function initialize(canvasElementId, dotNetObjectRef, fontFamily, viewportColumns, viewportRows, fontWidthPixels, fontHeightPixels) {
     const canvas = document.getElementById(canvasElementId);
@@ -38,6 +48,7 @@ export async function initialize(canvasElementId, dotNetObjectRef, fontFamily, v
     canvas.focus();
     pointerdownHandler = () => canvas.focus();
     window.addEventListener('pointerdown', pointerdownHandler);
+    document.fonts.addEventListener('loadingdone', fontsLoadedHandler);
 
     lastTimestamp = null;
     rafHandle = window.requestAnimationFrame(onAnimationFrame);
@@ -68,6 +79,38 @@ function applyFontToContext(fontFamily, cellHeightPixels) {
     ctx.font = `${cellHeightPixels}px ${fontFamily}`;
     ctx.textBaseline = 'top';
     ctx.fillStyle = FALLBACK_FORE_COLOR;
+    font = ctx.font;
+    glyphCache.clear();
+}
+
+// Returns the cached image of one character in one color, rendering it on first use.
+function getGlyphImage(character, color, cellWidthPixels, cellHeightPixels) {
+    if (cellWidthPixels !== cacheCellWidth || cellHeightPixels !== cacheCellHeight) {
+        glyphCache.clear();
+        cacheCellWidth = cellWidthPixels;
+        cacheCellHeight = cellHeightPixels;
+    }
+
+    let images = glyphCache.get(color);
+    if (!images) {
+        images = new Map();
+        glyphCache.set(color, images);
+    }
+
+    let image = images.get(character);
+    if (!image) {
+        image = document.createElement('canvas');
+        image.width = Math.ceil(cellWidthPixels);
+        image.height = Math.ceil(cellHeightPixels);
+        const imageCtx = image.getContext('2d');
+        imageCtx.font = font;
+        imageCtx.textBaseline = 'top';
+        imageCtx.fillStyle = color;
+        imageCtx.fillText(character, 0, 0);
+        images.set(character, image);
+    }
+
+    return image;
 }
 
 function onAnimationFrame(timestamp) {
@@ -82,6 +125,8 @@ function onAnimationFrame(timestamp) {
     rafHandle = window.requestAnimationFrame(onAnimationFrame);
 }
 
+// Each glyph has a foreground color and an optional background color (null = none). A background
+// is a plain cell-sized rectangle; a character is copied from its cached image (see getGlyphImage).
 export function drawFrame(width, height, cellWidthPixels, cellHeightPixels, characters, xs, ys, foreColors, backColors) {
     if (!ctx) {
         return;
@@ -93,15 +138,14 @@ export function drawFrame(width, height, cellWidthPixels, cellHeightPixels, char
         const x = xs[i];
         const y = ys[i];
 
-        // Background fill (if any) is drawn as a rect sized to one cell, behind
-        // the glyph.
-        if (backColors[i]) {
-            ctx.fillStyle = backColors[i];
+        const backColor = backColors[i];
+        if (backColor) {
+            ctx.fillStyle = backColor;
             ctx.fillRect(x, y, cellWidthPixels, cellHeightPixels);
         }
 
-        ctx.fillStyle = foreColors[i];
-        ctx.fillText(characters[i], x, y);
+        const image = getGlyphImage(characters[i], foreColors[i], cellWidthPixels, cellHeightPixels);
+        ctx.drawImage(image, x, y);
     }
 }
 
@@ -122,7 +166,9 @@ export function dispose() {
         window.removeEventListener('pointerdown', pointerdownHandler);
         pointerdownHandler = null;
     }
+    document.fonts.removeEventListener('loadingdone', fontsLoadedHandler);
     ctx = null;
+    glyphCache.clear();
     dotNetRef = null;
 }
 
