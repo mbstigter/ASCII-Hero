@@ -57,8 +57,8 @@ This page is a tour of what the engine lets you build. For exact syntax, see
 | `DynamicObject` | Moves under gravity or its own velocity, for example a bouncing ball |
 | `KinematicObject` | Moves on a predefined path and is never affected by gravity, so it suits moving platforms. It patrols between bounds on X and/or Y at a set `PatrolSpeedX`/`PatrolSpeedY`, braking smoothly at each end, and riders are carried along |
 | `StaticHazard` | Non-moving danger such as spikes or toxic plants |
-| `DynamicHazard` | A hazard that moves, such as a patrolling creature or a flying butterfly |
-| `KinematicHazard` | A hazard on a predefined path (constant velocity or bounded patrol), such as a saw blade or laser |
+a flying insect |
+| `KinematicHazard` |
 | `Collectable` | A non-solid pickup with a configurable effect |
 | `Gate` | A door or hatch: solid while closed, passable while open. Opened by a key or a switch |
 | `Switch` | A button or lever the player operates with the action key |

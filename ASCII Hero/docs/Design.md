@@ -74,15 +74,15 @@ not like a pixel-art game with ASCII characters placed on top.
   under its own mass-scaled force - see
   [Decisions.md](Decisions.md)) is implemented via `IPatrolBody`/`Patrol`
   (see [AssetFormat.md §3.4](AssetFormat.md)), including per-placement
-  `PatrolMinX`/`PatrolMaxX` bounds (e.g. the `Enemies` world's `SnakeTwo`
-  confined to the platform it starts on, while `SnakeOne` still sweeps the
-  full world). Facing/animation while patrolling is also implemented -
+  `PatrolMinX`/`PatrolMaxX` bounds (e.g. one grounded patroller confined to the
+  platform it starts on, while another still sweeps the full world).
+  Facing/animation while patrolling is also implemented -
   `DynamicObject2D.UpdatePose()` (called each physics step) calls `SetPose` so a
-  `Snake` visually turns to face (and animate through) its `move_left`/
+  patrolling creature visually turns to face (and animate through) its `move_left`/
   `move_right` clips as it changes direction. Grounded and flying varieties
   both already exist (a flying hazard gets vertical wing power from the
   `PatrolMaxForceY` placement key, used together with `Patrol` and with gravity
-  still on - e.g. `Butterfly`). Chase behavior is not implemented - still to
+  still on). Chase behavior is not implemented - still to
   design/implement:
   - Chase-the-player movement.
 - **`KinematicObject` behavior.** Beyond acceleration-limited back-and-forth

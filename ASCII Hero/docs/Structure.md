@@ -638,7 +638,7 @@ The live game state and the entity types that make it up.
   tint once loaded, `RenderConstants.DefaultForegroundColor` before that) is
   the fallback for world content and any glyph built without a foreground
   color; a glyph without a background color has no fill. The canvas is filled
-  with the world's `BackdropColor`, else `InterfaceColors.Background`.
+  with the world's `WorldBackdrop`, else `InterfaceColors.Background`.
 - **`UIFrame`** / **`UILabel`** / **`UIBar`** - the independent screen-space drawable
   primitives, laid out directly in viewport cell coordinates, unaffected by
   the camera: a box-drawing border, one or more lines of text, and a gauge.
@@ -677,6 +677,8 @@ The live game state and the entity types that make it up.
 - **`EndScreenRenderer`** - draws the centered end-screen message box
   (ripple, glow and label) for a given text, tint set and elapsed time. It
   only builds glyphs; `GameLoop` decides the mode, text, colors and timing.
+  The box and text sit on the world's `InterfaceBackdrop` panel color when set
+  (transparent otherwise); the HUD strip uses the same color.
 
 - **`AnimationSystem`** - advances every body's animation timer once per
   frame (bodies with no animation configured, or a single frame, no-op
@@ -883,7 +885,7 @@ large jumps after e.g. a tab switch):
    on top of the foreground layer and everything else - before
    `CanvasBridge.DrawFrameAsync` sends the complete list to JavaScript to
    paint onto the canvas (`drawFrame` first fills the whole canvas with the world's
-   `BackdropColor`, if set, then fills backgrounds as cell rectangles and copies
+   `WorldBackdrop`, if set, then fills backgrounds as cell rectangles and copies
    each character from a cache of pre-rendered images, one per character/color
    combination, cleared when the font or cell size changes). `_hudText` is refreshed every `Playing` frame from
    `World2D.Player.Lives`/`.Rings`/`.Score` on its first row; its second row is a

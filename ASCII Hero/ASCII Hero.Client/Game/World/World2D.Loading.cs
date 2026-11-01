@@ -74,7 +74,17 @@ public partial class World2D
         world.EmptyChar = emptyChar;
         world.DefaultForeColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultForegroundColor"));
         world.DefaultBackColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
-        world.BackdropColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "BackdropColor"));
+        world.WorldBackdrop = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "WorldBackdrop"));
+        var interfaceBackdropText = settings.TryGetValue("Colors", "InterfaceBackdrop");
+        if (string.Equals(interfaceBackdropText?.Trim(), "WorldBackdrop", StringComparison.OrdinalIgnoreCase))
+        {
+            world.InterfaceBackdrop = world.WorldBackdrop
+                ?? throw new FormatException($"World '{worldName}' has '[Colors] InterfaceBackdrop = WorldBackdrop' but sets no 'WorldBackdrop'.");
+        }
+        else
+        {
+            world.InterfaceBackdrop = IniValueParser.ParseColorCode(interfaceBackdropText);
+        }
         world.StartingLives = IniValueParser.TryParseInt(settings.TryGetValue("World", "Lives"), out var startingLives) && startingLives > 0
             ? startingLives
             : GameDefaults.PlayerStartingLives;
@@ -482,7 +492,7 @@ public partial class World2D
 
         body.ConveyorVelocity = ReadConveyorVelocity(section, clipName);
         body.ForeColorOverride = IniValueParser.ParseColorCode(section.Values.TryGetValue("ForegroundColor", out var foreColorText) ? foreColorText : null);
-        body.BackColorOverride = IniValueParser.ParseColorCode(section.Values.TryGetValue("BackgroundColor", out var backColorText) ? backColorText : null);
+        body.BackColorOverride = ReadBackColorOverride(world, section);
         ApplyMaterial(world, body, section);
         world.Objects.Add(body);
 
@@ -490,6 +500,23 @@ public partial class World2D
         {
             world.CameraTarget = physicsBody;
         }
+    }
+
+    /// <summary>
+    /// Reads a placement's <c>BackgroundColor</c> override: a single-character color code, or the
+    /// word <c>WorldBackdrop</c>, which uses the world's own <c>WorldBackdrop</c> so the cell shows the
+    /// world's backdrop. It is rejected when the world sets no <c>WorldBackdrop</c>.
+    /// </summary>
+    private static char? ReadBackColorOverride(World2D world, ObjectSection section)
+    {
+        section.Values.TryGetValue("BackgroundColor", out var text);
+        if (!string.Equals(text?.Trim(), "WorldBackdrop", StringComparison.OrdinalIgnoreCase))
+        {
+            return IniValueParser.ParseColorCode(text);
+        }
+
+        return world.WorldBackdrop
+            ?? throw section.Error("has 'BackgroundColor = WorldBackdrop' but the world sets no 'WorldBackdrop' in its [Colors] section");
     }
 
     /// <summary>

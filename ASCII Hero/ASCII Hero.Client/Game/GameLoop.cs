@@ -630,6 +630,22 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         var cellWidth = _renderer.CellWidthPixels;
         var cellHeight = _renderer.CellHeightPixels;
 
+        var panelColor = InterfaceBackdropColor;
+        _hudBox.BackColor = panelColor;
+        _hudText.BackColor = panelColor;
+        _hudBar.BackColor = panelColor;
+        _hudKeyLabel.BackColor = panelColor;
+        if (panelColor is not null)
+        {
+            for (var row = 0; row < _hudBox.Height; row++)
+            {
+                for (var col = 0; col < _hudBox.Width; col++)
+                {
+                    glyphs.Add(GlyphBuilder.BuildGlyph((_hudBox.Col + col) * cellWidth, (_hudBox.Row + row) * cellHeight, ' ', null, panelColor));
+                }
+            }
+        }
+
         UIRenderer.AddFrame(glyphs, _hudBox, cellWidth, cellHeight);
 
         _hudText.Lines.Clear();
@@ -746,7 +762,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         var tints = isConfirmExit ? _colors.Amber : isLevelComplete ? _colors.Green : _colors.Red;
 
         _endScreenRenderer.AddMessage(
-            glyphs, text, tints.Dark, tints.Normal, tints.Light, WorldBackdropColor, _endScreenElapsedSeconds,
+            glyphs, text, tints.Dark, tints.Normal, tints.Light, InterfaceBackdropColor, _endScreenElapsedSeconds,
             _viewportWidthCells, _viewportHeightCells, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
     }
 
@@ -757,11 +773,14 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private Task DrawAsync(List<Glyph> glyphs) =>
         canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs, backdropColor: _colors.Background);
 
-    /// <summary>Draws a frame of the loaded world, filling the canvas with its <see cref="World2D.BackdropColor"/> first.</summary>
+    /// <summary>Draws a frame of the loaded world, filling the canvas with its <see cref="World2D.WorldBackdrop"/> first.</summary>
     private Task DrawWorldAsync(List<Glyph> glyphs) =>
         canvasBridge.DrawFrameAsync(_viewportWidthPixels, _viewportHeightPixels, _renderer.CellWidthPixels, _renderer.CellHeightPixels, glyphs,
-            backdropColor: WorldBackdropColor);
+            backdropColor: CanvasBackdrop);
 
-    /// <summary>The loaded world's canvas color: its <see cref="World2D.BackdropColor"/>, else the interface background.</summary>
-    private string WorldBackdropColor => GlyphBuilder.ResolveColor(_world.Palette, _colors.Background, _world.BackdropColor)!;
+    /// <summary>The loaded world's <see cref="World2D.InterfaceBackdrop"/> as a color, or null (no panel).</summary>
+    private string? InterfaceBackdropColor => GlyphBuilder.ResolveColor(_world.Palette, null, _world.InterfaceBackdrop);
+
+    /// <summary>The loaded world's canvas color:
+    private string CanvasBackdrop => GlyphBuilder.ResolveColor(_world.Palette, _colors.Background, _world.WorldBackdrop)!;
 }

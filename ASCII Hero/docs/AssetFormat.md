@@ -17,17 +17,17 @@ Assets/
 		MaterialLibrary.ini
 		Worlds.ini
 		Sprites/
-			Player/
-				Player_settings.ini
+			Hero/
+				Hero_settings.ini
 				Walk/
-					Player_walk_idle_characters.txt
-					Player_walk_idle_foregroundcolors.txt
-					Player_walk_idle_backgroundcolors.txt
-					Player_walk_left_characters.txt
-					Player_walk_left_foregroundcolors.txt
-					Player_walk_left_backgroundcolors.txt
+					Hero_walk_idle_characters.txt
+					Hero_walk_idle_foregroundcolors.txt
+					Hero_walk_idle_backgroundcolors.txt
+					Hero_walk_left_characters.txt
+					Hero_walk_left_foregroundcolors.txt
+					Hero_walk_left_backgroundcolors.txt
 				Crawl/
-					Player_crawl_idle_characters.txt
+					Hero_crawl_idle_characters.txt
 					...
 			Wall/
 				Wall_settings.ini
@@ -100,7 +100,7 @@ world uses still resolves to the global ones untouched.
 
 Naming case convention: global shared files use "first word capitalized" naming
 (`Settings.ini`, `ColorPalette.ini`, `MaterialLibrary.ini`). Per-asset files stay entirely
-lowercase-prefixed, matching the asset/clip name (`Player_walk_idle_characters.txt`).
+lowercase-prefixed, matching the asset/clip name (`Hero_walk_idle_characters.txt`).
 
 ## 2. Sprite files
 
@@ -146,7 +146,7 @@ Frames within a clip serve two purposes, both using the exact same
 
 - **True animation** — frames play back over time when the asset declares animation
   timing via an `[Animation]` section in its settings.ini (see §2.4). Examples:
-  `Player_walk_idle` (3 subtle frames cycling to avoid a perfectly static character) and
+  `Hero_walk_idle` (3 subtle frames cycling to avoid a perfectly static character) and
   a hazard's `idle` clip animating left/middle/right frames. The clip's starting frame
   is controlled asset-wide by `[Animation] DefaultFrame` (see §2.4) — e.g. a
   Left/Center/Right clip can start at the Center frame so `PingPong` mode bounces
@@ -431,7 +431,7 @@ intentional and unrelated: **a `[Poses]` clip list is authored in any
 order, each clip's own name suffix (`_idle`/`_left`/`_right`/`_up`/`_down`)
 saying which facing it's for**, while **a single clip's own multi-frame
 `_characters.txt` for a Left/Idle/Right-style animation (e.g.
-`Player_walk_idle`'s head-turn) is authored `Left, Idle, Right`** (frame
+`Hero_walk_idle`'s head-turn) is authored `Left, Idle, Right`** (frame
 order within that one clip, unrelated to facing), since that is the natural
 sequence for a symmetric `PingPong` head-turn to bounce through.
 
@@ -462,9 +462,9 @@ crawl = Crawl
   checked first, so a prefix rule (`walk = Walk`) and a same-named exact
   override (`walk_left = SomeOtherFolder`) can coexist if ever needed.
 - Its value is the subfolder name (relative to the asset's own folder) that
-  clip's files are read from, e.g. `Player_walk_idle_characters.txt` lives at
-  `Player/Walk/Player_walk_idle_characters.txt` instead of directly under
-  `Player/`.
+  clip's files are read from, e.g. `Hero_walk_idle_characters.txt` lives at
+  `Hero/Walk/Hero_walk_idle_characters.txt` instead of directly under
+  `Hero/`.
 - A clip whose name (or prefix) has no entry in `[ClipFolders]` is read from
   the asset's own root folder, unaffected - this is what keeps `[ClipFolders]`
   fully optional and opt-in per clip, not an all-or-nothing switch for the
@@ -474,10 +474,10 @@ crawl = Crawl
   `[Poses]`, `[Animation.{clipName}]`, tiling, or anything else described
   above, all of which keep referring to clips by their plain name.
 
-`Player` is the reference busy asset using this: `Player_settings.ini` (and its
-one-off `hurt` effect clip) stay in the root folder, while its `walk`, `crawl`,
-`jump`, `climb`, `hang`, and `clamber` clips each live in their own matching
-subfolder (`Sprites/Player/Walk/`, `Sprites/Player/Crawl/`, ...).
+A busy multi-pose asset (such as a playable character) can use this: its `{AssetName}_settings.ini` (and any
+one-off effect clip) stay in the root folder, while each pose's clips (`walk`, `crawl`,
+`jump`, ...) live in their own matching
+subfolder (`Sprites/Hero/Walk/`, `Sprites/Hero/Crawl/`, ...).
 
 ## 3. World files
 
@@ -555,11 +555,17 @@ applied to this world's own background/object-placement grids.
   draw a character; they never fill empty cells. Leave
   `DefaultBackgroundColor` unset to let drawn characters show the backdrop
   behind them.
-- `BackdropColor` — the world's background: the whole view (and the world's
+- `WorldBackdrop` — the world's background: the whole view (and the world's
   thumbnail on the world-selection screen) is filled with this color before
   anything is drawn, so every empty cell shows it instead of black. It never
   changes the colors of drawn characters. Use it instead of a background
   layer that is just spaces with a background color.
+- `InterfaceBackdrop` (optional) — a color code, or the word `WorldBackdrop`
+  (use the world's own backdrop; a load error if the world sets none). It is
+  the solid panel color drawn behind the HUD strip and behind the text of the
+  end-screen message boxes (Level Complete, Game Over, exit confirmation), so
+  they stay readable on a light or busy world. Unset, the HUD and message
+  boxes have no panel and the world shows through behind them.
 
 **`[Physics]`** (optional) — `Gravity`, this world's gravity acceleration in
 world cells per second squared; falls back to `Global/Settings.ini` (§4.4).
@@ -602,7 +608,7 @@ Level1_thumb_backgroundcolors.txt   (optional)
 - Background color follows the same resolution precedence as an in-game cell
   (§2.4): a cell's own `_thumb_backgroundcolors.txt` code, then this world's
   own `[Colors] DefaultBackgroundColor` (§3), then the world's
-  `BackdropColor`, which also fills the thumbnail's empty cells.
+  `WorldBackdrop`, which also fills the thumbnail's empty cells.
   A thumbnail has no material - it is a small
   decorative preview, not a physical/collidable object, so that concept
   doesn't apply.
@@ -1262,6 +1268,13 @@ ForegroundColor = Y
   default (§3, above) > the interface color (§4.2; foreground only). Absent at any tier means
   that tier has no color of its own and the chain continues unchanged.
 
+  A placement's `BackgroundColor` may also be the word `WorldBackdrop` instead of a
+  code: it then uses the world's own `[Colors] WorldBackdrop`, so the cell shows
+  the world's backdrop (e.g. behind a half-block character) without repeating
+  the backdrop's code in every placement. It is a load error if the world sets
+  no `WorldBackdrop`. (`null` is not a keyword: it is read as the code `n`,
+  which is not in the palette, so that tier is simply skipped.)
+
 Any non-`Player` object type may also set `Passable`, `Climbable`, and/or
 `Hangable` (each default `false`, except `Passable` which defaults to `true`
 for `Kind = StaticHazard`/`KinematicHazard`/`Collectable`/`Switch`/`FlowZone`) to control how it interacts with
@@ -1371,8 +1384,8 @@ GreenLight = #9dff9d
   everything at once. Its Normal tint is also the last-resort color of any
   world character with no color of its own. Defaults to `Green`.
 - `[Defaults] Background` - the canvas color wherever nothing else is drawn,
-  unless the world sets a `BackdropColor`. Message boxes use the same canvas
-  color behind their text, so they blend into the world.
+  unless the world sets a `WorldBackdrop`. Message boxes and the HUD have no
+  panel of their own; a world can add one with `InterfaceBackdrop` (§3).
 - `[Green]`, `[Amber]`, `[Red]`, `[Blue]`, `[White]` - each holds
   `<Name>Dark`, `<Name>Normal` and `<Name>Light`. Green always colors the
   Level Complete box, Amber the exit confirmation box and Red the Game Over box.

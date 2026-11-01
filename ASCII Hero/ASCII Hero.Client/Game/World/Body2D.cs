@@ -202,7 +202,10 @@ public abstract class Body2D
     /// </summary>
     public char? ForeColorOverride { get; set; }
 
-    /// <summary>See <see cref="ForeColorOverride"/>.</summary>
+    /// <summary>
+    /// See <see cref="ForeColorOverride"/>. A placement may write <c>BackgroundColor = WorldBackdrop</c>,
+    /// which the loader resolves to the world's backdrop color code here.
+    /// </summary>
     public char? BackColorOverride { get; set; }
 
     /// <summary>

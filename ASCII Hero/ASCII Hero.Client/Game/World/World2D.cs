@@ -153,16 +153,24 @@ public partial class World2D
     /// </summary>
     public char? DefaultForeColor { get; private set; }
 
-    /// <summary>See <see cref="DefaultForeColor"/>. Only colors cells that draw a character; never empty cells (see <see cref="BackdropColor"/>).</summary>
+    /// <summary>See <see cref="DefaultForeColor"/>. Only colors cells that draw a character; never empty cells (see <see cref="WorldBackdrop"/>).</summary>
     public char? DefaultBackColor { get; private set; }
 
     /// <summary>
-    /// Color code from this world's <c>[Colors] BackdropColor</c> settings.ini key: the color the
+    /// Color code from this world's <c>[Colors] WorldBackdrop</c> settings.ini key: the color the
     /// whole canvas is filled with before anything is drawn, so empty cells show it instead of
     /// black. It never colors drawn characters' cells.
     /// Null when not set (black). See docs/AssetFormat.md.
     /// </summary>
-    public char? BackdropColor { get; private set; }
+    public char? WorldBackdrop { get; private set; }
+
+    /// <summary>
+    /// Color code from this world's optional <c>[Colors] InterfaceBackdrop</c> settings.ini key (a code,
+    /// or the word <c>WorldBackdrop</c> which resolves to <see cref="WorldBackdrop"/>): the solid panel
+    /// color behind the HUD and behind the end-screen message text. Null when not set (no panel).
+    /// See docs/AssetFormat.md.
+    /// </summary>
+    public char? InterfaceBackdrop { get; private set; }
 
     /// <summary>
     /// The resolved Global+World material library. Each body resolves its

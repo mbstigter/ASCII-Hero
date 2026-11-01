@@ -315,7 +315,7 @@ public static class WorldSelectRenderer
         double cellWidthPixels, double cellHeightPixels)
     {
         var frame = world.CurrentThumbnailFrame;
-        var backdropColor = GlyphBuilder.ResolveColor(world.Palette, null, world.BackdropColor);
+        var backdropColor = GlyphBuilder.ResolveColor(world.Palette, null, world.WorldBackdrop);
 
         for (var row = 0; row < WorldCatalog.ThumbnailHeight; row++)
         {

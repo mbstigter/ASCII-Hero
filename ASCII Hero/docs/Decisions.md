@@ -242,7 +242,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   fan, lamp). A switch drives every `ILinkTarget` sharing its `Link` name (one switch to
   many targets, validated at load); `Latching` (per placement, default false)
   decides whether it toggles or only turns on. A gate is key-operated (`Lock`, stays
-  open) or switch-operated (`Link`), never both. Enemies operating switches are not
+  open) or switch-operated (`Link`), never both. Hazards operating switches are not
   implemented.
 - **A body's own force/impulse (motor force, jump-off) is never scaled by the ambient
   medium.** A medium resists self-propelled motion only through its passive buoyancy and
@@ -298,7 +298,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   correlated with that pose's own move speed**, not a single fixed value
   shared by every pose: `FrameDurationSeconds = 2.4 / speed`, anchored on
   `walk_left`/`walk_right` (`WalkSpeed` = 12, `FrameDurationSeconds` = 0.2,
-  so 12 * 0.2 = 2.4). See the `Player_settings.ini` `[Animation]` section
+  so 12 * 0.2 = 2.4). See the player sprite's settings.ini `[Animation]` section
   comment for the full worked table, and each `GameDefaults` speed
   constant's own doc comment for the reminder to recompute its paired
   clip(s) if that speed is tweaked. Swimming is the deliberate exception: a
@@ -378,10 +378,10 @@ capture the "why" behind a decision without needing a lengthy narrative.
   0-1 bar for the current life (HUD bar); Lives, Rings and Score are shown in
   the HUD text. Ordinary (non-fatal) hazard contact removes the hazard's
   `Damage` (placement key, default 1 = whole bar; e.g. 0.2 toxic plant, 0.5
-  butterflies), once per fresh contact (rising edge on
+  flying insects), once per fresh contact (rising edge on
   `_activeHazardContacts`), clamped at 0. When the bar empties,
   `CollisionSystem` removes one life and starts a `PendingTransition.Death`
-  (see the pending-transition bullet below); the bar is refilled by the
+  (see the pending-transition bullet below)
   respawn that follows. At 0 lives the death leads to a "Game Over!" screen
   instead of a respawn.
 - **How a hazard is touched follows how the solver treats it.** A solid hazard
@@ -509,9 +509,10 @@ capture the "why" behind a decision without needing a lengthy narrative.
   section is the interface color, so the whole interface switches family at
   once; the semantic end-screen boxes keep fixed families (Green/Amber/Red).
   The interface normal tint is also the last fallback for uncolored world
-  content (`GlyphBuilder.DefaultForeColor`). The canvas (and the text
-  background of message boxes) is the world's `BackdropColor`, else
-  `[Defaults] Background`.
+  content (`GlyphBuilder.DefaultForeColor`). The canvas is the world's
+  `WorldBackdrop`, else `[Defaults] Background`. The HUD and message-box text
+  have no panel unless the world sets `[Colors] InterfaceBackdrop` (a code, or
+  `WorldBackdrop`); `BackdropColor` was renamed `WorldBackdrop`.
 - **Only two hardcoded colors**: green `#00ff00` and black `#000000`
   (`RenderConstants.DefaultForegroundColor`/`DefaultBackgroundColor`), used
   for anything missing from InterfaceColors.ini, or before/without it, so the

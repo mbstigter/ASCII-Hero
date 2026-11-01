@@ -35,8 +35,8 @@ public class WorldSummary
     /// <summary>This world's <c>[Colors] DefaultBackgroundColor</c>, the same fallback the world itself uses for drawn cells.</summary>
     public char? DefaultBackColor { get; }
 
-    /// <summary>This world's <c>[Colors] BackdropColor</c>, filling the thumbnail behind everything.</summary>
-    public char? BackdropColor { get; }
+    /// <summary>This world's <c>[Colors] WorldBackdrop</c>, filling the thumbnail behind everything.</summary>
+    public char? WorldBackdrop { get; }
 
     private readonly double? _frameDurationSeconds;
     private readonly AnimationMode _animationMode;
@@ -62,7 +62,7 @@ public class WorldSummary
         EmptyChar = emptyChar;
         Palette = palette;
         DefaultBackColor = defaultBackColor;
-        BackdropColor = backdropColor;
+        WorldBackdrop = backdropColor;
         _frameDurationSeconds = frameDurationSeconds;
         _animationMode = animationMode;
 
@@ -199,7 +199,7 @@ public static class WorldCatalog
         }
 
         var defaultBackColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
-        var backdropColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "BackdropColor"));
+        var backdropColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "WorldBackdrop"));
 
         // An optional [Animation.Thumbnail] section (same keys/semantics as a sprite clip's own
         // [Animation]/[Animation.{clipName}] section) times the thumbnail's frames. Absent
