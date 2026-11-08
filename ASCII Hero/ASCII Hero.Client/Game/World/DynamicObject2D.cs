@@ -19,6 +19,8 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
 {
     private bool _patrolMovingRight = true;
     private bool _patrolMovingDown = true;
+    private double _patrolBlockedSecondsX;
+    private double _patrolBlockedSecondsY;
 
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }
@@ -122,6 +124,18 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     public bool PatrolStayOnPlatform { get; set; }
 
     /// <summary>
+    /// How long (in seconds) this body keeps pushing on a patrolled axis without making progress
+    /// before it turns around early, short of its patrol bound (ini <c>PatrolBlockedTurnTime</c>
+    /// key, default <see cref="GameDefaults.DefaultPatrolBlockedTurnTime"/>). The timer runs while its
+    /// speed toward its heading stays below <see cref="GameDefaults.PatrolBlockedSpeedFraction"/> of
+    /// the cruise speed and resets as soon as it moves on again, so a body strong enough to shove an
+    /// obstacle aside keeps going while a weaker one - or any body against a wall - gives up. It only
+    /// turns while actually touching something on its heading side, so being slowed by drag or flow
+    /// alone never turns it. <c>Infinity</c> means it never gives up.
+    /// </summary>
+    public double PatrolBlockedTurnTime { get; set; } = GameDefaults.DefaultPatrolBlockedTurnTime;
+
+    /// <summary>
     /// Current pose (see <see cref="Player2D.Stance"/> for the closest player-side member).
     /// Only one pose exists today ("Move", with idle/left/right facing clips - see
     /// <see cref="UpdatePose"/>), but kept as a settable member rather than a hardcoded literal so
@@ -193,6 +207,9 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     /// <paramref name="initialDirectionRight"/>, but for <see cref="PatrolMinY"/>/<see cref="PatrolMaxY"/>
     /// (true = toward <see cref="PatrolMaxY"/>/down, false = toward <see cref="PatrolMinY"/>/up).
     /// </param>
+    /// <param name="blockedTurnTime">
+    /// Seconds of pushing without progress before turning around early (see <see cref="PatrolBlockedTurnTime"/>).
+    /// </param>
     public void SetPatrol(
         double? patrolMinX, double? patrolMaxX, double cruiseSpeedX,
         double? patrolMinY, double? patrolMaxY, double cruiseSpeedY,
@@ -200,9 +217,13 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
         double forceMultiplierY = GameDefaults.PatrolForceMultiplier,
         bool? initialDirectionRight = null, bool? initialDirectionDown = null,
         double maxForceX = GameDefaults.DefaultPatrolMaxForceX, double maxForceY = GameDefaults.DefaultPatrolMaxForceY,
-        bool stayOnPlatform = false)
+        bool stayOnPlatform = false,
+        double blockedTurnTime = GameDefaults.DefaultPatrolBlockedTurnTime)
     {
         PatrolStayOnPlatform = stayOnPlatform;
+        PatrolBlockedTurnTime = blockedTurnTime;
+        _patrolBlockedSecondsX = 0.0;
+        _patrolBlockedSecondsY = 0.0;
         PatrolMaxForceX = maxForceX;
         PatrolMaxForceY = maxForceY;
 
@@ -248,8 +269,8 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     /// <summary>
     /// Recomputes <see cref="PatrolForce"/> independently per axis, flipping each axis's own
     /// heading once within <see cref="GameDefaults.PatrolTurnThreshold"/> of its current target bound - mirrors
-    /// <see cref="Physics.PhysicsSystem"/>'s own player-side <c>UpdateWalkForce</c>, so patrol
-    /// force behaves the same way the player's walk force does: strong while far from the target
+    /// <see cref="Physics.PhysicsSystem"/>'s own player-side <c>UpdateMotorForce</c>, so patrol
+    /// force behaves the same way the player's motor force does: strong while far from the target
     /// speed, tapering to zero once reached, rather than a constant thrust that would otherwise
     /// accelerate this body indefinitely. Also sets <see cref="Body2D.MoveIntentX"/> from the
     /// (possibly just-flipped) X-axis heading - <see cref="UpdatePose"/> reads it from there rather
@@ -258,11 +279,12 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     /// platform carry) rather than its plain directional intent.
     ///
     /// Both axes turn around once they reach or pass a bound (so a body bumped past a bound heads
-    /// back). The Y axis has no gravity special case: gravity is an ordinary force in the net sum,
+    /// back), or earlier once blocked for <see cref="PatrolBlockedTurnTime"/> (see
+    /// <see cref="UpdateBlockedTurn"/>). The Y axis has no gravity special case: gravity is an ordinary force in the net sum,
     /// so climbing saturates the vertical force cap while descending
     /// needs little force. An axis with no range holds its spawn position.
     /// </summary>
-    public void UpdatePatrolDirection(double gravity)
+    public void UpdatePatrolDirection(double gravity, double deltaSeconds)
     {
         if (!IsPatrolling)
         {
@@ -282,7 +304,17 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
 
         if (PatrolMinX.HasValue && PatrolMaxX.HasValue)
         {
+            var surfaceVelocityX = GetSurfaceVelocityX();
+            UpdateBlockedTurn(
+                PatrolMinX.Value, PatrolMaxX.Value, Velocity.X - surfaceVelocityX, PatrolCruiseSpeedX,
+                positiveSide: Physics.ContactType.SurfaceRight, negativeSide: Physics.ContactType.SurfaceLeft,
+                ref _patrolMovingRight, ref _patrolBlockedSecondsX, deltaSeconds);
+            var wasMovingRight = _patrolMovingRight;
             var axisTargetX = ResolveAxisTargetVelocity(Position.X, PatrolMinX.Value, PatrolMaxX.Value, PatrolCruiseSpeedX, ref _patrolMovingRight);
+            if (_patrolMovingRight != wasMovingRight)
+            {
+                _patrolBlockedSecondsX = 0.0;
+            }
 
             // Target speed (and the force converging toward it) is expressed relative to whatever
             // solid this body currently rests on (see Body2D.GetSurfaceVelocityX) - mirroring
@@ -292,7 +324,6 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
             // speed) would spend part of its "muscle power" fighting the platform's own motion every
             // frame instead of just walking across it, letting the body slide relative to the
             // platform's surface instead of patrolling it at a steady cruise speed.
-            var surfaceVelocityX = GetSurfaceVelocityX();
             var targetVelocityX = surfaceVelocityX + axisTargetX;
             forceX = (targetVelocityX - Velocity.X) * mass * PatrolForceMultiplierX;
             var maxForceX = WeightScaledForceCap(PatrolMaxForceX, mass, gravity);
@@ -313,7 +344,16 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
 
         if (PatrolMinY.HasValue && PatrolMaxY.HasValue)
         {
+            UpdateBlockedTurn(
+                PatrolMinY.Value, PatrolMaxY.Value, Velocity.Y, PatrolCruiseSpeedY,
+                positiveSide: Physics.ContactType.SurfaceBottom, negativeSide: Physics.ContactType.SurfaceTop,
+                ref _patrolMovingDown, ref _patrolBlockedSecondsY, deltaSeconds);
+            var wasMovingDown = _patrolMovingDown;
             var targetVelocityY = ResolveAxisTargetVelocity(Position.Y, PatrolMinY.Value, PatrolMaxY.Value, PatrolCruiseSpeedY, ref _patrolMovingDown);
+            if (_patrolMovingDown != wasMovingDown)
+            {
+                _patrolBlockedSecondsY = 0.0;
+            }
             forceY = (targetVelocityY - Velocity.Y) * mass * PatrolForceMultiplierY;
 
             // Force cap ("wing power"). Gravity is just another force in the net sum, so
@@ -334,6 +374,36 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     /// </summary>
     private static double WeightScaledForceCap(double capInWeights, double mass, double gravity) =>
         double.IsPositiveInfinity(capInWeights) ? double.PositiveInfinity : capInWeights * mass * gravity;
+
+    /// <summary>
+    /// Turns an axis around early when its way is blocked (see <see cref="PatrolBlockedTurnTime"/>):
+    /// the timer runs while <paramref name="velocity"/> toward the heading stays below
+    /// <see cref="GameDefaults.PatrolBlockedSpeedFraction"/> of the cruise speed and resets once it
+    /// is reached again; when it has run out while something is touching the heading side
+    /// (<paramref name="positiveSide"/> when heading toward max, else <paramref name="negativeSide"/>),
+    /// the heading flips. Progress, not contact, resets the timer, so a body that bounces off
+    /// an obstacle (touching it only on impact) still gives up. Hold axes (no range) never turn.
+    /// </summary>
+    private void UpdateBlockedTurn(
+        double min, double max, double velocity, double cruiseSpeed,
+        Physics.ContactType positiveSide, Physics.ContactType negativeSide,
+        ref bool movingPositive, ref double blockedSeconds, double deltaSeconds)
+    {
+        var heading = movingPositive ? 1.0 : -1.0;
+        if (max - min <= 2 * GameDefaults.PatrolTurnThreshold
+            || velocity * heading >= cruiseSpeed * GameDefaults.PatrolBlockedSpeedFraction)
+        {
+            blockedSeconds = 0.0;
+            return;
+        }
+
+        blockedSeconds += deltaSeconds;
+        if (blockedSeconds >= PatrolBlockedTurnTime && HasContact(movingPositive ? positiveSide : negativeSide))
+        {
+            movingPositive = !movingPositive;
+            blockedSeconds = 0.0;
+        }
+    }
 
     /// <summary>
     /// Sets the horizontal patrol range to the extent of the static or kinematic solid this body

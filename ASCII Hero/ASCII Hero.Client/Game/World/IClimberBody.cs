@@ -13,8 +13,9 @@ namespace ASCII_Hero.Client.Game.World;
 public interface IClimberBody : IPhysicsBody
 {
     /// <summary>
-    /// Whether the body is currently overlapping an <see cref="Body2D.IsClimbable"/> surface,
-    /// regardless of whether it is actually climbing right now. Set each frame by
+    /// Whether the body is currently overlapping an <see cref="Body2D.IsClimbable"/> surface slowly
+    /// enough to grip (see <see cref="Physics.CollisionSystem"/>'s grip-speed check), regardless of
+    /// whether it is actually climbing right now. Set each frame by
     /// <see cref="Physics.CollisionSystem"/> from the body's current overlap (the same
     /// "recomputed fresh every frame, never persisted" pattern used for
     /// <see cref="IPhysicsBody.IsGrounded"/>), and consumed by <see cref="Physics.PhysicsSystem"/>
@@ -28,9 +29,9 @@ public interface IClimberBody : IPhysicsBody
     /// <summary>
     /// Whether the body is actually climbing straight up/down right now - engaged by
     /// <see cref="Physics.PhysicsSystem"/> from an up/down key press while
-    /// <see cref="IsTouchingClimbable"/> (and not moving too fast to grab on, see
-    /// <see cref="Physics.CollisionSystem"/>'s grip-speed gate), held until the body leaves the
-    /// climbable surface or steps off sideways onto solid ground.
+    /// <see cref="IsTouchingClimbable"/> and standing upright (not crawling), held until the body
+    /// leaves the climbable surface, becomes grounded (stepping or climbing onto solid ground), or
+    /// jumps off.
     /// </summary>
     bool IsClimbing { get; set; }
 }

@@ -944,6 +944,17 @@ column (respectively height) the hazard was placed at, returning to it after a
 bump - which only works if the cap allows force there, so a flier keeps
 gravity on and sets `PatrolMaxForceY`.
 
+**Turning around when blocked:** a patrolling object that runs into something
+before reaching its patrol bound keeps pushing for a while, then gives up and
+turns around. `PatrolBlockedTurnTime` (seconds, default `1`) is how long it keeps
+trying without getting anywhere. A strong object that manages to shove the
+obstacle aside keeps going, while a weaker one - or any object up against a
+wall - turns back once the time is up. A hazard walking into the player keeps
+pushing (and hurting) for that whole time first. Being slowed down by water or
+currents alone never makes it turn; only something actually in its way does.
+`0` turns around as soon as it stalls against something; `Infinity` never gives
+up. Applies to both axes, so a flier blocked by a ceiling or floor turns as well.
+
 **Patrolling a platform:** `PatrolStayOnPlatform = true` (default `false`) makes
 the horizontal range follow the static or kinematic solid the body is standing
 on, so it patrols that platform edge to edge - and keeps doing so while the
@@ -1183,13 +1194,12 @@ The `Player` section may additionally override its own "muscle power" and
 target speeds, the same "force gain converging toward a target speed" concept
 that `DynamicHazard`'s `PatrolForceMultiplierX`/`PatrolCruiseSpeedX` expose
 for a patrolling hazard:
-`WalkForceMultiplier` (a number, default from
-`GameDefaults.WalkForceMultiplier`) scales how strongly the player
-accelerates toward its target speed; `WalkSpeed`/`CrawlSpeed` (cells/second,
-defaulting from `GameDefaults.WalkSpeed`/`CrawlSpeed`) are the
+`MotorForceMultiplier` (a number, default `22`) scales how strongly the
+player speeds up toward (and slows down to) its target speed in any movement -
+walking, crawling, climbing, hanging and swimming; `WalkSpeed`/`CrawlSpeed`
+(cells/second, default `12`/`6`) are the
 target ground speeds while standing/walking vs. crouched/crawling,
-respectively. One force multiplier covers all of the player's ground
-locomotion (Walk and Crawl). All three keys are optional
+respectively. All three keys are optional
 and independent of one another:
 
 ```ini
@@ -1197,9 +1207,30 @@ and independent of one another:
 Asset = Player
 Clip = walk_idle
 Kind = Player
-WalkForceMultiplier = 30
-WalkSpeed = 16 ; Default = GameDefaults.WalkSpeed (12)
-CrawlSpeed = 8 ; Default = GameDefaults.CrawlSpeed (6)
+MotorForceMultiplier = 30
+WalkSpeed = 16
+CrawlSpeed = 8
+```
+
+**Fall damage.** Landing too hard on anything that is not a hazard hurts the
+player a little. `FallDamage` (0 to 1 of the health bar, default `0.2`) is how
+much a hard landing costs, and `FallDamageImpactSpeed` (cells/second, default
+about `28.3`, the speed of a 10-cell drop at normal gravity) is the landing
+speed from which it hurts. Because it is a landing speed rather than a height,
+the player can drop further safely in lower gravity, and water slowing a fall
+makes it safer too. An ordinary jump never lands hard enough. Landing on a hazard
+never counts as a fall: that is a squash or a hazard hit instead. This also
+applies right after the level starts or after losing a life, so place the
+player (and checkpoints) on or just above the floor.
+`FallDamage = 0` or `FallDamageImpactSpeed = Infinity` turns fall damage off:
+
+```ini
+[Player]
+Asset = Player
+Clip = walk_idle
+Kind = Player
+FallDamage = 0.25
+FallDamageImpactSpeed = 30
 ```
 
 The `Player` section may also name effect clips (on the player's own sprite
@@ -1567,7 +1598,8 @@ means on a hazard versus a collectable), and a sprite's
 played on each animation frame step of a moving clip. The pose is the one
 currently displayed (`Walk`, `Crawl`, `Climb`, `Hang`, `Clamber`, `Swim`). Two
 extra keys, `JumpStart` and `Land`, play once when the player leaves the
-ground upward and when it lands.
+ground upward and when it lands. `HardLanding` plays when a landing is hard
+enough to cause fall damage (on top of `Land`).
 
 `Global/Settings.ini`'s `[Sound]` section has `Enabled` (true/false) and
 `MasterVolume` (0-1); either key may be omitted (defaults: on, full volume).

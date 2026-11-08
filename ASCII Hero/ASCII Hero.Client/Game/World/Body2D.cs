@@ -748,6 +748,9 @@ public abstract class Body2D
     /// <summary>
     /// Takes back the distance travelled with velocity that friction just removed
     /// (<paramref name="velocityChangeX"/>), limited to what was actually travelled this step.
+    /// The taken-back distance also comes off <see cref="LastStepDisplacementX"/>, so a driven
+    /// body held in place by friction (e.g. a stalled patroller) does not report movement it
+    /// never kept to the bodies riding on it.
     /// </summary>
     public void UndoFrictionDisplacement(double velocityChangeX)
     {
@@ -760,6 +763,7 @@ public abstract class Body2D
         correction = Math.Sign(correction) * Math.Min(Math.Abs(correction), Math.Abs(FrictionUndoBudgetX));
         Position = new Vector2D(Position.X + correction, Position.Y);
         FrictionUndoBudgetX += correction;
+        LastStepDisplacementX += correction;
     }
 
     /// <summary>How far this body moved horizontally under its own motion over the last physics step, excluding collision position corrections.</summary>

@@ -183,9 +183,9 @@ The live game state and the entity types that make it up.
 	(`IClimberBody`) and hanging (`IHangerBody`) capabilities (see Physics
 	below), plus `IPosedBody` (its `UpdatePose()` resolves stance+facing from
 	its own state, called explicitly by `PhysicsSystem.Step` rather than
-	through the generic per-frame dispatch below) and `IWalkForceBody` (its
-	horizontal "motor" force, computed each frame by `PhysicsSystem.
-	UpdateWalkForce` - see Physics below). Nothing here is player-specific -
+	through the generic per-frame dispatch below) and `IMotorBody` (its
+	locomotion "motor" force, computed each frame by `PhysicsSystem.
+	UpdateMotorForce` - see Physics below). Nothing here is player-specific -
 	all of these are ordinary capability interfaces any future body (e.g. a
 	climbing/hanging hazard) could implement the same way.
   - `StaticObject2D` - solid, static terrain (platforms, walls, decoration).
@@ -260,12 +260,16 @@ The live game state and the entity types that make it up.
   - `IPatrolBody` - patrols back and forth independently on the X and/or Y
 	axis between `PatrolMinX`/`PatrolMaxX` and/or `PatrolMinY`/`PatrolMaxY`
 	under its own mass-scaled force, recomputed each frame via
-	`UpdatePatrolDirection(gravity)` and summed into `PhysicsSystem`'s force
+	`UpdatePatrolDirection(gravity, deltaSeconds)` and summed into `PhysicsSystem`'s force
 	accumulator alongside gravity (see `DynamicHazard2D`'s `Patrol` placement key,
 	docs/AssetFormat.md §3.4). A body configured with both axes patrols
 	diagonally - each axis bounces between its own bounds on its own schedule.
 	Patrol turns around once a bound is reached or passed, so a bumped body
-	heads back. Vertical patrol has no gravity special case: gravity is an
+	heads back. It also turns early when blocked: a per-axis timer runs while
+	its speed toward its heading stays below `PatrolBlockedSpeedFraction` of
+	the cruise speed (reset by progress), and once it reaches
+	`PatrolBlockedTurnTime` while a contact sits on the heading side, the
+	heading flips. Vertical patrol has no gravity special case: gravity is an
 	ordinary force in the net sum, and `PatrolMaxForceX` (default unlimited) /
 	`PatrolMaxForceY` (default 0; the "wing power")
 	(in multiples of g) cap the patrol force per axis -
@@ -282,12 +286,12 @@ The live game state and the entity types that make it up.
 	at the right moment). `Body2D.ResolveHorizontalFacing(velocityX)` is the
 	one shared rule every horizontally-facing implementer (`Player2D`,
 	`DynamicHazard2D`) derives `Facing.Left`/`Right`/`Idle` from.
-  - `IHazardBody` - damages a body on contact (marker only; the actual damage
-	is applied by `InteractionHandler.OnHazardHit`, which
-	deducts the hazard's `Body2D.Damage` (default 1 = a full bar) from
+  - `IHazardBody` - damages the player on contact by its `Damage` (default
+	1 = a full bar); the actual damage is applied by
+	`InteractionHandler.OnHazardHit`, which deducts it from
 	`Player2D.Health` on the first frame of a fresh, non-fatal
 	contact - clamped at 0; when the bar empties it removes one `Player2D.Lives`
-	and sets `World2D.PendingTransition` to `Death`).
+	and sets `World2D.PendingTransition` to `Death`.
   - `ICollectableBody` - removed from the world on contact with a collector
 	(marker only); see `Collectable2D`'s own entry above for how its
 	`EffectPersists` can leave its pickup effect behind as a permanent marker
@@ -337,12 +341,12 @@ The live game state and the entity types that make it up.
 
 - **`PhysicsSystem`** - resolves player jump/stance/pose input, applies
   gravity to any `IGravityAffected` body, computes the player's own
-  horizontal walk/crawl "motor" force (`UpdateWalkForce`, via
-  `IWalkForceBody`), and integrates position from velocity for every
+  locomotion "motor" force for walking, crawling, climbing, hanging and
+  swimming (`UpdateMotorForce`, via `IMotorBody`), and integrates position from velocity for every
   `IPhysicsBody` each frame, all via one shared per-frame mass-scaled force
   accumulator (`StepMovingBodyWithForces` - gravity as
   `mass * world.Gravity`, plus, for any `IPatrolBody`, its own patrol force,
-  and for any `IWalkForceBody`, its own walk force, converted to acceleration
+  and for any `IMotorBody`, its own motor force, converted to acceleration
   via `a = F / mass`, then integrated into velocity), which is numerically
   identical to a direct gravity-velocity add for a gravity-only body but is
   the extension point for any further force source. Each frame it also
@@ -363,14 +367,18 @@ The live game state and the entity types that make it up.
   (including its vertical motion), and hanging/shimmying from a hangable
   (including holding position against gravity, which stays on - the grip
   carries the weight) - is one such force
-  source, all driven the same way: `Player2D` implements `IWalkForceBody`,
-  and each frame `PhysicsSystem.UpdateWalkForce` recomputes its `WalkForce`
+  source, all driven the same way: `Player2D` implements `IMotorBody`,
+  and each frame `PhysicsSystem.UpdateMotorForce` recomputes its `MotorForce`
   as a proportional "motor" force (both axes) converging `Velocity` toward
-  whichever walk/crawl/climb/hang target velocity the current pose/input
+  whichever walk/crawl/climb/hang/swim target velocity the current pose/input
   calls for - mirroring `IPatrolBody.PatrolForce`'s role for a patrolling
   hazard, just proportional to the remaining speed gap rather than a fixed
   direction, so the player still reaches (and then holds) the target speed
-  promptly without overshooting or oscillating. Neither `WalkForce` nor
+  promptly without overshooting or oscillating. On the ground the horizontal
+  motor force is capped by the real grip (combined friction x weight - no extra
+  calibration factor), so the player's own friction sets how quickly they speed
+  up, stop and turn, and the equal and opposite force pushes a finite-mass
+  support the other way. Neither `MotorForce` nor
   `PatrolForce` is scaled by the current medium; a viscous medium (e.g.
   `Water`) resists them only through the passive buoyancy/drag terms above.
   Jump-off
@@ -379,7 +387,7 @@ The live game state and the entity types that make it up.
   deliberately so: each is a genuine instantaneous velocity kick applied
   once on the frame it triggers, not a sustained, ongoing motion to converge
   toward, so they remain direct velocity assignments on purpose - discrete
-  state-machine transitions, not the continuous locomotion `WalkForce`
+  state-machine transitions, not the continuous locomotion `MotorForce`
   drives. Also resolves
   the player's stance - the stored, deliberately chosen upright/stretched
   (`Walk`) vs. compact (`Crawl`, shown as `Clamber` while hanging) choice,
@@ -446,7 +454,11 @@ The live game state and the entity types that make it up.
   body's bottom contact with the hazard reaching its `KillImpactSpeed`,
   impact speeds being stored per contact side so a side hit never reads as
   a landing; detection
-  history only; what each interaction does - kills, damage, lives, score,
+  history only; fall damage = the player's highest non-hazard bottom-contact
+  impact speed this step reaching `Player2D.FallDamageImpactSpeed`, checked by
+  `ResolveFallDamage` right after hazards/collectables;
+  what each interaction does - kills, damage (including fall damage via
+  `InteractionHandler.OnHardLanding`), lives, score,
   rings, keys, checkpoints, level-end/death transitions, their sounds and
   effects - is applied by **`InteractionHandler`**), and any `IClimberBody`/`IHangerBody`'s
   `IsTouchingClimbable`/`IsTouchingHangable` overlap against
@@ -474,7 +486,7 @@ The live game state and the entity types that make it up.
   continuous force). Combined with `PhysicsSystem` integrating that velocity
   into `Position` before `Resolve` runs each frame, this carries a resting
   body - the player included, since its own horizontal velocity is
-  force/mass-driven (see `IWalkForceBody` above) rather than overwritten
+  force/mass-driven (see `IMotorBody` above) rather than overwritten
   from input every frame - along a moving platform on both axes with no
   special-casing: the platform-carry gap (a platform
   displacing farther in one frame than a body's own velocity-matched motion
@@ -515,6 +527,7 @@ The live game state and the entity types that make it up.
   bodies keep theirs), and
   records each body's horizontal displacement since the end of the previous
   collision pass (`Body2D.MarkResolvedPosition`), excluding collision pushes
+  and distance friction takes back
   (`Body2D.LastStepDisplacementX`/`ReferenceVelocityX`) - the real speed of a
   finite-mass support, which riders (`GetSurfaceVelocityX`) and
   `ResolveContact`'s friction are judged against (static supports use their
@@ -838,7 +851,7 @@ large jumps after e.g. a tab switch):
    cannot tunnel through thin walls.
    Each step runs `PhysicsSystem.Step` (resolves player jump/stance/pose
    input, feeding the player's own force-based ground/climb/hang locomotion,
-   see `IWalkForceBody` above; applies gravity to affected bodies; and
+   see `IMotorBody` above; applies gravity to affected bodies; and
    integrates every moving body's position from its accumulated forces) and
    then `CollisionSystem.Resolve` (resolves overlaps: moving bodies against
    solid terrain and world bounds, moving bodies against each other,

@@ -32,7 +32,7 @@ public interface ISwimmerBody : IPhysicsBody
     /// gripping a solid surface, so gravity is offset by the existing ambient
     /// buoyancy force (<see cref="IMediumAffected"/>, always-on, independent of this flag) the
     /// same way it would for any other body immersed in a medium. This flag only adds the
-    /// player-directed swim motor force (see <see cref="World.IWalkForceBody"/>) on top of that,
+    /// player-directed swim motor force (see <see cref="World.IMotorBody"/>) on top of that,
     /// the same way walking adds motor force on top of gravity for an ordinary grounded body.
     /// </summary>
     bool IsSwimming { get; set; }

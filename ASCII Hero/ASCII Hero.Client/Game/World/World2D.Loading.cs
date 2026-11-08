@@ -536,9 +536,11 @@ public partial class World2D
         player.Lives = world.StartingLives;
         player.Health = GameDefaults.PlayerFullHealth;
         ApplyMaterial(world, player, section);
-        player.WalkForceMultiplier = section.Number("WalkForceMultiplier") ?? player.WalkForceMultiplier;
+        player.MotorForceMultiplier = section.Number("MotorForceMultiplier") ?? player.MotorForceMultiplier;
         player.WalkSpeed = section.Number("WalkSpeed") ?? player.WalkSpeed;
         player.CrawlSpeed = section.Number("CrawlSpeed") ?? player.CrawlSpeed;
+        player.FallDamage = section.FiniteNonNegativeNumber("FallDamage") ?? GameDefaults.DefaultFallDamage;
+        player.FallDamageImpactSpeed = section.NonNegativeNumber("FallDamageImpactSpeed") ?? GameDefaults.DefaultFallDamageImpactSpeed;
 
         if (section.Flag("CameraTarget"))
         {
@@ -623,7 +625,8 @@ public partial class World2D
             initialDirectionDown: route.TowardMaxY,
             maxForceX: section.NonNegativeNumber("PatrolMaxForceX") ?? GameDefaults.DefaultPatrolMaxForceX,
             maxForceY: section.NonNegativeNumber("PatrolMaxForceY") ?? GameDefaults.DefaultPatrolMaxForceY,
-            stayOnPlatform: section.Flag("PatrolStayOnPlatform"));
+            stayOnPlatform: section.Flag("PatrolStayOnPlatform"),
+            blockedTurnTime: section.NonNegativeNumber("PatrolBlockedTurnTime") ?? GameDefaults.DefaultPatrolBlockedTurnTime);
     }
 
     /// <summary>Configures a kinematic body's patrol from its placement, if it patrols (see <see cref="ReadPatrolRoute"/>).</summary>

@@ -13,6 +13,9 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// </summary>
 public static class InteractionHandler
 {
+    /// <summary>The player sprite's [Sounds] key played on a hard landing (see <see cref="OnHardLanding"/>).</summary>
+    public const string HardLandingSoundKey = "HardLanding";
+
     /// <summary>
     /// A killer body landed on a killable hazard: the hazard is queued for removal and its own
     /// effect (if configured) persists as a permanent husk when EffectPersists is set.
@@ -47,17 +50,58 @@ public static class InteractionHandler
             SpawnEffectIfConfigured(body, world);
         }
 
-        if (body is Player2D player && player.Health > 0)
+        if (body is Player2D player)
         {
-            player.Health = Math.Max(0, player.Health - ((IHazardBody)hazard).Damage);
-            if (player.Health <= 0)
+            DamagePlayer(world, player, ((IHazardBody)hazard).Damage);
+        }
+    }
+
+    /// <summary>
+    /// The player landed hard (see <see cref="Player2D.FallDamageImpactSpeed"/>): it plays the
+    /// player sprite's "HardLanding" sound and hit effect and loses <see cref="Player2D.FallDamage"/>,
+    /// which can cost a life just like a hazard hit. Unlike a hazard hit there is no other body to
+    /// supply the sound, so it comes from the player's own [Sounds] section.
+    /// </summary>
+    public static void OnHardLanding(World2D world, Player2D player)
+    {
+        if (player.Health <= 0)
+        {
+            return;
+        }
+
+        if (player.Sprite.PoseSounds.TryGetValue(HardLandingSoundKey, out var hardLandingSound))
+        {
+            world.PlaySound(hardLandingSound);
+        }
+
+        if (player.HazardHitEffectClipName is { } hitClipName)
+        {
+            SpawnEffect(player, hitClipName, world);
+        }
+
+        DamagePlayer(world, player, player.FallDamage);
+    }
+
+    /// <summary>
+    /// Deducts <paramref name="damage"/> from a living player's health (clamped at 0). If that is
+    /// what empties the bar (a fresh death, not an already-dead player), a Death transition starts:
+    /// it costs a life, and GameLoop respawns (or ends the game) once the death effect has played.
+    /// </summary>
+    private static void DamagePlayer(World2D world, Player2D player, double damage)
+    {
+        if (player.Health <= 0)
+        {
+            return;
+        }
+
+        player.Health = Math.Max(0, player.Health - damage);
+        if (player.Health <= 0)
+        {
+            player.Lives = Math.Max(0, player.Lives - 1);
+            world.PendingTransition = PendingTransition.Death;
+            if (player.DiedEffectClipName is { } diedEffectClipName)
             {
-                player.Lives = Math.Max(0, player.Lives - 1);
-                world.PendingTransition = PendingTransition.Death;
-                if (player.DiedEffectClipName is { } diedEffectClipName)
-                {
-                    SpawnEffect(player, diedEffectClipName, world);
-                }
+                SpawnEffect(player, diedEffectClipName, world);
             }
         }
     }

@@ -186,6 +186,7 @@ public class CollisionSystem
         _sleep.Update(_movingBodies, stepSeconds);
 
         ResolveHazardsAndCollectables(world);
+        ResolveFallDamage(world);
 
         foreach (var body in world.Objects)
         {
@@ -467,6 +468,32 @@ public class CollisionSystem
         }
 
         _activeHazardContacts = currentHazardContacts;
+    }
+
+    /// <summary>
+    /// Hurts the player on a hard landing: a bottom contact resolved this step whose impact speed
+    /// (the closing speed with the surface landed on, so a moving platform or a falling crate counts
+    /// relative to its own motion) reaches <see cref="Player2D.FallDamageImpactSpeed"/>. Impact speed
+    /// is only nonzero on the step the landing happens, so one landing hurts once. Landing on a
+    /// hazard never counts - that is a stomp or a hazard hit, handled by
+    /// <see cref="ResolveHazardsAndCollectables"/>.
+    /// </summary>
+    private static void ResolveFallDamage(World2D world)
+    {
+        var player = world.Player;
+        var impactSpeed = 0.0;
+        foreach (var surface in player.GetContactingBodies(ContactType.SurfaceBottom))
+        {
+            if (surface is not IHazardBody)
+            {
+                impactSpeed = Math.Max(impactSpeed, player.GetContactImpactSpeed(ContactType.SurfaceBottom, surface));
+            }
+        }
+
+        if (impactSpeed > 0 && impactSpeed >= player.FallDamageImpactSpeed)
+        {
+            InteractionHandler.OnHardLanding(world, player);
+        }
     }
 
     /// <summary>
@@ -893,8 +920,8 @@ public class CollisionSystem
             }
         }
 
-        // A walking/crawling player's foot friction is already the traction-limited walk force
-        // (see PhysicsSystem.UpdateWalkForce, including its reaction on the support); applying
+        // A walking/crawling player's foot friction is already the grip-limited motor force
+        // (see PhysicsSystem.UpdateMotorForce, including its reaction on the support); applying
         // contact friction to that ground contact as well would count the same friction twice.
         var playerWalksOnContact =
             (contact.Normal.Y < 0 && IsFootLocomotingPlayer(body)) ||

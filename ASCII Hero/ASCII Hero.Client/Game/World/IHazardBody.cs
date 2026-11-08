@@ -1,10 +1,11 @@
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>
-/// Marker for a body that damages the player (or any moving body) on contact, e.g. a static
-/// spike trap or a moving/patrolling hazard. Detection is generic (any <see cref="IPhysicsBody"/>
-/// touching any <see cref="IHazardBody"/>) in <see cref="Physics.CollisionSystem"/>; the damage
-/// itself is applied by <see cref="Physics.InteractionHandler"/>, using the hazard's <see cref="Damage"/>.
+/// A body that damages the player on contact, e.g. a static spike trap or a moving/patrolling
+/// hazard. Detection is generic (any <see cref="IPhysicsBody"/> touching any
+/// <see cref="IHazardBody"/>) in <see cref="Physics.CollisionSystem"/>, so any moving body can
+/// trigger its own contact effect; the damage itself is applied only to the player, by
+/// <see cref="Physics.InteractionHandler"/>, using the hazard's <see cref="Damage"/>.
 /// </summary>
 public interface IHazardBody
 {

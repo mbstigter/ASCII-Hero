@@ -20,7 +20,7 @@ changes gravity or the player's walk speed changes these numbers too.
 | Height difference, landing higher | **5 rows** | 6 rows (needs a perfect jump) |
 | Horizontal gap, same height | **12 cells** | 13 cells |
 | Horizontal gap while also climbing 5 rows | **9 cells** | 9 cells |
-| Landing lower | Anything; falling does not hurt | - |
+| Landing lower | **Up to 10 rows** when walking off | Higher drops hurt a little (see below) |
 
 - Measure a horizontal gap from the right edge of one platform to the left edge of the next (the
   empty cells in between).
@@ -28,6 +28,18 @@ changes gravity or the player's walk speed changes these numbers too.
   must be. Do not combine a 12-cell gap with a 5-row climb.
 - There is no grace time for jumping just after running off a ledge, so jumps right at the edge
   of a platform need a precise press.
+
+## Falling
+
+- Dropping **more than 10 rows** costs the player a bit of health (a fifth of the bar by default).
+  Landing in water first, or on a hazard, does not count as a hard landing. The drop is counted
+  from the highest point of the fall: a jump already rises about 6 rows, so jumping down onto a
+  platform more than about 4 rows lower than the take-off also hurts.
+- Do not make the player fall far as part of the normal route. Use steps, ladders or ropes for
+  bigger height differences, or make the long drop a deliberate risk.
+- **Place the player's start and every checkpoint on or just above the floor.** The player also
+  falls from there right after the level starts and after losing a life, and a long drop there
+  would hurt every time.
 
 ## Climbing and hanging
 

@@ -14,8 +14,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
 
 - **Every moving body, including the player, moves via a mass-scaled force
   accumulator** (`PhysicsSystem.StepMovingBodyWithForces`), not per-body-type
-  direct velocity assignment. The player's horizontal "motor" force
-  (`IWalkForceBody`/`UpdateWalkForce`) and a hazard's patrol force
+  direct velocity assignment. The player's locomotion "motor" force
+  (`IMotorBody`/`UpdateMotorForce`) and a hazard's patrol force
   (`IPatrolBody`) both plug into the same accumulator as gravity. Climbing/
   hanging are likewise continuous convergence forces; only jump-off (stand,
   climb, hang-swing) remains a true one-time impulse (instantaneous
@@ -121,13 +121,16 @@ capture the "why" behind a decision without needing a lengthy narrative.
   per level), so riders experience a finite acceleration held by ordinary
   friction instead of an instant velocity reversal.
 - **Locomotion is traction-limited and has a reaction.** The grounded
-  walk/crawl motor force is clamped to combined friction times the body's
-  weight times `PhysicsConstants.GroundTractionMultiplier` (10, a calibration for the
-  stylised gravity/proportions so ordinary floors keep the snappy feel; only
-  slippery pairings bind), and the equal and opposite force is applied to a finite-mass
-  support. A ground jump is relative to the support's vertical velocity and
-  pushes a finite-mass support down with equal and opposite momentum. The
-  walk force *is* the foot friction, so contact friction is not applied again
+  walk/crawl motor force is clamped to the real grip - combined friction times
+  the body's weight, with no extra calibration factor - so grip is what limits
+  how quickly the player speeds up, stops and turns. The player's own grip
+  (the `Human` material's friction) is the lever for that feel, not a hidden
+  multiplier. The equal and opposite force is applied to a finite-mass
+  support, so a crate is only shoved backward if its own grip on whatever it
+  rests on is weaker. A ground jump is relative to the support's vertical velocity and
+  pushes a finite-mass support down with equal and opposite momentum (no sideways
+  kick: a jump doesn't change the player's horizontal speed). The
+  motor force *is* the foot friction, so contact friction is not applied again
   to a walking player's ground contact (climbing/hanging/swimming excluded).
 - **Friction takes back the distance it cancels (static friction).** Bodies move
   before collision runs, so friction alone would remove velocity but leave that
@@ -147,7 +150,9 @@ capture the "why" behind a decision without needing a lengthy narrative.
   riders target ~0 and slip off. `Body2D` records its horizontal displacement
   over the last physics step, measured from its position at the end of the
   previous collision pass so collision pushes are not mistaken for motion
-  (`LastStepDisplacementX`, `ReferenceVelocityX`),
+  (`LastStepDisplacementX`, `ReferenceVelocityX`); distance that friction takes
+  back (`UndoFrictionDisplacement`) comes off it too, so a stalled driven body
+  (e.g. an overloaded patroller) reports no phantom speed to its riders,
   and both `GetSurfaceVelocityX` (the rider's motor/patrol reference) and
   `CollisionSystem.ResolveContact`'s tangential friction use it for the
   supporting body (identified by the contact normal, so pair resolution order
@@ -229,7 +234,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   collision response, not a prescribed speed, decides.
 - **Climbing/hanging are grip-based**: holding a climbable/hangable records a grip
   contact (`ContactType.Climbable`/`Hangable`); gravity stays on and the grip motor
-  (`UpdateWalkForce`) carries the weight. Climb/hang targets, grip-speed checks,
+  (`UpdateMotorForce`) carries the weight. Climb/hang targets, grip-speed checks,
   the hang snap's vertical velocity and jump-offs are all relative to the gripped
   body's `GetCarryVelocity()`. The whole grip force is limited by combined friction x
   weight x `GripTractionMultiplier`; beyond that the body slides along the surface
@@ -253,7 +258,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **A body's own force/impulse (motor force, jump-off) is never scaled by the ambient
   medium.** A medium resists self-propelled motion only through its passive buoyancy and
   quadratic drag above, which already grow with speed and frontal area. Force gains
-  (`WalkForceMultiplier`, `PatrolForceMultiplier`) and jump-off speeds are calibrated
+  (`MotorForceMultiplier`, `PatrolForceMultiplier`) and jump-off speeds are calibrated
   for that model directly.
 - **World edges are a symmetric, contact-free safety net, not level geometry.** All four
   edges clamp a body back inside and reflect only the velocity heading into the edge, using
@@ -303,8 +308,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **A moving (non-idle) clip's `FrameDurationSeconds` is deliberately
   correlated with that pose's own move speed**, not a single fixed value
   shared by every pose: `FrameDurationSeconds = 2.4 / speed`, anchored on
-  `walk_left`/`walk_right` (`WalkSpeed` = 12, `FrameDurationSeconds` = 0.2,
-  so 12 * 0.2 = 2.4). See the player sprite's settings.ini `[Animation]` section
+  the walk's stride: the player travels 2.4 cells per animation frame step
+  (`walk_left`/`walk_right`: `WalkSpeed` = 12, `FrameDurationSeconds` = 0.2). See the player sprite's settings.ini `[Animation]` section
   comment for the full worked table, and each `GameDefaults` speed
   constant's own doc comment for the reminder to recompute its paired
   clip(s) if that speed is tweaked. Swimming is the deliberate exception: a
@@ -357,7 +362,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   all iterate it once and filter by capability interface
   (`IPhysicsBody`, `IGravityAffected`, `IHazardBody`, `ICollectableBody`,
   `ICollectorBody`, `IKillerBody`, `IKillableBody`, `IPosedBody`,
-  `IPatrolBody`, `IWalkForceBody`, `IClimberBody`, `IHangerBody`,
+  `IPatrolBody`, `IMotorBody`, `IClimberBody`, `IHangerBody`,
   `ISwimmerBody`) rather than
   concrete type or maintaining separate lists - adding a new object category
   never requires touching every system's iteration logic.
@@ -378,6 +383,12 @@ capture the "why" behind a decision without needing a lengthy narrative.
   position via a spring target speed; fliers stay gravity-affected and get
   lift from `PatrolMaxForceY`. Facing intent is the sign of the X target velocity
   (dead-zoned), so a body settled on its hold position shows its idle pose.
+  A blocked patroller turns early by a per-axis timer rather than on first
+  contact: it runs while speed toward the heading is below a fraction of cruise
+  speed (reset by progress, not by losing contact, so bouncing off still counts)
+  and flips the heading after `PatrolBlockedTurnTime` (default 1 s) if a contact
+  sits on the heading side. So hazards still push into the player, strong bodies
+  shove light obstacles aside, and walls or heavy obstacles turn it back.
   `KinematicObject2D` patrols differently: acceleration-limited prescribed
   velocity, no forces.
 - **Player state is four counters: Lives, Health, Rings and Score.** Health is a
@@ -390,6 +401,15 @@ capture the "why" behind a decision without needing a lengthy narrative.
   (see the pending-transition bullet below)
   respawn that follows. At 0 lives the death leads to a "Game Over!" screen
   instead of a respawn.
+- **Fall damage is a landing speed, not a height.** A step's highest impact
+  speed on the player's bottom contacts with non-hazards (relative closing speed,
+  so moving platforms and water drag are accounted for naturally) reaching
+  `FallDamageImpactSpeed` (default: a 10-cell drop at default gravity) removes
+  `FallDamage` (default 0.2) through the same health/death path as a hazard hit.
+  Landing on a hazard is a squash or hazard hit, never fall damage. There is
+  no grace period after a spawn or respawn: levels place the player and
+  checkpoints near the floor instead. World edges record no
+  contacts and so never cause fall damage.
 - **How a hazard is touched follows how the solver treats it.** A solid hazard
   (any moving hazard, or a static one that is not passable) is pushed apart,
   never left overlapping, so it is touched only through a surface contact
@@ -478,9 +498,9 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **Ground and hang each have their own structured "stance sequence"**
   (Crawl<->Walk on the ground; Clamber<->Hang while hanging, inverted to
   match arm position rather than screen direction), and each locomotion mode
-  has its own jump-off speed (`WalkJumpSpeed`/`ClimbJumpSpeed`/`HangJumpSpeed`),
+  has its own jump-off speed (`GroundJumpSpeed`/`ClimbJumpSpeed`/`HangJumpSpeed`),
   graded by how much of the body's own leverage backs the push-off:
-  `WalkJumpSpeed` (both feet on solid ground) > `ClimbJumpSpeed` (legs pushing off
+  `GroundJumpSpeed` (both feet on solid ground) > `ClimbJumpSpeed` (legs pushing off
   a climbable) > `HangJumpSpeed` (arms only).
 - **Grabbing a climbable or hangable is always deliberate**, never automatic on touch,
   so the player can jump or fall past either. A climbable needs Up or Down held

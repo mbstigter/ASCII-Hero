@@ -9,5 +9,6 @@ namespace ASCII_Hero.Client.Game.World;
 /// </summary>
 public interface IGravityAffected : IPhysicsBody
 {
+    /// <summary>Whether the world's gravity acts on this body.</summary>
     bool GravityAffected { get; }
 }

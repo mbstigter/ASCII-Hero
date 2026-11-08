@@ -6,9 +6,8 @@ namespace ASCII_Hero.Client.Game.World;
 /// than that decision being made externally - mirrors how <see cref="IPatrolBody"/> lets a body
 /// own its own patrol-direction decision while <see cref="Physics.PhysicsSystem"/> merely calls it
 /// at the right moment. <see cref="UpdatePose"/> is called by
-/// <see cref="Physics.PhysicsSystem.StepMovingBodyWithForces"/> (and, once the player is converted
-/// to force-based movement, its player-specific counterpart) after velocity has been integrated
-/// for the frame, so a pose based on velocity/direction reflects this frame's actual resolved
+/// <see cref="Physics.PhysicsSystem.StepMovingBodyWithForces"/> (for the player as well as other
+/// bodies) after velocity has been integrated for the frame, so a pose based on velocity/direction reflects this frame's actual resolved
 /// motion rather than a pre-integration force-direction estimate that force-based acceleration/
 /// deceleration could still momentarily disagree with.
 /// </summary>

@@ -44,6 +44,21 @@ public sealed class HazardInteractionTests
     }
 
     [TestMethod]
+    public async Task FallDamageSpeedLandingOnSolidHazard_KillsWithoutFallDamage()
+    {
+        var (world, snake) = await LoadSnakeAsync();
+        var player = world.Player;
+        player.Position = new Vector2D(snake.Position.X, snake.Position.Y - player.Size.Y + Penetration);
+        player.Velocity = new Vector2D(0, player.FallDamageImpactSpeed * 1.5);
+        var health = player.Health;
+
+        Resolve(world);
+
+        Assert.DoesNotContain(snake, world.Objects);
+        Assert.AreEqual(health, player.Health);
+    }
+
+    [TestMethod]
     public async Task GentleLandingOnSolidHazard_HurtsInsteadOfKilling()
     {
         var (world, snake) = await LoadSnakeAsync();

@@ -151,7 +151,8 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
 
 ## Player abilities
 
-- Walk and crawl, with configurable `WalkSpeed`, `CrawlSpeed` and `WalkForceMultiplier`.
+- Walk and crawl, with configurable `WalkSpeed` and `CrawlSpeed`; `MotorForceMultiplier` sets how
+  quickly the player reaches its target speed in any movement.
 - Jump, with a different launch strength when jumping from the ground, a climbable or a hanging
   surface.
 - **Climb** climbable objects, from any side including mid-air, with sideways step-off.
@@ -159,6 +160,8 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
   a jump, or let go.
 - **Swim** through water and other fluids.
 - Lives, a health bar with per-hazard damage, rings, respawn and checkpoints.
+- Gentle fall damage when landing from too high (configurable `FallDamage` and
+  `FallDamageImpactSpeed`).
 
 Climbable and hangable surfaces are ordinary terrain objects marked with `Climbable = true` or
 `Hangable = true` in their `objects.ini` section. They are usually also marked
@@ -174,7 +177,7 @@ Climbable and hangable surfaces are ordinary terrain objects marked with `Climba
   the player squashes it. On a collectable, `Sound` plays when it is picked up.
 - **Per-pose footstep sounds.** `[Sounds]` maps a pose (`Walk`, `Crawl`, `Climb`, `Hang`,
   `Clamber`, `Swim`) to a sound played on each animation frame step. `JumpStart` and `Land`
-  play when the player leaves and returns to the ground.
+  play when the player leaves and returns to the ground, and `HardLanding` when a fall hurts.
 - **Built-in sounds** in the global library include `DiamondPickup`, `RingPickup`,
   `KeyPickup`, `DoorOpen`, `Checkpoint`, `LevelEnd`, `Squash`, `Jump`, `Land`, `Step`,
   `SoftStep`, `Grab`, `Splash`, `MenuMove` and `MenuSelect` (subtle sounds for moving through

@@ -14,8 +14,9 @@ public interface IPhysicsBody
     Vector2D Size { get; }
 
     /// <summary>
-    /// Whether the body currently rests on something solid, be it a platform's top surface, the
-    /// world's own floor, or the top of another moving body. Derived, not stored: simply
+    /// Whether the body currently rests on something solid, be it a platform's top surface or the
+    /// top of another moving body. The world's own edges record no contacts, so resting on the
+    /// bottom edge of the world does not count. Derived, not stored: simply
     /// <c>HasContact(ContactType.SurfaceBottom)</c> for this frame, evaluated fresh every time
     /// it's read rather than a flag some earlier code set/reset - see docs/Decisions.md for why
     /// a mutable flag was replaced with a live query.
@@ -40,7 +41,7 @@ public interface IPhysicsBody
     /// <summary>See <see cref="Body2D.RemoveContact"/>.</summary>
     void RemoveContact(Physics.ContactType type, Body2D? other = null);
 
-    /// <summary>See <see cref="World.Body2D.ClearContactsForNewStep"/>.</summary>
+    /// <summary>See <see cref="Body2D.ClearContactsForNewStep"/>.</summary>
     void ClearContactsForNewStep(double stepSeconds);
 
     /// <summary>The body's collision shape, as one or more rectangles in world space.</summary>

@@ -14,11 +14,10 @@ public static class GameDefaults
     /// <summary>
     /// Default target ground speed while standing/walking - see <see cref="World.Player2D.WalkSpeed"/>.
     /// Overridable per-placement via the <c>WalkSpeed</c> ini key in a world's <c>objects.ini</c>.
-    /// This is the anchor speed for every pose's walk_left/walk_right (and crawl/climb/hang/clamber)
-    /// animation rate - see the <c>FrameDurationSeconds = 2.4 / speed</c> formula noted at the top
-    /// of the <c>[Animation]</c> section in <c>Player_settings.ini</c>. Changing this value shifts
-    /// that 2.4 anchor constant (WalkSpeed * walk_left/right's own FrameDurationSeconds), so every
-    /// other pose's moving-clip FrameDurationSeconds should be recomputed from the formula too.
+    /// The walk_left/walk_right animation rate follows it via <c>2.4 / WalkSpeed</c> - see the
+    /// <c>FrameDurationSeconds = 2.4 / speed</c> formula (2.4 cells per frame step, the stride every
+    /// moving pose shares) noted at the top of the <c>[Animation]</c> section in
+    /// <c>Player_settings.ini</c>. Changing this value means recomputing those two clips only.
     /// </summary>
     public const double WalkSpeed = 12.0;
 
@@ -118,7 +117,7 @@ public static class GameDefaults
     // hangable with the arms alone is weakest.
 
     /// <summary>Instantaneous vertical velocity kick for jumping off solid ground. Not overridable via any ini file.</summary>
-    public const double WalkJumpSpeed = 22.0;
+    public const double GroundJumpSpeed = 22.0;
 
     /// <summary>Instantaneous vertical velocity kick for jumping off a climbable. Not overridable via any ini file.</summary>
     public const double ClimbJumpSpeed = 14.0;
@@ -129,16 +128,18 @@ public static class GameDefaults
     // --- Force multipliers ---
 
     /// <summary>
-    /// Default magnitude of the mass-scaled horizontal "motor" force applied to converge the
-    /// player's <see cref="World.Player2D.Velocity"/>.X toward the current target walk/crawl/
-    /// climb/hang speed (see <see cref="Physics.PhysicsSystem.UpdateWalkForce"/>) - same name/role
+    /// Default magnitude of the mass-scaled "motor" force applied to converge the player's
+    /// <see cref="World.Player2D.Velocity"/> toward the current target walk/crawl/climb/hang/swim
+    /// velocity (see <see cref="Physics.PhysicsSystem.UpdateMotorForce"/>) - same name/role
     /// as <see cref="PatrolForceMultiplier"/> for a patrolling hazard, proportional to the
     /// remaining speed gap so the player accelerates promptly yet still settles at exactly the
-    /// target speed rather than overshooting it every frame. Overridable per-placement via the
-    /// <c>WalkForceMultiplier</c> ini key in a world's <c>objects.ini</c> - see
-    /// <see cref="World.Player2D.WalkForceMultiplier"/>.
+    /// target speed rather than overshooting it every frame. On the ground the player's grip
+    /// (combined friction x weight) usually caps the force first, so this mostly shapes the final
+    /// approach to the target speed. Overridable per-placement via the
+    /// <c>MotorForceMultiplier</c> ini key in a world's <c>objects.ini</c> - see
+    /// <see cref="World.Player2D.MotorForceMultiplier"/>.
     /// </summary>
-    public const double WalkForceMultiplier = 22.0;
+    public const double MotorForceMultiplier = 22.0;
 
     /// <summary>
     /// Fraction of the ordinary (grounded) horizontal walk-force strength applied while airborne -
@@ -160,7 +161,7 @@ public static class GameDefaults
     /// Default "muscle power" - the mass-scaled force gain applied to converge a patrolling
     /// body's horizontal velocity toward <see cref="PatrolCruiseSpeed"/> (see
     /// <see cref="World.DynamicObject2D.UpdatePatrolDirection"/>) - same name/role as
-    /// <see cref="WalkForceMultiplier"/> for the player. Overridable per-placement via the
+    /// <see cref="MotorForceMultiplier"/> for the player. Overridable per-placement via the
     /// <c>PatrolForceMultiplierX</c>/<c>PatrolForceMultiplierY</c> ini keys in a world's
     /// <c>objects.ini</c> (see <see cref="World.DynamicObject2D.PatrolForceMultiplierX"/> and
     /// <see cref="World.DynamicObject2D.PatrolForceMultiplierY"/>).
@@ -182,6 +183,23 @@ public static class GameDefaults
     /// Not overridable via any ini file.
     /// </summary>
     public const double PatrolTurnThreshold = 0.25;
+
+    /// <summary>
+    /// Default time (in seconds) a patrolling dynamic body keeps pushing against something in its
+    /// way without making progress before it gives up and turns around early, short of its patrol
+    /// bound (see <see cref="World.DynamicObject2D.PatrolBlockedTurnTime"/>). Long enough for a hazard
+    /// to walk into the player and for a strong body to try shoving an obstacle aside first.
+    /// Overridable per-placement via the <c>PatrolBlockedTurnTime</c> ini key.
+    /// </summary>
+    public const double DefaultPatrolBlockedTurnTime = 1.0;
+
+    /// <summary>
+    /// A patrolling dynamic body counts as making progress on an axis only while its speed in its
+    /// heading direction (relative to the surface it stands on) is at least this fraction of that
+    /// axis's cruise speed; below it, the blocked-turn timer runs (see
+    /// <see cref="DefaultPatrolBlockedTurnTime"/>). Not overridable via any ini file.
+    /// </summary>
+    public const double PatrolBlockedSpeedFraction = 0.25;
 
     /// <summary>
     /// Default horizontal patrol force cap, in multiples of the body's weight: unlimited, since legs
@@ -264,4 +282,27 @@ public static class GameDefaults
     /// already reaches it, while walking or resting onto a hazard does not.
     /// </summary>
     public const double DefaultKillImpactSpeed = 5.0;
+
+    /// <summary>
+    /// Default health a hard landing removes from the player (see
+    /// <see cref="World.Player2D.FallDamage"/>). Overridable via the player's <c>FallDamage</c> ini key.
+    /// </summary>
+    public const double DefaultFallDamage = 0.2;
+
+    /// <summary>
+    /// The highest drop, in cells at <see cref="PhysicsConstants.DefaultGravity"/>, the player can
+    /// land from without being hurt; it defines <see cref="DefaultFallDamageImpactSpeed"/>.
+    /// </summary>
+    public const double SafeFallHeightCells = 10.0;
+
+    /// <summary>
+    /// Default landing speed (cells/second) from which the player takes fall damage (see
+    /// <see cref="World.Player2D.FallDamageImpactSpeed"/>): the speed reached by falling
+    /// <see cref="SafeFallHeightCells"/> at default gravity (v = sqrt(2gh), about 28.3). It is a
+    /// speed rather than a height, so in lower gravity the player can safely drop further, and
+    /// water slowing a fall makes it safer. Landing from an ordinary ground jump
+    /// (<see cref="GroundJumpSpeed"/>) stays below it. Overridable via the player's
+    /// <c>FallDamageImpactSpeed</c> ini key.
+    /// </summary>
+    public static readonly double DefaultFallDamageImpactSpeed = Math.Sqrt(2 * PhysicsConstants.DefaultGravity * SafeFallHeightCells);
 }

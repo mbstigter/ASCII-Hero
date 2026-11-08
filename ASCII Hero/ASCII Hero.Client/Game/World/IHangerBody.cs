@@ -2,10 +2,9 @@ namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>
 /// A physics body that can hang and shimmy laterally from an <see cref="Body2D.IsHangable"/>
-/// surface - held by grip (gravity stays on) while actually hanging. A small,
-/// focused capability interface (see
-/// rather than one combined interface). Only <see cref="Player2D"/> implements this today, but
-/// nothing here is player-specific.
+/// surface - held by grip (gravity stays on) while actually hanging. A small, focused capability
+/// interface (see <see cref="IClimberBody"/>) rather than one combined "mover" interface. Only
+/// <see cref="Player2D"/> implements this today, but nothing here is player-specific.
 /// </summary>
 public interface IHangerBody : IPhysicsBody
 {
@@ -21,10 +20,10 @@ public interface IHangerBody : IPhysicsBody
 
     /// <summary>
     /// Whether the body is actually hanging from a hangable right now - engaged by
-    /// <see cref="Physics.PhysicsSystem"/> when Up is held while <see cref="IsTouchingHangable"/>, held until
-    /// the body leaves the hangable surface or explicitly lets go (a second Down press from the
-    /// fully-stretched pose - see <see cref="IsClambering"/> and the hang stance sequence in
-    /// <see cref="Physics.PhysicsSystem.Step"/>).
+    /// <see cref="Physics.PhysicsSystem"/> when Up is held while <see cref="IsTouchingHangable"/> (and
+    /// not climbing), held until the body leaves the hangable surface, explicitly lets go (a second
+    /// Down press from the fully-stretched pose - see <see cref="IsClambering"/>) or jumps off (see
+    /// the hang stance sequence in <see cref="Physics.PhysicsSystem.Step"/>).
     /// </summary>
     bool IsHanging { get; set; }
 

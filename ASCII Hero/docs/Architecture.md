@@ -101,13 +101,14 @@ core's own force/collision/medium math.
 - Every moving body — the player included — integrates via a per-frame,
   mass-scaled force accumulator (`PhysicsSystem.StepMovingBodyWithForces`):
   forces (gravity as `mass * world.Gravity`, plus a body's own
-  `IPatrolBody.PatrolForce`/`IWalkForceBody.WalkForce`, e.g. the player's
-  proportional-to-speed-gap horizontal "motor" force computed by
-  `PhysicsSystem.UpdateWalkForce`) are summed into a net force, converted to
+  `IPatrolBody.PatrolForce`/`IMotorBody.MotorForce`, e.g. the player's
+  proportional-to-speed-gap locomotion "motor" force computed by
+  `PhysicsSystem.UpdateMotorForce`) are summed into a net force, converted to
   acceleration via `a = F / mass`, and integrated into velocity — for a
   gravity-only body this is numerically identical to a direct `velocity.Y +=
   gravity * dt`, but it is the extension point for any non-gravity force
-  source. Climbing/hanging use the same motor, limited by grip (combined
+  source. Walking/crawling is limited by the real grip (combined friction x
+  weight) and pushes a movable support the other way. Climbing/hanging use the same motor, limited by grip (combined
   friction x weight) and relative to the gripped climbable/hangable's carry velocity,
   with gravity still on; only jump-off impulses remain direct velocity
   assignments on purpose — a push-off happens in a single instant. There is no separate constraint-solver "normal

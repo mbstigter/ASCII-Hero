@@ -9,7 +9,7 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// Applies gravity to any <see cref="IGravityAffected"/> body, walk-force/patrol-force
 /// contributions, and integrates position from velocity for every <see cref="IPhysicsBody"/> in
 /// <see cref="World2D.Objects"/> each frame via a per-frame mass-scaled force accumulator (see
-/// <see cref="StepMovingBodyWithForces"/>) - the player included (see <see cref="World.IWalkForceBody"/>).
+/// <see cref="StepMovingBodyWithForces"/>) - the player included (see <see cref="World.IMotorBody"/>).
 /// Kinematic bodies move at a constant, predefined velocity and never receive gravity or input.
 /// </summary>
 public class PhysicsSystem
@@ -70,7 +70,7 @@ public class PhysicsSystem
         // motor's gap is measured against player.Velocity, so leaving the impulse only in the
         // local copy would make the motor apply the same velocity change a second time.
         player.Velocity = velocity;
-        UpdateWalkForce(world, player, gripped, targetVelocityX, targetVelocityY, deltaSeconds);
+        UpdateMotorForce(world, player, gripped, targetVelocityX, targetVelocityY, deltaSeconds);
 
         ApplyGroundJump(player, input, stoodUpThisFrame, ref velocity);
         player.Velocity = velocity;
@@ -161,7 +161,7 @@ public class PhysicsSystem
         // "touching" flag to consult. Note that player.CurrentMedium is only updated later in
         // this same Step (in StepMovingBodyWithForces, via the world.Objects loop at the end), so
         // everything in this player block - swim engagement here, and the medium force scaling
-        // of jumps and walk force below - sees the medium resolved during the previous step.
+        // of jumps and motor force below - sees the medium resolved during the previous step.
         // Mirrors climbing's and hanging's deliberate-press engagement: a directional key must
         // actually be held while submerged.
         // Grounded/climbing/hanging all take priority and preempt swim entirely - a solid floor
@@ -299,8 +299,8 @@ public class PhysicsSystem
         var moveSpeed = player.Stance == "Walk" ? player.WalkSpeed : player.CrawlSpeed;
 
         // Horizontal movement is driven by a mass-scaled "motor" force converging the player's
-        // velocity toward the target walk/crawl/climb/hang speed (see UpdateWalkForce and
-        // IWalkForceBody), summed into the net force alongside gravity by
+        // velocity toward the target walk/crawl/climb/hang/swim speed (see UpdateMotorForce and
+        // IMotorBody), summed into the net force alongside gravity by
         // StepMovingBodyWithForces - consistent with every other body's force-based movement
         // (see DynamicObject2D.UpdatePatrolDirection) rather than a bespoke direct velocity-assignment path.
         // While climbing, horizontal input still applies (at a slower, deliberate side
@@ -317,7 +317,7 @@ public class PhysicsSystem
         // Target velocity is expressed relative to whatever solid the player is currently
         // grounded on (see GetGroundVelocityX) rather than an absolute world-frame speed: without
         // this, standing still on a moving platform would target world-frame velocity 0, and
-        // WalkForce (scaled by WalkForceMultiplier, deliberately strong so input feels responsive)
+        // MotorForce (scaled by MotorForceMultiplier, deliberately strong so input feels responsive)
         // would then fight CollisionSystem's friction-based drag pulling the player toward the
         // platform's own velocity every single frame - the two forces fighting is what made the
         // player appear unable to ride a horizontally moving platform at all. Climbing/hanging
@@ -348,7 +348,7 @@ public class PhysicsSystem
         {
             // Airborne with no horizontal key held: target the player's own current velocity
             // rather than groundVelocityX (which is always 0 here - GetSurfaceVelocityX has
-            // nothing to report once the grounded contact is gone), so UpdateWalkForce's
+            // nothing to report once the grounded contact is gone), so UpdateMotorForce's
             // horizontal component collapses to exactly zero net force instead of still motoring
             // - at AirControlMultiplier strength - toward a standstill. Without this, releasing
             // the movement key mid-air (e.g. right after a diagonal jump's run-up) killed the
@@ -373,8 +373,8 @@ public class PhysicsSystem
         // Vertical target speed for the same mass-scaled motor force: straight up/down at a
         // fixed climb speed while IsClimbing, held at rest while IsHanging - both relative to the
         // gripped surface's carry velocity, with gravity still acting and carried by the grip
-        // (see UpdateWalkForce) - and left equal to the player's own current Velocity.Y
-        // everywhere else so the vertical component of WalkForce is simply zero and gravity/
+        // (see UpdateMotorForce) - and left equal to the player's own current Velocity.Y
+        // everywhere else so the vertical component of MotorForce is simply zero and gravity/
         // collision response (falling, landing, jump arcs) are entirely unaffected by this motor.
         // Both climbing and hanging are sustained, ongoing locomotion for as long as they're
         // engaged - exactly like walking/crawling - so they use the same continuous
@@ -432,7 +432,7 @@ public class PhysicsSystem
             // Falls through to here after a climb/hang jump-off above already applied its
             // instantaneous velocity.Y impulse this same frame (or for an ordinary airborne/
             // grounded frame with no state-machine transition at all) - targeting the velocity
-            // that already exists is how a zero vertical WalkForce contribution is expressed,
+            // that already exists is how a zero vertical MotorForce contribution is expressed,
             // leaving gravity/collision response entirely in charge of vertical motion outside
             // climbing/hanging.
             targetVelocityY = velocity.Y;
@@ -459,13 +459,13 @@ public class PhysicsSystem
             // drives a finite-mass support downward with the equal and opposite momentum.
             var support = player.GetContactingBodies(ContactType.SurfaceBottom).FirstOrDefault();
             var supportVelocityY = support?.GetCarryVelocity().Y ?? 0.0;
-            velocity.Y = supportVelocityY - GameDefaults.WalkJumpSpeed;
+            velocity.Y = supportVelocityY - GameDefaults.GroundJumpSpeed;
             if (support is { IsStatic: false } and IPhysicsBody movableSupport)
             {
                 var playerMass = player.Mass > 0 ? player.Mass : 1.0;
                 var supportMass = support.Mass > 0 ? support.Mass : 1.0;
                 var supportVelocity = movableSupport.Velocity;
-                supportVelocity.Y += GameDefaults.WalkJumpSpeed * playerMass / supportMass;
+                supportVelocity.Y += GameDefaults.GroundJumpSpeed * playerMass / supportMass;
                 support.Wake();
                 movableSupport.Velocity = supportVelocity;
             }
@@ -719,22 +719,22 @@ public class PhysicsSystem
     }
 
     /// <summary>
-    /// Recomputes <see cref="Player2D.WalkForce"/> as a proportional "motor" force converging
+    /// Recomputes <see cref="Player2D.MotorForce"/> as a proportional "motor" force converging
     /// <paramref name="player"/>'s current velocity toward (<paramref name="targetVelocityX"/>,
-    /// <paramref name="targetVelocityY"/>) - the walk/crawl/climb/hang speed the current input
+    /// <paramref name="targetVelocityY"/>) - the walk/crawl/climb/hang/swim speed the current input
     /// calls for - mirrors <see cref="DynamicObject2D.UpdatePatrolDirection"/>'s role for a
     /// patrolling hazard, but proportional to the remaining speed gap (scaled by
-    /// <see cref="Player2D.WalkForceMultiplier"/>, reduced by <see cref="GameDefaults.AirControlMultiplier"/>
+    /// <see cref="Player2D.MotorForceMultiplier"/>, reduced by <see cref="GameDefaults.AirControlMultiplier"/>
     /// while airborne) rather than a fixed-direction force, so the
     /// player still promptly reaches and then holds the target speed while grounded - the "no
     /// acceleration/friction" ground feel from the old direct-assignment model - instead of
     /// accelerating indefinitely or oscillating around it, while a jump instead carries over its
     /// launch horizontal speed and only gently steers thereafter. Applies to both axes uniformly: horizontally this
-    /// drives walking/crawling/climbing's side-step/hanging's shimmy exactly as before, and
-    /// vertically it now also drives climbing's up/down motion and holding position while
-    /// hanging - both are sustained, ongoing locomotion for as long as they're engaged, just like
-    /// walking, so they share the same continuous force model rather than a bespoke direct
-    /// velocity assignment. Outside climbing/hanging, <paramref name="targetVelocityY"/> is passed
+    /// drives walking/crawling/climbing's side-step/hanging's shimmy/swimming, and vertically it
+    /// also drives climbing's up/down motion, holding position while hanging and swimming up/down -
+    /// all sustained, ongoing locomotion for as long as they're engaged, just like walking, so
+    /// they share the same continuous force model rather than a bespoke direct velocity
+    /// assignment. Otherwise (including swimming with no Up/Down held), <paramref name="targetVelocityY"/> is passed
     /// in equal to the player's own current vertical velocity (see the call site in <see cref="Step"/>),
     /// which collapses the vertical component to exactly zero so gravity/collision response
     /// (falling, landing, jump arcs - all true impulses/forces of their own) are entirely
@@ -742,7 +742,7 @@ public class PhysicsSystem
     /// resolved material (<see cref="Body2D.Mass"/> of 0, treated as mass 1) still walks at the
     /// ordinary rate.
     /// </summary>
-    private static void UpdateWalkForce(World2D world, Player2D player, Body2D? gripped, double targetVelocityX, double targetVelocityY, double deltaSeconds)
+    private static void UpdateMotorForce(World2D world, Player2D player, Body2D? gripped, double targetVelocityX, double targetVelocityY, double deltaSeconds)
     {
         var mass = player.Mass > 0 ? player.Mass : 1.0;
 
@@ -753,8 +753,8 @@ public class PhysicsSystem
         // surface - and by Newton's third law pushes a finite-mass gripped body the other way.
         if (gripped is not null)
         {
-            var gripForceX = (targetVelocityX - player.Velocity.X) * mass * player.WalkForceMultiplier;
-            var gripForceY = (targetVelocityY - player.Velocity.Y) * mass * player.WalkForceMultiplier - mass * world.Gravity;
+            var gripForceX = (targetVelocityX - player.Velocity.X) * mass * player.MotorForceMultiplier;
+            var gripForceY = (targetVelocityY - player.Velocity.Y) * mass * player.MotorForceMultiplier - mass * world.Gravity;
             var gripFriction = CollisionSystem.CombineFriction(player.Friction, gripped.Friction);
             var maxGrip = gripFriction * mass * Math.Abs(world.Gravity) * PhysicsConstants.GripTractionMultiplier;
             var gripMagnitude = Math.Sqrt(gripForceX * gripForceX + gripForceY * gripForceY);
@@ -775,7 +775,7 @@ public class PhysicsSystem
                 grippedBody.Velocity = grippedVelocity;
             }
 
-            player.WalkForce = new Vector2D(gripForceX, gripForceY);
+            player.MotorForce = new Vector2D(gripForceX, gripForceY);
             return;
         }
         // Horizontal strength is cut to AirControlMultiplier while airborne (see its own doc
@@ -785,24 +785,25 @@ public class PhysicsSystem
         // ground motor. Vertical strength is left untouched: it already targets the player's own
         // current Velocity.Y while airborne (see the call site in Step), so it contributes ~0
         // regardless and gravity/jump impulses remain entirely in charge of vertical motion.
-        var horizontalMultiplier = player.IsGrounded ? player.WalkForceMultiplier : player.WalkForceMultiplier * GameDefaults.AirControlMultiplier;
+        var horizontalMultiplier = player.IsGrounded ? player.MotorForceMultiplier : player.MotorForceMultiplier * GameDefaults.AirControlMultiplier;
         // Not scaled by the medium: a viscous medium resists motion only through the passive
         // drag in StepMovingBodyWithForces, which already grows with speed.
         var forceX = (targetVelocityX - player.Velocity.X) * mass * horizontalMultiplier;
-        var forceY = (targetVelocityY - player.Velocity.Y) * mass * player.WalkForceMultiplier;
+        var forceY = (targetVelocityY - player.Velocity.Y) * mass * player.MotorForceMultiplier;
 
         // Walking/crawling pushes horizontally against the ground through friction: the force
         // can never exceed the combined friction coefficient times the body's weight (traction),
-        // so a slippery floor limits acceleration and braking. By Newton's third law the same
-        // force pushes the support the other way - a finite-mass support (e.g. a pushable block)
-        // is shoved backward; an immovable one simply absorbs it.
+        // which is what limits how quickly the player speeds up, brakes and turns - more so on a
+        // slippery floor. By Newton's third law the same force pushes the support the other way -
+        // a finite-mass support (e.g. a pushable block) is shoved backward unless its own grip on
+        // whatever it rests on holds it; an immovable one simply absorbs it.
         if (player.IsDrivingOnGround)
         {
             var support = player.GetContactingBodies(ContactType.SurfaceBottom).FirstOrDefault();
             if (support is not null)
             {
                 var friction = CollisionSystem.CombineFriction(player.Friction, support.Friction);
-                var maxTraction = friction * mass * Math.Abs(world.Gravity) * PhysicsConstants.GroundTractionMultiplier;
+                var maxTraction = friction * mass * Math.Abs(world.Gravity);
                 forceX = Math.Clamp(forceX, -maxTraction, maxTraction);
 
                 if (!support.IsStatic && support is IPhysicsBody supportBody)
@@ -816,7 +817,7 @@ public class PhysicsSystem
             }
         }
 
-        player.WalkForce = new Vector2D(forceX, forceY);
+        player.MotorForce = new Vector2D(forceX, forceY);
     }
 
     /// <summary>
@@ -877,16 +878,16 @@ public class PhysicsSystem
         // the same way, alongside gravity, before the single acceleration/integration step below.
         if (body is IPatrolBody patrolBody)
         {
-            patrolBody.UpdatePatrolDirection(world.Gravity);
+            patrolBody.UpdatePatrolDirection(world.Gravity, deltaSeconds);
             netForce += patrolBody.PatrolForce;
         }
 
-        // The player's ground-level walk/crawl (and climb/hang side-step) locomotion contributes
-        // its own horizontal motor force here - see IWalkForceBody and UpdateWalkForce, called
+        // The player's locomotion (walk/crawl/climb/hang/swim) contributes its own motor force
+        // here - see IMotorBody and UpdateMotorForce, called
         // earlier this frame by Step before this integration runs.
-        if (body is IWalkForceBody walkForceBody)
+        if (body is IMotorBody motorBody)
         {
-            netForce += walkForceBody.WalkForce;
+            netForce += motorBody.MotorForce;
         }
 
         if (mediumBody is not null && body is IMediumAffected { MediumAffected: true })

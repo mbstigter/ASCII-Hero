@@ -119,20 +119,6 @@ public static class PhysicsConstants
     /// </summary>
     public const double RestingBounceSpeedThreshold = 1.0;
 
-    // --- Friction / traction ---
-
-    /// <summary>
-    /// Calibration factor on the grounded traction limit (combined friction x weight) for the
-    /// player's walk/crawl force - see <see cref="Physics.PhysicsSystem.UpdateWalkForce"/>. The
-    /// walk motor's initial acceleration is <see cref="GameDefaults.WalkForceMultiplier"/> x
-    /// <see cref="GameDefaults.WalkSpeed"/> = 264 cells/s^2, while plain friction x gravity is only
-    /// ~29 cells/s^2 on concrete (0.71 x 40). Game gravity and character proportions are
-    /// stylised, so the grip is scaled to match: at 10 the limit (~286 on concrete) does not bind
-    /// on ordinary floors, while genuinely slippery pairings still cap acceleration and braking.
-    /// Not overridable via any ini file.
-    /// </summary>
-    public const double GroundTractionMultiplier = 10.0;
-
     // --- Climbing / hanging ---
 
     /// <summary>
@@ -153,8 +139,9 @@ public static class PhysicsConstants
 
     /// <summary>
     /// Calibration factor on the grip limit (combined friction x weight) while climbing/hanging -
-    /// see <see cref="Physics.PhysicsSystem.UpdateWalkForce"/>, the grip counterpart of
-    /// <see cref="GroundTractionMultiplier"/>. The grip must carry the full weight (gravity stays
+    /// see <see cref="Physics.PhysicsSystem.UpdateMotorForce"/>. Unlike walking, which is limited
+    /// by the plain friction x weight, holding on is a clamping grip rather than resting weight on
+    /// a surface, so it is not bounded by weight alone. The grip must carry the full weight (gravity stays
     /// on while climbing/hanging) plus whatever the climb motor and a moving surface demand; at 10
     /// it comfortably does so on ordinary materials, while a genuinely slippery pairing (or a
     /// surface accelerating harder than the grip allows) makes the body slide along it. Not

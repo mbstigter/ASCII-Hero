@@ -4,7 +4,7 @@ using ASCII_Hero.Client.Game.Constants;
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>The player-controlled character, backed by the loaded "Player" sprite asset.</summary>
-public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected, ICollectorBody, IKillerBody, IClimberBody, IHangerBody, ISwimmerBody, IPosedBody, IWalkForceBody
+public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected, ICollectorBody, IKillerBody, IClimberBody, IHangerBody, ISwimmerBody, IPosedBody, IMotorBody
 {
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }
@@ -30,7 +30,7 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// <summary>
     /// The player is always subject to normal world gravity - including while
     /// <see cref="IsClimbing"/>/<see cref="IsHanging"/>: the grip on the climbable/hangable carries the
-    /// weight instead (see <see cref="Physics.PhysicsSystem.UpdateWalkForce"/>), limited by the
+    /// weight instead (see <see cref="Physics.PhysicsSystem.UpdateMotorForce"/>), limited by the
     /// combined friction of hands and surface, with an equal and opposite reaction on a finite-mass
     /// gripped body. <see cref="IsSwimming"/> likewise keeps gravity, offset by the ambient
     /// buoyancy force (<see cref="IMediumAffected"/>, always-on, separate from this flag); the
@@ -82,21 +82,22 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// <summary>
     /// The mass-scaled force this frame's sustained locomotion input contributes - computed each
     /// frame by <see cref="Physics.PhysicsSystem.Step"/> as a simple proportional "motor" force
-    /// converging <see cref="Velocity"/> toward a target walk/crawl/climb/hang velocity, summed
+    /// converging <see cref="Velocity"/> toward a target walk/crawl/climb/hang/swim velocity, summed
     /// into the net force alongside gravity by <see cref="Physics.PhysicsSystem.StepMovingBodyWithForces"/> -
-    /// mirrors how <see cref="IPatrolBody.PatrolForce"/> contributes for a patrolling hazard.
+    /// mirrors how <see cref="IPatrolBody.PatrolForce"/> contributes for a patrolling body.
     /// Horizontal-only while on the ground (Walk/Crawl); also carries a vertical component while
-    /// <see cref="IsClimbing"/> (driving up/down movement) or <see cref="IsHanging"/> (holding
-    /// position against gravity, carried by the grip) - both are sustained, ongoing
+    /// <see cref="IsClimbing"/> (driving up/down movement), <see cref="IsHanging"/> (holding
+    /// position against gravity, carried by the grip) or <see cref="IsSwimming"/> with Up/Down held
+    /// (depth control) - all sustained, ongoing
     /// locomotion for as long as they're engaged, exactly like walking, so they share this same
     /// continuous force model rather than a direct velocity assignment. Only the discrete
     /// jump-off/let-go moments (see <see cref="Physics.PhysicsSystem.Step"/>) are true
     /// instantaneous impulses instead.
     /// </summary>
-    public Vector2D WalkForce { get; set; }
+    public Vector2D MotorForce { get; set; }
 
     /// <summary>
-    /// True while <see cref="WalkForce"/> pushes horizontally against the ground (walking or
+    /// True while <see cref="MotorForce"/> pushes horizontally against the ground (walking or
     /// crawling): that force is then the foot friction itself - traction-limited, with a reaction
     /// on the support - so contact friction must not be applied to the same ground contact again.
     /// </summary>
@@ -112,17 +113,17 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
 
     /// <summary>
     /// "Muscle power" - the mass-scaled force gain applied to converge <see cref="Velocity"/>
-    /// toward the current target walk/crawl/climb/hang velocity (see
-    /// <see cref="Physics.PhysicsSystem.UpdateWalkForce"/>). Defaults to
-    /// <see cref="GameDefaults.WalkForceMultiplier"/>, but a placement may
-    /// override it via the <c>WalkForceMultiplier</c> ini key (see <see cref="World2D.LoadAsync"/>) -
+    /// toward the current target walk/crawl/climb/hang/swim velocity (see
+    /// <see cref="Physics.PhysicsSystem.UpdateMotorForce"/>). Defaults to
+    /// <see cref="GameDefaults.MotorForceMultiplier"/>, but a placement may
+    /// override it via the <c>MotorForceMultiplier</c> ini key (see <see cref="World2D.LoadAsync"/>) -
     /// same name/role as <see cref="DynamicObject2D.PatrolForceMultiplierX"/>/<see cref="DynamicObject2D.PatrolForceMultiplierY"/> for a patrolling object,
     /// since both represent the exact same "muscle power toward a target speed" concept. One
-    /// single gain covers every sustained pose (Walk, Crawl, Climb, Hang) - they are all the same
+    /// single gain covers every sustained pose (Walk, Crawl, Climb, Hang, Swim) - they are all the same
     /// kind of ongoing, motor-driven locomotion, just converging toward a different target
     /// velocity depending on the current pose/state (see <see cref="Physics.PhysicsSystem.Step"/>).
     /// </summary>
-    public double WalkForceMultiplier { get; set; } = GameDefaults.WalkForceMultiplier;
+    public double MotorForceMultiplier { get; set; } = GameDefaults.MotorForceMultiplier;
 
 
     /// <summary>
@@ -160,6 +161,20 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// (see <see cref="World2D.Respawn"/>) refills the bar.
     /// </summary>
     public double Health { get; set; } = GameDefaults.PlayerFullHealth;
+
+    /// <summary>
+    /// Health removed by a hard landing - one whose closing speed with the surface landed on
+    /// reaches <see cref="FallDamageImpactSpeed"/> (see <see cref="Physics.CollisionSystem"/>).
+    /// Defaults to <see cref="GameDefaults.DefaultFallDamage"/>; the <c>FallDamage</c> ini key overrides it.
+    /// </summary>
+    public double FallDamage { get; set; } = GameDefaults.DefaultFallDamage;
+
+    /// <summary>
+    /// Minimum landing speed (cells/second) that causes <see cref="FallDamage"/>. Defaults to
+    /// <see cref="GameDefaults.DefaultFallDamageImpactSpeed"/> (a 10-cell drop at default gravity);
+    /// the <c>FallDamageImpactSpeed</c> ini key overrides it.
+    /// </summary>
+    public double FallDamageImpactSpeed { get; set; } = GameDefaults.DefaultFallDamageImpactSpeed;
 
     /// <summary>Remaining lives (shown in the HUD). Lost when <see cref="Health"/> runs out, gained every <see cref="World2D.RingsPerLife"/> rings.</summary>
     public int Lives { get; set; } = GameDefaults.PlayerStartingLives;
