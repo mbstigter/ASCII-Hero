@@ -11,11 +11,26 @@ public interface IAssetFileProvider
     Task<string?> TryReadTextAsync(string relativePath);
 }
 
-/// <summary>Reads asset files served as static web content from wwwroot/Assets via HttpClient.</summary>
-public class HttpAssetFileProvider(HttpClient httpClient) : IAssetFileProvider
+/// <summary>
+/// Reads asset files served as static web content from wwwroot/Assets via HttpClient. When
+/// <paramref name="manifestPath"/> names a file listing every asset path (one per line), a file
+/// that is not listed is reported absent without any request. A published site lists its files
+/// this way so that the many optional files a world does not have cost no (failing) round trip;
+/// without a manifest (e.g. local development) every file is simply requested.
+/// </summary>
+public class HttpAssetFileProvider(HttpClient httpClient, string? manifestPath = null) : IAssetFileProvider
 {
+    private HashSet<string>? _manifest;
+    private bool _manifestLoaded;
+
     public async Task<string?> TryReadTextAsync(string relativePath)
     {
+        await EnsureManifestLoadedAsync();
+        if (_manifest is not null && !_manifest.Contains(relativePath))
+        {
+            return null;
+        }
+
         using var response = await httpClient.GetAsync(relativePath);
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
@@ -31,5 +46,29 @@ public class HttpAssetFileProvider(HttpClient httpClient) : IAssetFileProvider
         }
 
         return await response.Content.ReadAsStringAsync();
+    }
+
+    // A missing or unreadable manifest just means "no filtering"; the real requests still work.
+    private async Task EnsureManifestLoadedAsync()
+    {
+        if (_manifestLoaded || manifestPath is null)
+        {
+            return;
+        }
+
+        _manifestLoaded = true;
+        try
+        {
+            using var response = await httpClient.GetAsync(manifestPath);
+            if (response.IsSuccessStatusCode)
+            {
+                var lines = (await response.Content.ReadAsStringAsync())
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                _manifest = new HashSet<string>(lines, StringComparer.Ordinal);
+            }
+        }
+        catch (HttpRequestException)
+        {
+        }
     }
 }

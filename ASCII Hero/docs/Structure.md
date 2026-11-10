@@ -53,7 +53,11 @@ palettes, materials) from disk/HTTP into in-memory game objects.
   naming the file, so a failed download never silently falls back to a global
   default. Implemented by `HttpAssetFileProvider`, which
   reads static files served from `wwwroot/Assets` over HTTP, since Blazor
-  WebAssembly has no direct filesystem access. Kept behind this interface so
+  WebAssembly has no direct filesystem access. Given a manifest path it first
+  reads `Assets/manifest.txt` (a list of every asset file, written by the
+  deploy workflow when publishing) and treats unlisted files as absent without
+  requesting them, so a published site makes no failing requests for optional
+  files; with no manifest (local runs) every file is requested. Kept behind this interface so
   no other asset-loading code depends directly on `HttpClient`.
 - **`IniDocument`** - a minimal hand-rolled parser for the ".ini"-style files
   used throughout the asset format (`[Section]` headers, `Key = Value` lines,
@@ -97,11 +101,11 @@ palettes, materials) from disk/HTTP into in-memory game objects.
   optional `Worlds/{WorldName}/{file}` over it via a caller-supplied
   projection, so both classes differ only in how they turn a parsed
   `IniDocument` into their own dictionary entries.
-- **`IniValueParser`** - shared parsing helpers (`ParseEmptyChar`,
-  `ParseOptionalChar`, `ParseColorCode`/`ParseBackColorCode`, `ParseDouble`/`TryParseDouble`, `TryParseInt`) for the
-  small ini value shapes repeated across `SpriteLoader`, `WorldCatalog`, and
-  `World2D`'s settings.ini/objects.ini parsing, keeping a single
-  culture-invariant, consistently-named implementation of each.
+- **`IniValueParser`** - shared parsing helpers (`ParseEmptyChar`, `ParseOptionalChar`,
+  `ParseColorCode`/`ParseBackColorCode`, `ParseDouble`/`TryParseDouble`, `TryParseInt`)
+  for the small ini value shapes repeated across `SpriteLoader`, `WorldCatalog`, and
+  `World2D`'s settings.ini/objects.ini parsing, keeping a single culture-invariant,
+  consistently-named implementation of each.
 - **`SpriteLoader`** - loads one sprite asset's settings and requested clips
   into a `SpriteAsset`, combining `AssetPathResolver` (folder resolution) and
   `AssetTextReader` (grid parsing) into the one loading path reused by every
@@ -170,17 +174,17 @@ The live game state and the entity types that make it up.
   private `ObjectSection` reader, which applies the shared default/error rules.
   Also owns deferred removal (`QueueRemoval`/`ApplyPendingRemovals`),
   so nothing mutates the `Objects` list mid-iteration.
-- **`Body2D`** (per-frame contact sets and step-displacement/friction-undo
-  tracking are grouped at the end of `Body2D.cs`) - the base class for anything living in the world at a
-  floating-point position, backed by a loaded sprite frame. Derives its size
-  and collision shape once from the active frame's actual (non-empty) glyph
-  data, handles animation frame advancement and stance/facing pose switching,
-  and exposes the per-instance `IsPassable`/`IsClimbable`/`IsHangable` flags
-  that let any static placement opt into those behaviors without a dedicated
-  subclass, plus `ConveyorVelocity` (a moving surface on a body that stays
-  put, e.g. a conveyor or running rope) and `GetCarryVelocity()` (own `Velocity` +
-  `ConveyorVelocity`, the speed something held onto or resting on the body is carried at;
-  also used by `GetSurfaceVelocityX` and as a solid's collision velocity).
+- **`Body2D`** (per-frame contact sets and step-displacement/friction-undo tracking are
+  grouped at the end of `Body2D.cs`) - the base class for anything living in the world at
+  a floating-point position, backed by a loaded sprite frame. Derives its size and
+  collision shape once from the active frame's actual (non-empty) glyph data, handles
+  animation frame advancement and stance/facing pose switching, and exposes the
+  per-instance `IsPassable`/`IsClimbable`/`IsHangable` flags that let any static placement
+  opt into those behaviors without a dedicated subclass, plus `ConveyorVelocity` (a moving
+  surface on a body that stays put, e.g. a conveyor or running rope) and
+  `GetCarryVelocity()` (own `Velocity` + `ConveyorVelocity`, the speed something held onto
+  or resting on the body is carried at; also used by `GetSurfaceVelocityX` and as a
+  solid's collision velocity).
 - **Concrete body types**, all deriving from `Body2D`:
   - `Player2D` - the player-controlled character; implements the mover,
 	gravity, collector, and killer capabilities (below), plus the climbing
@@ -203,9 +207,10 @@ The live game state and the entity types that make it up.
     `Device2D` (a machine-like object - fan, lamp - that only swaps its off/on clip) and
     `FlowZone2D` (a passable medium volume - water, air - whose medium flows in a
     `FlowDirection` at a `FlowSpeed` while on).
-  - `ILinkTarget` - capability of an object a switch can drive (`LinkName`,
-    `SetState`), implemented by `Gate2D`, `Device2D`, `FlowZone2D` and `KinematicObject2D` (which stops while
-    off). `World2D.ResolveLinks` enforces one-switch-to-many-targets `Link` matching at load time.
+  - `ILinkTarget` - capability of an object a switch can drive (`LinkName`, `SetState`),
+    implemented by `Gate2D`, `Device2D`, `FlowZone2D` and `KinematicObject2D` (which stops
+    while off). `World2D.ResolveLinks` enforces one-switch-to-many-targets `Link` matching
+    at load time.
   - `Key2D` - a `Collectable2D` that carries the key's `LockName`.
   - `StaticHazard2D` - a non-moving hazard (e.g. spikes) that can optionally
 	be "killable" and can trigger a cosmetic effect on contact.
@@ -346,109 +351,91 @@ The live game state and the entity types that make it up.
 
 ### Physics
 
-- **`PhysicsSystem`** - resolves player jump/stance/pose input, applies
-  gravity to any `IGravityAffected` body, computes the player's own
-  locomotion "motor" force for walking, crawling, climbing, hanging and
-  swimming (`UpdateMotorForce`, via `IMotorBody`), and integrates position from velocity for every
-  `IPhysicsBody` each frame, all via one shared per-frame mass-scaled force
-  accumulator (`StepMovingBodyWithForces` - gravity as
-  `mass * world.Gravity`, plus, for any `IPatrolBody`, its own patrol force,
-  and for any `IMotorBody`, its own motor force, converted to acceleration
-  via `a = F / mass`, then integrated into velocity), which is numerically
-  identical to a direct gravity-velocity add for a gravity-only body but is
-  the extension point for any further force source. Each frame it also
-  resolves every body's `CurrentMedium` (`ResolveCurrentMedium` - `Air` by
-  default, overridden to the highest-density overlapping `Medium = true`
-  volume's material, e.g. a `Water` body, or an equal-density volume such as an
-  `Air` wind tunnel) and, for any `IMediumAffected`
-  body, adds a buoyancy force (Archimedes' principle - the medium's density
-  times the body's own resolved volume, opposing gravity) and a quadratic
-  (velocity-squared) drag force (the medium's `Viscosity` times the body's
-  velocity relative to the medium's flow (a `FlowZone2D`'s current flow, else zero)
-  times its own magnitude, per axis, further scaled by the body's own frontal area
-  facing that axis - `Size.Y` for horizontal drag, `Size.X` for vertical drag,
-  the 2D analog of cross-sectional area - so a bigger body feels
-  proportionally more drag than a smaller one of the same material) into the
-  same accumulator. The player's
-  sustained locomotion - walk/crawl
-  (including its vertical motion), and hanging/shimmying from a hangable
-  (including holding position against gravity, which stays on - the grip
-  carries the weight) - is one such force
-  source, all driven the same way: `Player2D` implements `IMotorBody`,
-  and each frame `PhysicsSystem.UpdateMotorForce` recomputes its `MotorForce`
-  as a proportional "motor" force (both axes) converging `Velocity` toward
-  whichever walk/crawl/climb/hang/swim target velocity the current pose/input
-  calls for - mirroring `IPatrolBody.PatrolForce`'s role for a patrolling
-  hazard, just proportional to the remaining speed gap rather than a fixed
-  direction, so the player still reaches (and then holds) the target speed
-  promptly without overshooting or oscillating. On the ground the horizontal
-  motor force is capped by the real grip (combined friction x weight - no extra
-  calibration factor), so the player's own friction sets how quickly they speed
-  up, stop and turn, and the equal and opposite force pushes a finite-mass
-  support the other way. Neither `MotorForce` nor
-  `PatrolForce` is scaled by the current medium; a viscous medium (e.g.
-  `Water`) resists them only through the passive buoyancy/drag terms above.
-  Jump-off
-  impulses (a standing jump, or letting go of a climbable/hangable with an upward
-  launch) are the one exception to the continuous-force model, and
-  deliberately so: each is a genuine instantaneous velocity kick applied
-  once on the frame it triggers, not a sustained, ongoing motion to converge
-  toward, so they remain direct velocity assignments on purpose - discrete
-  state-machine transitions, not the continuous locomotion `MotorForce`
-  drives. Also resolves
-  the player's stance - the stored, deliberately chosen upright/stretched
-  (`Walk`) vs. compact (`Crawl`, shown as `Clamber` while hanging) choice,
-  `Player2D.Stance`, toggled by input on the ground only and forced back to
-  `Walk` whenever airborne without a climb/hang grip - and its pose, the displayed result (`Player2D.ResolvedPose`,
-  derived each frame by `UpdatePose` from the stance plus the situation:
-  Climb, Hang/Clamber, Swim, or a visual-only "Jump" pose while airborne).
-  It engages climbing/hanging (via
-  `IClimberBody`/`IHangerBody`, generically) from the previous frame's
-  `IsTouchingClimbable`/`IsTouchingHangable` (set by `CollisionSystem`):
-  climbing requires a deliberate up/down key press while touching a climbable
-  surface (grabbable from any side, including mid-air) and while already
-  standing (`Stance == "Walk"` - a crawling player must explicitly stand up
-  first, as a separate step), and yields to landing on solid ground; while
-  climbing with no Left/Right held, the horizontal motor target also pulls the
-  player gently toward the climbable's horizontal centre; hanging
-  likewise requires a deliberate grab - Up held (Up only; Down means "let go"
-  while hanging) while touching a hangable surface at hand level, from the air
-  or the ground - and picks the compact "clamber" pose if the stance was already
-  `Crawl` at the moment of grabbing on (a crawling player grabs straight into
-  Clamber). Without a grab, the player passes through a hangable. Stance changes on the ground and
-  while hanging are driven by one shared, structured up/down "stance sequence":
-  on the ground, Up always means "more upright" (Crawl -> Walk) and Down
-  always means "more compact" (Walk -> Crawl); while hanging, the same keys
-  are deliberately inverted to match arm position rather than screen
-  direction - Up pulls into the compact `Clamber` pose (mirroring Crawl) and
-  Down extends back out to the fully-stretched `Hang` pose (mirroring Walk),
-  with a further Down from already-`Hang` meaning an explicit "let go" and
-  dropping. `Up` (directional) and `Jump` (action) are always distinct
-  inputs, never equivalent anywhere including the ground - see
-  `InputState.IsUpKeyDown`/`IsJumpKeyDown` below - so a Jump press instead of
-  Up/Down from `Hang` swings/jumps off with an upward-plus-current-lateral-
-  velocity impulse (not available from `Clamber`), and a Jump press while
-  climbing likewise lets go of the climbable and launches upward. All three
-  launch impulses (ground jump, climb jump-off, hang jump-off) use their own
-  progressively weaker speed constant, reflecting how much "grip"/momentum
-  each stance has behind it. While climbing, vertical movement is locked to a
-  fixed climb speed but horizontal input still applies at a slower dedicated
-  speed so the player can step off sideways onto a floor or another climbable;
-  while hanging, the player is held in place vertically (still laterally
-  movable, at its own dedicated - and slower still while `Clambering` -
-  speed) until it lets go via the stance sequence above. Neither suspends
-  gravity: the grip motor carries the weight, is limited by combined
-  friction x weight (`GripTractionMultiplier`), pushes a finite-mass gripped
-  body the other way, and measures every target, grip-speed check and jump-off
-  relative to the gripped body's `GetCarryVelocity()` (recorded as a
-  `ContactType.Climbable`/`Hangable` contact by `CollisionSystem`), so moving
-  moving and running climbables/hangables carry the player. Both resolve their own dedicated
-  poses instead of the "Jump" swap - `Climb` (whose `Facing` is resolved
-  along the vertical axis instead of horizontal, since it's a
-  vertically-moving stance - see `SpriteAsset.Facing`/`StanceDefinition` - so
-  its `Idle`/`Up`/`Down` clips distinguish idle head-sway from actually
-  climbing purely from whether up/down is currently held, the same role
-  `Left`/`Right` play for every horizontally-moving stance) and
+- **`PhysicsSystem`** - resolves player jump/stance/pose input, applies gravity to any
+  `IGravityAffected` body, computes the player's own locomotion "motor" force for walking,
+  crawling, climbing, hanging and swimming (`UpdateMotorForce`, via `IMotorBody`), and
+  integrates position from velocity for every `IPhysicsBody` each frame, all via one
+  shared per-frame mass-scaled force accumulator (`StepMovingBodyWithForces` - gravity as
+  `mass * world.Gravity`, plus, for any `IPatrolBody`, its own patrol force, and for any
+  `IMotorBody`, its own motor force, converted to acceleration via `a = F / mass`, then
+  integrated into velocity), which is numerically identical to a direct gravity-velocity
+  add for a gravity-only body but is the extension point for any further force source.
+  Each frame it also resolves every body's `CurrentMedium` (`ResolveCurrentMedium` - `Air`
+  by default, overridden to the highest-density overlapping `Medium = true` volume's
+  material, e.g. a `Water` body, or an equal-density volume such as an `Air` wind tunnel)
+  and, for any `IMediumAffected` body, adds a buoyancy force (Archimedes' principle - the
+  medium's density times the body's own resolved volume, opposing gravity) and a quadratic
+  (velocity-squared) drag force (the medium's `Viscosity` times the body's velocity
+  relative to the medium's flow (a `FlowZone2D`'s current flow, else zero) times its own
+  magnitude, per axis, further scaled by the body's own frontal area facing that axis -
+  `Size.Y` for horizontal drag, `Size.X` for vertical drag, the 2D analog of
+  cross-sectional area - so a bigger body feels proportionally more drag than a smaller
+  one of the same material) into the same accumulator. The player's sustained locomotion -
+  walk/crawl (including its vertical motion), and hanging/shimmying from a hangable
+  (including holding position against gravity, which stays on - the grip carries the
+  weight) - is one such force source, all driven the same way: `Player2D` implements
+  `IMotorBody`, and each frame `PhysicsSystem.UpdateMotorForce` recomputes its
+  `MotorForce` as a proportional "motor" force (both axes) converging `Velocity` toward
+  whichever walk/crawl/climb/hang/swim target velocity the current pose/input calls for -
+  mirroring `IPatrolBody.PatrolForce`'s role for a patrolling hazard, just proportional to
+  the remaining speed gap rather than a fixed direction, so the player still reaches (and
+  then holds) the target speed promptly without overshooting or oscillating. On the ground
+  the horizontal motor force is capped by the real grip (combined friction x weight - no
+  extra calibration factor), so the player's own friction sets how quickly they speed up,
+  stop and turn, and the equal and opposite force pushes a finite-mass support the other
+  way. Neither `MotorForce` nor `PatrolForce` is scaled by the current medium; a viscous
+  medium (e.g. `Water`) resists them only through the passive buoyancy/drag terms above.
+  Jump-off impulses (a standing jump, or letting go of a climbable/hangable with an upward
+  launch) are the one exception to the continuous-force model, and deliberately so: each
+  is a genuine instantaneous velocity kick applied once on the frame it triggers, not a
+  sustained, ongoing motion to converge toward, so they remain direct velocity assignments
+  on purpose - discrete state-machine transitions, not the continuous locomotion
+  `MotorForce` drives. Also resolves the player's stance - the stored, deliberately chosen
+  upright/stretched (`Walk`) vs. compact (`Crawl`, shown as `Clamber` while hanging)
+  choice, `Player2D.Stance`, toggled by input on the ground only and forced back to `Walk`
+  whenever airborne without a climb/hang grip - and its pose, the displayed result
+  (`Player2D.ResolvedPose`, derived each frame by `UpdatePose` from the stance plus the
+  situation: Climb, Hang/Clamber, Swim, or a visual-only "Jump" pose while airborne). It
+  engages climbing/hanging (via `IClimberBody`/`IHangerBody`, generically) from the
+  previous frame's `IsTouchingClimbable`/`IsTouchingHangable` (set by `CollisionSystem`):
+  climbing requires a deliberate up/down key press while touching a climbable surface
+  (grabbable from any side, including mid-air) and while already standing (`Stance ==
+  "Walk"` - a crawling player must explicitly stand up first, as a separate step), and
+  yields to landing on solid ground; while climbing with no Left/Right held, the
+  horizontal motor target also pulls the player gently toward the climbable's horizontal
+  centre; hanging likewise requires a deliberate grab - Up held (Up only; Down means "let
+  go" while hanging) while touching a hangable surface at hand level, from the air or the
+  ground - and picks the compact "clamber" pose if the stance was already `Crawl` at the
+  moment of grabbing on (a crawling player grabs straight into Clamber). Without a grab,
+  the player passes through a hangable. Stance changes on the ground and while hanging are
+  driven by one shared, structured up/down "stance sequence": on the ground, Up always
+  means "more upright" (Crawl -> Walk) and Down always means "more compact" (Walk ->
+  Crawl); while hanging, the same keys are deliberately inverted to match arm position
+  rather than screen direction - Up pulls into the compact `Clamber` pose (mirroring
+  Crawl) and Down extends back out to the fully-stretched `Hang` pose (mirroring Walk),
+  with a further Down from already-`Hang` meaning an explicit "let go" and dropping. `Up`
+  (directional) and `Jump` (action) are always distinct inputs, never equivalent anywhere
+  including the ground - see `InputState.IsUpKeyDown`/`IsJumpKeyDown` below - so a Jump
+  press instead of Up/Down from `Hang` swings/jumps off with an
+  upward-plus-current-lateral- velocity impulse (not available from `Clamber`), and a Jump
+  press while climbing likewise lets go of the climbable and launches upward. All three
+  launch impulses (ground jump, climb jump-off, hang jump-off) use their own progressively
+  weaker speed constant, reflecting how much "grip"/momentum each stance has behind it.
+  While climbing, vertical movement is locked to a fixed climb speed but horizontal input
+  still applies at a slower dedicated speed so the player can step off sideways onto a
+  floor or another climbable; while hanging, the player is held in place vertically (still
+  laterally movable, at its own dedicated - and slower still while `Clambering` - speed)
+  until it lets go via the stance sequence above. Neither suspends gravity: the grip motor
+  carries the weight, is limited by combined friction x weight (`GripTractionMultiplier`),
+  pushes a finite-mass gripped body the other way, and measures every target, grip-speed
+  check and jump-off relative to the gripped body's `GetCarryVelocity()` (recorded as a
+  `ContactType.Climbable`/`Hangable` contact by `CollisionSystem`), so moving moving and
+  running climbables/hangables carry the player. Both resolve their own dedicated poses
+  instead of the "Jump" swap - `Climb` (whose `Facing` is resolved along the vertical axis
+  instead of horizontal, since it's a vertically-moving stance - see
+  `SpriteAsset.Facing`/`StanceDefinition` - so its `Idle`/`Up`/`Down` clips distinguish
+  idle head-sway from actually climbing purely from whether up/down is currently held, the
+  same role `Left`/`Right` play for every horizontally-moving stance) and
   `Hang`/`Clamber`.
 - **`CollisionSystem`** - resolves axis-aligned bounding box collisions:
   moving bodies against solid static terrain, moving bodies against each
@@ -736,16 +723,14 @@ The live game state and the entity types that make it up.
   measured by the browser), resizes the canvas element to
   `columns/rows * cellSize`, and draws a frame's glyphs. No other game code
   talks to JavaScript directly.
-- **`InputState`** - tracks which keyboard keys are currently held down and
-  exposes them as game-oriented queries (`IsLeftKeyDown`, `IsUpKeyDown`,
-  etc.), so gameplay code never depends on raw DOM key codes. Two full,
-  independent key sets are supported for local co-op/preference - "Player 1"
-  (arrow keys + `Space`, action `Enter`) and "Player 2" (`WASD` + `Left Ctrl`, action `E`) - rather than
-  one shared movement set plus one shared jump key. `IsUpKeyDown` and
-  `IsJumpKeyDown` are deliberately never combined into one query anywhere,
-  even for the ordinary ground jump - see `PhysicsSystem` above for why
-  (`Hang`/`Climb` both need to tell "pull in"/"climb" apart from "let go and
-  launch").
+- **`InputState`** - tracks which keyboard keys are currently held down and exposes them
+  as game-oriented queries (`IsLeftKeyDown`, `IsUpKeyDown`, etc.), so gameplay code never
+  depends on raw DOM key codes. Two full, independent key sets are supported for local
+  co-op/preference - "Player 1" (arrow keys + `Space`, action `Enter`) and "Player 2"
+  (`WASD` + `Left Ctrl`, action `E`) - rather than one shared movement set plus one shared
+  jump key. `IsUpKeyDown` and `IsJumpKeyDown` are deliberately never combined into one
+  query anywhere, even for the ordinary ground jump - see `PhysicsSystem` above for why
+  (`Hang`/`Climb` both need to tell "pull in"/"climb" apart from "let go and launch").
 
 ### Audio
 
@@ -917,54 +902,48 @@ large jumps after e.g. a tab switch):
 3. **Camera** - `Camera.Follow` smoothly scrolls toward the current camera
    target's position, respecting its dead zone and the world's bounds. Also
    runs once per real frame, for the same reason as Animation above.
-4. **Render** - `WorldRenderer.BuildFrame` converts the current world and
-   camera view into a flat glyph list - culled to the camera's current
-   viewport rect (see Rendering above) - in background, static-object,
-   non-static-object, foreground order. `GameLoop.OnFrame` then appends the
-   HUD's own glyphs (`UIRenderer.AddFrame`/`AddLabel`/`AddBar` for `_hudBox`/
-   `_hudText`/`_hudBar`) to that same list, so the HUD is always drawn last -
+4. **Render** - `WorldRenderer.BuildFrame` converts the current world and camera view into
+   a flat glyph list - culled to the camera's current viewport rect (see Rendering above)
+   - in background, static-object, non-static-object, foreground order. `GameLoop.OnFrame`
+   then appends the HUD's own glyphs (`UIRenderer.AddFrame`/`AddLabel`/`AddBar` for
+   `_hudBox`/ `_hudText`/`_hudBar`) to that same list, so the HUD is always drawn last -
    on top of the foreground layer and everything else - before
-   `CanvasBridge.DrawFrameAsync` sends the complete list to JavaScript to
-   paint onto the canvas (`drawFrame` first fills the whole canvas with the world's
-   `WorldBackdrop`, if set, then fills backgrounds as cell rectangles and copies
-   each character from a cache of pre-rendered images, one per character/color
-   combination, cleared when the font or cell size changes). `_hudText` is refreshed every `Playing` frame from
+   `CanvasBridge.DrawFrameAsync` sends the complete list to JavaScript to paint onto the
+   canvas (`drawFrame` first fills the whole canvas with the world's `WorldBackdrop`, if
+   set, then fills backgrounds as cell rectangles and copies each character from a cache
+   of pre-rendered images, one per character/color combination, cleared when the font or
+   cell size changes). `_hudText` is refreshed every `Playing` frame from
    `World2D.Player.Lives`/`.Rings`/`.Score` on its first row; its second row is a
    "Health:" caption followed by the `_hudBar` gauge (`Player2D.Health`), and a key icon
-   followed by a superscript count (`¹`-`⁹`, `ⁿ` for more than 9) appears while a key is held.
-   A dev/testing FPS overlay
-   (`InputState.IsFpsToggleKeyDown`, bound to `F`) can be toggled on top
-   of the HUD, showing a smoothed frames-per-second reading computed each
+   followed by a superscript count (`¹`-`⁹`, `ⁿ` for more than 9) appears while a key is
+   held. A dev/testing FPS overlay (`InputState.IsFpsToggleKeyDown`, bound to `F`) can be
+   toggled on top of the HUD, showing a smoothed frames-per-second reading computed each
    frame from that frame's own raw, unclamped elapsed time (not the fixed
-   Physics/Collision step size), right-aligned using the rendered text's own
-   length (leading with the number, e.g. "144 FPS") so it stays pinned to the
-   top-right corner regardless of digit count;
-   off by default so it never appears for an ordinary player. A second
-   dev/testing overlay (`InputState.IsObjectCounterToggleKeyDown`, bound
-   to `O`) stacks directly under the FPS overlay, showing `World2D.Objects`'s
-   live count (e.g. "42 Obj") - same right-aligned-by-rendered-length
-   approach, also off by default.
+   Physics/Collision step size), right-aligned using the rendered text's own length
+   (leading with the number, e.g. "144 FPS") so it stays pinned to the top-right corner
+   regardless of digit count; off by default so it never appears for an ordinary player. A
+   second dev/testing overlay (`InputState.IsObjectCounterToggleKeyDown`, bound to `O`)
+   stacks directly under the FPS overlay, showing `World2D.Objects`'s live count (e.g. "42
+   Obj") - same right-aligned-by-rendered-length approach, also off by default.
 
    When `CollisionSystem` sets `World2D.PendingTransition` (`LevelEnd` on a
-   `CollectableType.LevelEnd` pickup, `Death` when hazard damage empties
-   `Player2D.Health` - see above), the Playing tick skips Physics/Collision
-   (Animation, Camera and Render keep running, so the player's own
-   `LevelEndReachedEffectClip`/`DiedEffectClip` plays) until
-   `PendingTransitionSeconds` have passed. `GameLoop.AdvancePendingTransition` then
+   `CollectableType.LevelEnd` pickup, `Death` when hazard damage empties `Player2D.Health`
+   - see above), the Playing tick skips Physics/Collision (Animation, Camera and Render
+   keep running, so the player's own `LevelEndReachedEffectClip`/`DiedEffectClip` plays)
+   until `PendingTransitionSeconds` have passed. `GameLoop.AdvancePendingTransition` then
    carries it out: `LevelEnd` switches to `GameMode.LevelComplete`; `Death` calls
-   `World2D.Respawn()` and play continues if `Player2D.Lives` is above 0,
-   otherwise it switches to `GameMode.GameOver`. In both end modes gameplay is
-   frozen, the last rendered world frame is redrawn with a centered "Level
-   Complete!"/"Game Over!" message on top (`GameLoop.AddEndScreenMessage` picks
-   the text and tint, `EndScreenRenderer.AddMessage` draws it: a
-   short trail of `UIFrame` boxes shrinks in a ripple onto the final box, then
-   the `UILabel` appears inside it on a solid black background; green for
-   Level Complete, red for Game Over (amber for the "Exit Game?" prompt, which
-   uses the same method); once settled the box border keeps glowing in steps
-   through the dark/normal/light tints while the text stays put; the animation is driven by an elapsed
-   timer reset on entering the mode), and a confirm-key press (only after
-   those keys were released once) returns `GameLoop` to `GameMode.WorldSelecting`,
-   the same reset path used by a confirmed exit.
+   `World2D.Respawn()` and play continues if `Player2D.Lives` is above 0, otherwise it
+   switches to `GameMode.GameOver`. In both end modes gameplay is frozen, the last
+   rendered world frame is redrawn with a centered "Level Complete!"/"Game Over!" message
+   on top (`GameLoop.AddEndScreenMessage` picks the text and tint,
+   `EndScreenRenderer.AddMessage` draws it: a short trail of `UIFrame` boxes shrinks in a
+   ripple onto the final box, then the `UILabel` appears inside it on a solid black
+   background; green for Level Complete, red for Game Over (amber for the "Exit Game?"
+   prompt, which uses the same method); once settled the box border keeps glowing in steps
+   through the dark/normal/light tints while the text stays put; the animation is driven
+   by an elapsed timer reset on entering the mode), and a confirm-key press (only after
+   those keys were released once) returns `GameLoop` to `GameMode.WorldSelecting`, the
+   same reset path used by a confirmed exit.
 
 ### Asset Loading (Global vs. World Fallback)
 

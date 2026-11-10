@@ -219,7 +219,8 @@ DefaultFrame = 0
   once as `^^` shows as wood, steel or glass depending on its `Material`). Placeholder cells are
   ordinary solid cells, and their colors follow the usual color rules. Every material such a
   sprite is used with must have a `Character`; otherwise loading the world fails.
-- `TileAxis` (default `None`) — whether this asset is a tileable unit (see §2.5); can be overridden per clip in `[Layout.{clipName}]`.
+- `TileAxis` (default `None`) — whether this asset is a tileable unit (see §2.5); can be
+  overridden per clip in `[Layout.{clipName}]`.
 
 **`[Colors]`** (optional) — whole-asset default color codes (see `Global/ColorPalette.ini`),
 the color analog of `[Physics] DefaultMaterial` (§2.3):
@@ -519,10 +520,10 @@ crawl = Crawl
   `[Poses]`, `[Animation.{clipName}]`, tiling, or anything else described
   above, all of which keep referring to clips by their plain name.
 
-A busy multi-pose asset (such as a playable character) can use this: its `{AssetName}_settings.ini` (and any
-one-off effect clip) stay in the root folder, while each pose's clips (`walk`, `crawl`,
-`jump`, ...) live in their own matching
-subfolder (`Sprites/Hero/Walk/`, `Sprites/Hero/Crawl/`, ...).
+A busy multi-pose asset (such as a playable character) can use this: its
+`{AssetName}_settings.ini` (and any one-off effect clip) stay in the root folder, while
+each pose's clips (`walk`, `crawl`, `jump`, ...) live in their own matching subfolder
+(`Sprites/Hero/Walk/`, `Sprites/Hero/Crawl/`, ...).
 
 ### 2.8 Building kits (styles as clips)
 
@@ -901,30 +902,27 @@ InitialVelocityX = 14
 InitialVelocityY = 10
 ```
 
-`Kind` is a **mandatory** key for every placement - there is no default
-category and no separate `Static` key to fall back on. Each value corresponds
-exactly to a concrete body class name with the `2D` suffix dropped (e.g.
-`Kind = DynamicHazard` spawns a `DynamicHazard2D`, `Kind = StaticObject` spawns a
-`StaticObject2D`), so the mapping is discoverable directly from the codebase
-rather than needing to be memorized separately. Valid values: `Player` (the
-player's spawn point and sprite - exactly one placement per level should use
-this), `StaticObject` (immovable terrain, e.g. a platform), `DynamicObject`
-(moves under its own velocity/gravity, e.g. a bouncing ball),
-`KinematicObject` (moves at a prescribed velocity, easing to rest at route
-ends - never affected
-by gravity, restitution, or `GravityAffected`/`Restitution` keys),
-`DynamicHazard` (a hazard that moves like a `DynamicObject`, e.g. a toxic
-leaf or a patrolling creature, and damages the player on contact),
-`KinematicHazard` (a hazard that moves like a `KinematicObject`, e.g. a saw
-blade or laser), `StaticHazard` (a non-moving hazard, e.g.
-spikes), `Collectable` (a non-solid, non-moving item removed from the
-world when the player contacts it), and the switchable `Gate`, `Switch`,
-`Device` and `FlowZone` (see their own sections below). `KinematicObject`/`KinematicHazard`/`DynamicHazard`/
+`Kind` is a **mandatory** key for every placement - there is no default category and no
+separate `Static` key to fall back on. Each value corresponds exactly to a concrete body
+class name with the `2D` suffix dropped (e.g. `Kind = DynamicHazard` spawns a
+`DynamicHazard2D`, `Kind = StaticObject` spawns a `StaticObject2D`), so the mapping is
+discoverable directly from the codebase rather than needing to be memorized separately.
+Valid values: `Player` (the player's spawn point and sprite - exactly one placement per
+level should use this), `StaticObject` (immovable terrain, e.g. a platform),
+`DynamicObject` (moves under its own velocity/gravity, e.g. a bouncing ball),
+`KinematicObject` (moves at a prescribed velocity, easing to rest at route ends - never
+affected by gravity, restitution, or `GravityAffected`/`Restitution` keys),
+`DynamicHazard` (a hazard that moves like a `DynamicObject`, e.g. a toxic leaf or a
+patrolling creature, and damages the player on contact), `KinematicHazard` (a hazard that
+moves like a `KinematicObject`, e.g. a saw blade or laser), `StaticHazard` (a non-moving
+hazard, e.g. spikes), `Collectable` (a non-solid, non-moving item removed from the world
+when the player contacts it), and the switchable `Gate`, `Switch`, `Device` and `FlowZone`
+(see their own sections below). `KinematicObject`/`KinematicHazard`/`DynamicHazard`/
 `StaticHazard`/`Collectable` placements read the same
 `GravityAffected`/`Restitution`/`InitialVelocityX`/`InitialVelocityY` keys as
 `DynamicObject` where applicable (`KinematicObject`/`KinematicHazard` ignore
-`GravityAffected`/`Restitution` entirely, `StaticHazard`/`Collectable` ignore
-all of them since they never move):
+`GravityAffected`/`Restitution` entirely, `StaticHazard`/`Collectable` ignore all of them
+since they never move):
 
 ```ini
 [Coin]
@@ -1150,16 +1148,16 @@ placement. A gate is opened in one of two ways, never both (a gate with both
   consumed and the gate's `Sound` plays. Keys are kept on respawn.
 - **By switch**: `Link = <name>`, see below.
 
-A *switch* (`Kind = Switch`) is a button or lever: a passable object with an off
-clip (`Clip`) and an on clip (`ClipWhenOn`). The player operates it by standing next
-to it (within one cell) and pressing the action key. It drives every target that has
-the same `Link` name (a `Gate`, a `Device`, a `FlowZone`, or a `KinematicObject`, which
-stops while off and moves while on). A `Device` is a machine-like object (fan, lamp,
-pump) that only swaps between its off and on clips. Links are one switch to many
-targets: a switch without a matching target, a target without a switch, or two switches
-with the same `Link` are load errors.
-The switch's `Sound` plays when it is operated. A locked gate's `Sound` plays when a key unlocks it; a gate
-opened by a switch has no sound of its own, only the switch's.
+A *switch* (`Kind = Switch`) is a button or lever: a passable object with an off clip
+(`Clip`) and an on clip (`ClipWhenOn`). The player operates it by standing next to it
+(within one cell) and pressing the action key. It drives every target that has the same
+`Link` name (a `Gate`, a `Device`, a `FlowZone`, or a `KinematicObject`, which stops while
+off and moves while on). A `Device` is a machine-like object (fan, lamp, pump) that only
+swaps between its off and on clips. Links are one switch to many targets: a switch without
+a matching target, a target without a switch, or two switches with the same `Link` are
+load errors. The switch's `Sound` plays when it is operated. A locked gate's `Sound` plays
+when a key unlocks it; a gate opened by a switch has no sound of its own, only the
+switch's.
 
 A gate becomes passable the moment it opens. Its open clip may be a short animation
 (`[Animation.open] Mode = Once`) that plays once and holds its last frame. Closing
@@ -1405,10 +1403,10 @@ ForegroundColor = Y
   still wins over it. `None` is not accepted for foreground colors or for the
   world's own `DefaultBackgroundColor`.
 
-Any non-`Player` object type may also set `Passable`, `Climbable`, and/or
-`Hangable` (each default `false`, except `Passable` which defaults to `true`
-for `Kind = StaticHazard`/`KinematicHazard`/`Collectable`/`Switch`/`FlowZone`) to control how it interacts with
-moving bodies, independent of its `Kind`:
+Any non-`Player` object type may also set `Passable`, `Climbable`, and/or `Hangable` (each
+default `false`, except `Passable` which defaults to `true` for `Kind =
+StaticHazard`/`KinematicHazard`/`Collectable`/`Switch`/`FlowZone`) to control how it
+interacts with moving bodies, independent of its `Kind`:
 
 - **`Passable`** — if `true`, the object never blocks movement even though it
   is otherwise solid terrain (e.g. a wall type used as a level design

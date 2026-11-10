@@ -7,9 +7,9 @@ changes gravity or the player's walk speed changes these numbers too.
 ## The player
 
 - The player is **3 cells wide and 3 cells tall**.
-- A gap the player has to walk through needs **at least 3 empty rows** of headroom. Crawling lowers the player to
-  **2 rows** (the empty cells in the crawling sprite do not count for collisions), so a
-  crawl-through tunnel needs at least 2 empty rows.
+- A gap the player has to walk through needs **at least 3 empty rows** of headroom.
+  Crawling lowers the player to **2 rows** (the empty cells in the crawling sprite do not
+  count for collisions), so a crawl-through tunnel needs at least 2 empty rows.
 - Walking speed is 12 cells/second. Steering in mid-air is weak, so a jump goes roughly where the
   run-up was heading.
 
@@ -43,8 +43,8 @@ changes gravity or the player's walk speed changes these numbers too.
 
 ## Climbing and hanging
 
-- A hangable object (e.g. a lying-flat pipe, ladder or rope) is in reach of a standing player's jump when it is **at most
-  5 rows above the floor the player stands on**.
+- A hangable object (e.g. a lying-flat pipe, ladder or rope) is in reach of a standing
+  player's jump when it is **at most 5 rows above the floor the player stands on**.
 - Anything climbable or hangable that the player is meant to step off onto a ledge should end
   level with (or just above) that ledge.
 - Moving ladders, pipes and ropes: make sure both ends of the route are reachable, and that the

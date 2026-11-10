@@ -61,7 +61,7 @@ DOM keyboard events.
 
 The physics system has one core (force integration, collision detection and
 resolution, ambient medium) shared by every body regardless of category, and
-a thin layer of per-category behavior (player input, hazard patrol AI, 
+a thin layer of per-category behavior (player input, hazard patrol AI,
 kinematic platform scripting) that only ever plugs into that core by
 implementing a capability interface — it never reimplements or bypasses the
 core's own force/collision/medium math.
@@ -98,25 +98,23 @@ core's own force/collision/medium math.
   `Hardness`-weighted average favoring the softer body
   (`CombineFriction`/`CombineRestitution`, see docs/Decisions.md), with no
   bounce below a small resting impact speed.
-- Every moving body — the player included — integrates via a per-frame,
-  mass-scaled force accumulator (`PhysicsSystem.StepMovingBodyWithForces`):
-  forces (gravity as `mass * world.Gravity`, plus a body's own
-  `IPatrolBody.PatrolForce`/`IMotorBody.MotorForce`, e.g. the player's
-  proportional-to-speed-gap locomotion "motor" force computed by
-  `PhysicsSystem.UpdateMotorForce`) are summed into a net force, converted to
-  acceleration via `a = F / mass`, and integrated into velocity — for a
-  gravity-only body this is numerically identical to a direct `velocity.Y +=
-  gravity * dt`, but it is the extension point for any non-gravity force
-  source. Walking/crawling is limited by the real grip (combined friction x
-  weight) and pushes a movable support the other way. Climbing/hanging use the same motor, limited by grip (combined
-  friction x weight) and relative to the gripped climbable/hangable's carry velocity,
-  with gravity still on; only jump-off impulses remain direct velocity
-  assignments on purpose — a push-off happens in a single instant. There is no separate constraint-solver "normal
-  force" term; a resting body's velocity along the contact normal is instead
-  resolved by `CollisionSystem`'s own impulse-based response each frame it
-  remains in contact (see below). The exception is a sleeping body (a group of
-  movable objects that has come to rest, see `SleepSystem`): it is not
-  integrated or re-resolved until something disturbs it.
+- Every moving body — the player included — integrates via a per-frame, mass-scaled force
+  accumulator (`PhysicsSystem.StepMovingBodyWithForces`): forces (gravity as `mass *
+  world.Gravity`, plus a body's own `IPatrolBody.PatrolForce`/`IMotorBody.MotorForce`,
+  e.g. the player's proportional-to-speed-gap locomotion "motor" force computed by
+  `PhysicsSystem.UpdateMotorForce`) are summed into a net force, converted to acceleration
+  via `a = F / mass`, and integrated into velocity — for a gravity-only body this is
+  numerically identical to a direct `velocity.Y += gravity * dt`, but it is the extension
+  point for any non-gravity force source. Walking/crawling is limited by the real grip
+  (combined friction x weight) and pushes a movable support the other way.
+  Climbing/hanging use the same motor, limited by grip (combined friction x weight) and
+  relative to the gripped climbable/hangable's carry velocity, with gravity still on; only
+  jump-off impulses remain direct velocity assignments on purpose — a push-off happens in
+  a single instant. There is no separate constraint-solver "normal force" term; a resting
+  body's velocity along the contact normal is instead resolved by `CollisionSystem`'s own
+  impulse-based response each frame it remains in contact (see below). The exception is a
+  sleeping body (a group of movable objects that has come to rest, see `SleepSystem`): it
+  is not integrated or re-resolved until something disturbs it.
 - Every body lives in an ambient medium (`Body2D.CurrentMedium`), resolved
   fresh each frame by `PhysicsSystem` — `Air` by default, overridden to
   whichever overlapping `Medium = true` placement (e.g. a `Water` volume) has

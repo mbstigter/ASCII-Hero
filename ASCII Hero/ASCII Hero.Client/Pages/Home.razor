@@ -44,7 +44,7 @@
         {
             _canvasBridge = new CanvasBridge(JsRuntime);
             _soundPlayer = new WebAudioSoundPlayer(JsRuntime);
-            _gameLoop = new GameLoop(_canvasBridge, new HttpAssetFileProvider(Http), _soundPlayer);
+            _gameLoop = new GameLoop(_canvasBridge, new HttpAssetFileProvider(Http, "Assets/manifest.txt"), _soundPlayer);
             try
             {
                 await _gameLoop.StartAsync("game-canvas");

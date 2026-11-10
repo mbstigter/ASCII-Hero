@@ -1,7 +1,8 @@
 # AsciiHero — Feature Overview
 
-AsciiHero is a browser-based retro platform game engine built with C# and .NET 10 (Blazor WebAssembly).
-Everything you see is ASCII, but movement, physics and scrolling are smooth and modern.
+AsciiHero is a browser-based retro platform game engine built with C# and .NET 10 (Blazor
+WebAssembly). Everything you see is ASCII, but movement, physics and scrolling are smooth
+and modern.
 
 This page is a tour of what the engine lets you build. For exact syntax, see
 [AssetFormat.md](AssetFormat.md). For internals, see [Structure.md](Structure.md) and
@@ -29,8 +30,8 @@ This page is a tour of what the engine lets you build. For exact syntax, see
 - **Reusable object types.** A world can define up to 36 object types (one per code), and each
   can be placed any number of times. Every placement shares its type's tuning. Give one
   instance its own code to make it special, for example a faster enemy.
-- **Tileable pieces.** Author one small unit and use `Span` (total length in cells) to build platforms and walls of any
-  length.
+- **Tileable pieces.** Author one small unit and use `Span` (total length in cells) to
+  build platforms and walls of any length.
 - **Materials-only objects.** Declare a `Material`, `Width` and `Height` to get a solid block
   with no sprite files.
 - **Per-placement overrides.** Reuse one sprite with a different material, colors or glyph for
@@ -56,10 +57,10 @@ This page is a tour of what the engine lets you build. For exact syntax, see
 | `Player` | Spawn point and hero sprite |
 | `StaticObject` | Immovable terrain such as platforms and walls |
 | `DynamicObject` | Moves under gravity or its own velocity, for example a bouncing ball |
-| `KinematicObject` | Moves on a predefined path and is never affected by gravity, so it suits moving platforms. It patrols between bounds on X and/or Y at a set `PatrolSpeedX`/`PatrolSpeedY`, braking smoothly at each end, and riders are carried along |
+| `KinematicObject` | Moves on a predefined path, never affected by gravity, so it suits moving platforms; riders are carried along |
 | `StaticHazard` | Non-moving danger such as spikes or toxic plants |
-a flying insect |
-| `KinematicHazard` |
+| `DynamicHazard` | A hazard that moves like a `DynamicObject`, such as a patrolling creature or a flying insect |
+| `KinematicHazard` | A hazard that moves like a `KinematicObject`, such as a saw blade or laser |
 | `Collectable` | A non-solid pickup with a configurable effect |
 | `Gate` | A door or hatch: solid while closed, passable while open. Opened by a key or a switch |
 | `Switch` | A button or lever the player operates with the action key |
@@ -69,7 +70,8 @@ a flying insect |
 ### Collectables (`Type`)
 
 - `Diamond` adds 1 to the score (diamonds).
-- `Ring` counts a ring and adds 5 to the score; every 25 rings (per world) give an extra life. Does not heal.
+- `Ring` counts a ring and adds 5 to the score; every 25 rings (per world) give an extra
+  life. Does not heal.
 - `Checkpoint` sets the player's respawn point.
 - `LevelEnd` finishes the level.
 - `Key` opens the gate with the same `Lock` (see below).
@@ -96,10 +98,10 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
 - **Flying enemies** by giving a hazard vertical force with `PatrolMaxForceY`; gravity stays on.
 - **Automatic facing.** Hazards turn to face their direction of travel and play their
   `move_left`/`move_right` clips.
-- **Stompable enemies.** A killable hazard is squashed when the player lands on top hard enough
-  (`KillImpactSpeed`); a gentler landing, or running into its side however fast, hurts instead. It can play a `KillSound` when squashed. Its
-  `Sound` plays instead when it hurts the player, so a single contact plays
-  only one of the two.
+- **Stompable enemies.** A killable hazard is squashed when the player lands on top hard
+  enough (`KillImpactSpeed`); a gentler landing, or running into its side however fast,
+  hurts instead. It can play a `KillSound` when squashed. Its `Sound` plays instead when
+  it hurts the player, so a single contact plays only one of the two.
 
 ## Sprites and animation
 
@@ -211,8 +213,8 @@ Climbable and hangable surfaces are ordinary terrain objects marked with `Climba
 - Hazards have no chase behavior yet.
 - Kinematic objects patrol between bounds (braking smoothly at each end) or move at constant
   velocity. Arbitrary movement paths are not supported yet.
-- Running surfaces (conveyors, running ropes) only move in a straight line (Left, Right, Up or Down); when they carry
-  the player past their end, the player simply lets go.
+- Running surfaces (conveyors, running ropes) only move in a straight line (Left, Right,
+  Up or Down); when they carry the player past their end, the player simply lets go.
 - Buttons and levers are operated only by the player; enemies cannot flip them yet.
 - Respawn has no invulnerability window.
 

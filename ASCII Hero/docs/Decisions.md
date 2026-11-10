@@ -172,36 +172,35 @@ capture the "why" behind a decision without needing a lengthy narrative.
   instantly to a target speed.
 - **Medium drag/buoyancy is a distinct concept from surface friction, implemented as
   continuous force-accumulator terms** (`PhysicsSystem.StepMovingBodyWithForces`/
-  `ResolveCurrentMedium`): a body's ambient medium (`Body2D.CurrentMedium`, defaulting
-  to `Air`) is resolved once per physics step from whichever static, passable `Body2D`
+  `ResolveCurrentMedium`): a body's ambient medium (`Body2D.CurrentMedium`, defaulting to
+  `Air`) is resolved once per physics step from whichever static, passable `Body2D`
   overlaps it - the highest-`Density` overlapping volume wins on a tie, deterministic
-  regardless of placement order. Buoyancy is Archimedes' principle (medium density
-  times the body's own volume, opposing gravity); drag is a quadratic
-  (velocity-squared) velocity-opposing force scaled by the medium's `Viscosity` and
-  the immersed body's own frontal area (`Size.Y` for horizontal drag, `Size.X` for
-  vertical drag - the 2D analog of cross-sectional area, so a bigger body feels
-  proportionally more drag than a smaller one of the same material, not just more
-  buoyancy from its larger volume) - the physically accurate model for fluid drag
-  at ordinary speeds, and one that sheds a fast impact's momentum far more
-  aggressively than a slow drift's, which keeps a body from significantly
-  overshooting/bouncing back out after a hard water entry. Both forces are additionally
-  scaled by the body's own **overlap fraction** - the fraction (0 to 1) of the body's
-  own collision area actually overlapped by the winning medium volume (both axes), computed by
-  summing the overlapped area of every qualifying same-material volume (which are
-  assumed not to overlap each other - a level design rule, not enforced in code). A body only
-  grazing a medium's edge therefore receives proportionally less buoyancy/drag than
-  one fully immersed (fraction 1.0), which is what stops a surface-floating body from visibly bouncing as it
-  crosses the binary overlap boundary each frame. When no placed medium volume
-  overlaps at all, the body resolves to the default `Air` fallback at fraction 1.0
-  (not 0.0) - `Air` is the ambient substance filling all otherwise-unoccupied space,
-  not a bounded level-authored volume with edges to be partially submerged past, so
-  its own low but nonzero `Viscosity` drag keeps applying continuously everywhere
-  outside a placed volume. A placed volume of the same density as `Air` also displaces the
-  fallback (only a strictly less dense one is skipped), so an `Air`-material volume
-  can be a medium in its own right (e.g. a wind tunnel). Only bodies implementing
-  `IMediumAffected` (mirroring `IGravityAffected`) receive these forces; `CurrentMedium`
-  itself is still resolved/exposed for every body regardless, for future systems (e.g.
-  a swim pose) to read.
+  regardless of placement order. Buoyancy is Archimedes' principle (medium density times
+  the body's own volume, opposing gravity); drag is a quadratic (velocity-squared)
+  velocity-opposing force scaled by the medium's `Viscosity` and the immersed body's own
+  frontal area (`Size.Y` for horizontal drag, `Size.X` for vertical drag - the 2D analog
+  of cross-sectional area, so a bigger body feels proportionally more drag than a smaller
+  one of the same material, not just more buoyancy from its larger volume) - the
+  physically accurate model for fluid drag at ordinary speeds, and one that sheds a fast
+  impact's momentum far more aggressively than a slow drift's, which keeps a body from
+  significantly overshooting/bouncing back out after a hard water entry. Both forces are
+  additionally scaled by the body's own **overlap fraction** - the fraction (0 to 1) of
+  the body's own collision area actually overlapped by the winning medium volume (both
+  axes), computed by summing the overlapped area of every qualifying same-material volume
+  (which are assumed not to overlap each other - a level design rule, not enforced in
+  code). A body only grazing a medium's edge therefore receives proportionally less
+  buoyancy/drag than one fully immersed (fraction 1.0), which is what stops a
+  surface-floating body from visibly bouncing as it crosses the binary overlap boundary
+  each frame. When no placed medium volume overlaps at all, the body resolves to the
+  default `Air` fallback at fraction 1.0 (not 0.0) - `Air` is the ambient substance
+  filling all otherwise-unoccupied space, not a bounded level-authored volume with edges
+  to be partially submerged past, so its own low but nonzero `Viscosity` drag keeps
+  applying continuously everywhere outside a placed volume. A placed volume of the same
+  density as `Air` also displaces the fallback (only a strictly less dense one is
+  skipped), so an `Air`-material volume can be a medium in its own right (e.g. a wind
+  tunnel). Only bodies implementing `IMediumAffected` (mirroring `IGravityAffected`)
+  receive these forces; `CurrentMedium` itself is still resolved/exposed for every body
+  regardless, for future systems (e.g. a swim pose) to read.
 - **A flowing medium is a `FlowZone2D`, not a separate force source.** A `FlowZone`
   placement is a `TwoStateObject2D` and `ILinkTarget` (like `Gate2D`) that is also a
   medium volume (`Medium = true`), with a `FlowDirection` (Left/Right/Up/Down) and a
@@ -220,18 +219,19 @@ capture the "why" behind a decision without needing a lengthy narrative.
   effect, open gate, switch, ladder) can leak its own material into the medium
   resolution and cause unintended buoyancy or swimming. `IsClimbable`/`IsHangable`
   terrain is still never a medium.
-- **Running surfaces (conveyors, running ropes) are not a body type**: a moving surface on a body that stays put
-  is the per-placement `Body2D.ConveyorVelocity` (`ConveyorDirection`/`ConveyorSpeed`),
-  orthogonal to `Kind` like `IsClimbable`/`IsHangable`. `Body2D.GetCarryVelocity()`
-  (own `Velocity` + `ConveyorVelocity`) is the single carry speed, so moving climbables/hangables
-  (kinematic patrol) and running surfaces (horizontal and vertical) share one path: grips use it as
+- **Running surfaces (conveyors, running ropes) are not a body type**: a moving surface on
+  a body that stays put is the per-placement `Body2D.ConveyorVelocity`
+  (`ConveyorDirection`/`ConveyorSpeed`), orthogonal to `Kind` like
+  `IsClimbable`/`IsHangable`. `Body2D.GetCarryVelocity()` (own `Velocity` +
+  `ConveyorVelocity`) is the single carry speed, so moving climbables/hangables (kinematic
+  patrol) and running surfaces (horizontal and vertical) share one path: grips use it as
   their reference frame, and resting contacts use it as the solid's collision velocity
   (friction drags riders along) and as the support speed for walking and jumping
-  (`GetSurfaceVelocityX`). Named `Conveyor*` rather than
-  `Flow*` because it prescribes a carry velocity, not a push force inside a medium.
-  Only static (including kinematic) bodies may have one; the loader rejects the keys on
-  movable bodies, whose surface already moves with the body and whose motion the
-  collision response, not a prescribed speed, decides.
+  (`GetSurfaceVelocityX`). Named `Conveyor*` rather than `Flow*` because it prescribes a
+  carry velocity, not a push force inside a medium. Only static (including kinematic)
+  bodies may have one; the loader rejects the keys on movable bodies, whose surface
+  already moves with the body and whose motion the collision response, not a prescribed
+  speed, decides.
 - **Climbing/hanging are grip-based**: holding a climbable/hangable records a grip
   contact (`ContactType.Climbable`/`Hangable`); gravity stays on and the grip motor
   (`UpdateMotorForce`) carries the weight. Climb/hang targets, grip-speed checks,
@@ -407,23 +407,21 @@ capture the "why" behind a decision without needing a lengthy narrative.
   subclass (`StaticHazard2D : StaticObject2D`, `KinematicHazard2D :
   KinematicObject2D`, `DynamicHazard2D : DynamicObject2D`). Patrol and pose
   behavior live on the object, so a harmless body can patrol too.
-- **`DynamicObject2D` (and so `DynamicHazard2D`) patrols via its own mass-scaled force** (`IPatrolBody`),
-  independently on the X and/or Y axis. Gravity is an ordinary force with no
-  patrol special case; each axis has its own gain (`PatrolForceMultiplierX`/`Y`),
-  cruise speed and force cap (`PatrolMaxForceX`, default unlimited, and
-  `PatrolMaxForceY`, default 0 = no vertical thrust). Caps only limit force,
-  never switch an axis on or off. An axis with no range holds its spawn
-  position via a spring target speed; fliers stay gravity-affected and get
-  lift from `PatrolMaxForceY`. Facing intent is the sign of the X target velocity
-  (dead-zoned), so a body settled on its hold position shows its idle pose.
-  A blocked patroller turns early by a per-axis timer rather than on first
-  contact: it runs while speed toward the heading is below a fraction of cruise
-  speed (reset by progress, not by losing contact, so bouncing off still counts)
-  and flips the heading after `PatrolBlockedTurnTime` (default 1 s) if a contact
-  sits on the heading side. So hazards still push into the player, strong bodies
-  shove light obstacles aside, and walls or heavy obstacles turn it back.
-  `KinematicObject2D` patrols differently: acceleration-limited prescribed
-  velocity, no forces.
+- **`DynamicObject2D` (and so `DynamicHazard2D`) patrols via its own mass-scaled force**
+  (`IPatrolBody`), independently on the X and/or Y axis. Gravity is an ordinary force with
+  no patrol special case; each axis has its own gain (`PatrolForceMultiplierX`/`Y`),
+  cruise speed and force cap (`PatrolMaxForceX`, default unlimited, and `PatrolMaxForceY`,
+  default 0 = no vertical thrust). Caps only limit force, never switch an axis on or off.
+  An axis with no range holds its spawn position via a spring target speed; fliers stay
+  gravity-affected and get lift from `PatrolMaxForceY`. Facing intent is the sign of the X
+  target velocity (dead-zoned), so a body settled on its hold position shows its idle
+  pose. A blocked patroller turns early by a per-axis timer rather than on first contact:
+  it runs while speed toward the heading is below a fraction of cruise speed (reset by
+  progress, not by losing contact, so bouncing off still counts) and flips the heading
+  after `PatrolBlockedTurnTime` (default 1 s) if a contact sits on the heading side. So
+  hazards still push into the player, strong bodies shove light obstacles aside, and walls
+  or heavy obstacles turn it back. `KinematicObject2D` patrols differently:
+  acceleration-limited prescribed velocity, no forces.
 - **Player state is four counters: Lives, Health, Rings and Score.** Health is a
   0-1 bar for the current life (HUD bar); Lives, Rings and Score are shown in
   the HUD text. Ordinary (non-fatal) hazard contact removes the hazard's
@@ -476,9 +474,10 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **`GameLoop.Stop()` is a flag checked after every await** in startup, world
   loading and frame processing; nothing new reaches the browser adapters once
   the page has begun disposing them. No cancellation tokens are used.
-- **Rings** (`CollectableType.Ring`) add one to `Player2D.Rings` and 5 to
-  Score (`GameDefaults.RingScore`); they do not heal. Every `RingsPerLife` rings (`[World] RingsPerLife`,
-  default 25) the count resets to 0 and a life is added. Rings survive respawn.
+- **Rings** (`CollectableType.Ring`) add one to `Player2D.Rings` and 5 to Score
+  (`GameDefaults.RingScore`); they do not heal. Every `RingsPerLife` rings (`[World]
+  RingsPerLife`, default 25) the count resets to 0 and a life is added. Rings survive
+  respawn.
 - **A world's starting lives are `[World] Lives`** (default
   `GameDefaults.PlayerStartingLives`), applied to `Player2D.Lives` when the
   player object is spawned - mirroring how `[World] Title` and `[Physics]
@@ -541,7 +540,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **`Up` (directional) and `Jump` (action) are always distinct inputs**, even
   for the ordinary ground jump.
 - **Two full, independent key sets** are supported for local co-op/preference
-  - "Player 1" (arrows + `Space` + `Enter` as action) and "Player 2" (`WASD` + `Left Ctrl` + `E` as action).
+  - "Player 1" (arrows + `Space` + `Enter` as action) and "Player 2" (`WASD` + `Left Ctrl`
+    + `E` as action).
 - **"Stance" is the stored choice, "pose" is the displayed result.** The
   player's `Stance` (`Walk` = upright/stretched, `Crawl` = compact/clamber) is
   the only stored state (`IsClambering` is derived from it while hanging).

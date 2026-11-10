@@ -29,6 +29,15 @@ jobs:
       - name: Publish ASCII Hero.Client (standalone)
         run: dotnet publish "ASCII Hero/ASCII Hero.Client/ASCII Hero.Client.csproj" -c Release -o publish -p:StandaloneBuild=true
 
+      # Lists every asset file so the game never requests the optional files a world doesn't
+      # have (GitHub Pages sometimes answers such requests with a 503 instead of a 404).
+      - name: Write asset manifest
+        shell: pwsh
+        run: |
+          $root = (Resolve-Path "publish/wwwroot").Path
+          $paths = Get-ChildItem "$root/Assets" -Recurse -File | ForEach-Object { $_.FullName.Substring($root.Length + 1).Replace('\', '/') } | Sort-Object
+          [IO.File]::WriteAllLines("$root/Assets/manifest.txt", $paths)
+
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
         with:
