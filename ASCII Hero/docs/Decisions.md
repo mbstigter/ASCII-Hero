@@ -305,17 +305,28 @@ capture the "why" behind a decision without needing a lengthy narrative.
   opt-out for multi-frame-but-non-animating assets), including subtle idle
   animation (e.g. blinking) using the same mechanism as static shape
   variants.
-- **A moving (non-idle) clip's `FrameDurationSeconds` is deliberately
-  correlated with that pose's own move speed**, not a single fixed value
-  shared by every pose: `FrameDurationSeconds = 2.4 / speed`, anchored on
-  the walk's stride: the player travels 2.4 cells per animation frame step
-  (`walk_left`/`walk_right`: `WalkSpeed` = 12, `FrameDurationSeconds` = 0.2). See the player sprite's settings.ini `[Animation]` section
-  comment for the full worked table, and each `GameDefaults` speed
-  constant's own doc comment for the reminder to recompute its paired
-  clip(s) if that speed is tweaked. Swimming is the deliberate exception: a
-  swimmer glides further per stroke than a walker per step, so swim clips use
-  their own, longer anchor (`FrameDurationSeconds = 5.4 / speed`) for fewer,
-  slower strokes.
+- **Animation that depicts movement is travel-driven, not time-driven**: a
+  clip with `CellsPerFrame` steps one frame per that many cells travelled
+  (`Body2D.AdvanceAnimation`), so the visual always matches the actual speed -
+  including acceleration, being blocked, and riding moving surfaces - with no
+  per-speed retuning. Travel is measured along the clip's own axis and
+  relative to what the body pushes against (`GetAnimationTravelVelocity`):
+  ground (incl. belts/platforms) while grounded, the gripped climbable/hangable
+  (incl. its running speed) for the player, the medium's flow otherwise; a
+  static body uses its own `ConveyorVelocity`, a `FlowZone` its `Flow`. So a
+  player hanging still on a running rope shows the idle clip with the hands
+  locked on the moving strand. `FrameDurationSeconds` stays the fallback when
+  there is no travel source; idle, jump, flying/swimming creature and fan
+  clips stay time-driven.
+  - Player moving clips share a 2.4-cell stride; swim clips use a longer
+    5.4-cell stroke.
+  - Flowing water surfaces use `CellsPerFrame = 3`: a body only takes up part of
+    a flow (by overlap, and gradually), so waves at the full flow speed looked
+    far faster than anything drifting in it.
+  - Running surfaces (rope, conveyor) use `CellsPerFrame = 1`
+    with a 3-cell repeating unit that shifts one cell per frame, so the
+    pattern moves at exactly the surface speed and its direction is
+    unambiguous (a 2-cell unit shifted by one cell reads either way).
 - **`Kind` is mandatory in `_objects.ini`** and its values match concrete
   class names minus the `2D` suffix (`StaticObject`, `DynamicObject`,
   `KinematicObject`, `StaticHazard`, `DynamicHazard`, `KinematicHazard`,

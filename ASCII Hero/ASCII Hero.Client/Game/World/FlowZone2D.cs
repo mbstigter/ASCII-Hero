@@ -21,4 +21,7 @@ public class FlowZone2D : TwoStateObject2D, ILinkTarget
     public Vector2D Flow => IsOn
         ? new Vector2D(FlowDirection.X * FlowSpeed, FlowDirection.Y * FlowSpeed)
         : new Vector2D(0, 0);
+
+    /// <summary>A flowing surface (e.g. a river's waves) keeps pace with the medium's own <see cref="Flow"/>.</summary>
+    public override Vector2D? GetAnimationTravelVelocity() => Flow;
 }

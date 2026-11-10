@@ -261,7 +261,7 @@ public partial class World2D
             }
 
             clipNames.Add(section.Text("Clip") ?? DefaultClipName);
-            if (section.Text("OnClip") is { } onClipName)
+            if (section.Text("ClipWhenOn") is { } onClipName)
             {
                 clipNames.Add(onClipName);
             }
@@ -347,7 +347,7 @@ public partial class World2D
 
         var linkName = section.Text("Link");
         var lockName = section.Text("Lock");
-        var onClipName = section.Text("OnClip");
+        var onClipName = section.Text("ClipWhenOn");
         var initialOn = string.Equals(section.Text("InitialState"), "On", StringComparison.OrdinalIgnoreCase);
         var initialVelocity = new Vector2D(section.Number("InitialVelocityX") ?? 0.0, section.Number("InitialVelocityY") ?? 0.0);
         var gravityAffected = section.Flag("GravityAffected", fallback: true);

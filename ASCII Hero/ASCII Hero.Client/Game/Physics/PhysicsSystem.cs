@@ -870,6 +870,7 @@ public class PhysicsSystem
         if (mediumBody is not null)
         {
             mediumBody.CurrentMedium = medium;
+            mediumBody.CurrentFlow = flow;
         }
 
         // Patrolling bodies (see IPatrolBody) contribute their own horizontal force here,

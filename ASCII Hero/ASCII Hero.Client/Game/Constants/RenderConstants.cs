@@ -33,31 +33,27 @@ public static class RenderConstants
     /// </summary>
     public const int DefaultViewportRows = 25;
 
-    /// <summary>
-    /// No default: the <c>[Render] FontWidthPixels</c>/<c>FontHeightPixels</c> keys in
-    /// <c>Global/Settings.ini</c> are mandatory - <see cref="GameLoop.StartAsync"/> throws if
-    /// either is missing. A browser's text-measuring API cannot reliably report a true bitmap
-    /// font's real native pixel size (a browser may only rasterize/measure such a font precisely
-    /// at specific sizes), so rather than an unreliable auto-detect, the font's actual documented
-    /// native size must always be supplied explicitly. These are also the final on-screen cell
-    /// size directly (no separate scale factor) - e.g. the bundled 8x14 font at 2x zoom is simply
-    /// configured as 16/28 - so a deliberately non-uniform pair (e.g. 15/28) can squeeze/stretch
-    /// the font in one direction if ever desired.
-    /// </summary>
+    // The font/cell size itself has no default: the [Render] FontWidthPixels/FontHeightPixels keys
+    // in Global/Settings.ini are mandatory - GameLoop.StartAsync throws if either is missing. A
+    // browser's text-measuring API cannot reliably report a true bitmap font's native pixel size,
+    // so rather than an unreliable auto-detect, the font's documented native size must always be
+    // supplied explicitly. They are also the final on-screen cell size (no separate scale factor) -
+    // e.g. the bundled 8x14 font at 2x zoom is configured as 16/28 - so a deliberately non-uniform
+    // pair (e.g. 15/28) can squeeze/stretch the font in one direction if ever desired.
 
     /// <summary>
-    /// Default width (in pixels) of one world cell, used until the browser reports its own
-    /// measured font-cell metrics (see <see cref="Browser.CanvasBridge.CellMetrics"/>) and as the
-    /// fallback if that measurement is ever invalid. Not overridable via any ini file.
+    /// Fallback width (in pixels) of one world cell: used before the configured cell size is
+    /// applied (see <see cref="Browser.CanvasBridge.CellMetrics"/>) and if the cell size the browser
+    /// echoes back is ever invalid. Not overridable via any ini file.
     /// </summary>
-    public const double DefaultCellWidthPixels = 16;
+    public const double DefaultCellWidthPixels = 16.0;
 
     /// <summary>
-    /// Default height (in pixels) of one world cell, used until the browser reports its own
-    /// measured font-cell metrics (see <see cref="Browser.CanvasBridge.CellMetrics"/>) and as the
-    /// fallback if that measurement is ever invalid. Not overridable via any ini file.
+    /// Fallback height (in pixels) of one world cell: used before the configured cell size is
+    /// applied (see <see cref="Browser.CanvasBridge.CellMetrics"/>) and if the cell size the browser
+    /// echoes back is ever invalid. Not overridable via any ini file.
     /// </summary>
-    public const double DefaultCellHeightPixels = 28;
+    public const double DefaultCellHeightPixels = 28.0;
 
     /// <summary>
     /// One of the application's only two hardcoded colors: the foreground used when

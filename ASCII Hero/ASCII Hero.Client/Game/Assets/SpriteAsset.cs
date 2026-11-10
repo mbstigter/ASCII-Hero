@@ -57,6 +57,25 @@ public class SpriteClip
     /// </summary>
     public double? FrameDurationSeconds { get; init; }
 
+    /// <summary>
+    /// Distance, in cells, the body travels per frame step - makes this clip travel-driven
+    /// instead of time-driven, so its frames keep pace with actual movement (legs with the
+    /// ground, a rope's strand with the rope's own running speed). Travel is measured by
+    /// <see cref="World.Body2D.AdvanceAnimation"/> along <see cref="Facing"/>'s axis, relative to
+    /// whatever the body moves against. Wins over <see cref="FrameDurationSeconds"/>, which stays the
+    /// fallback for a body that has no travel to measure (see
+    /// <see cref="World.Body2D.GetAnimationTravelVelocity"/>). Null means time-driven. Resolved
+    /// per-clip the same way as <see cref="FrameDurationSeconds"/>.
+    /// </summary>
+    public double? CellsPerFrame { get; init; }
+
+    /// <summary>
+    /// The direction this clip's name declares by its suffix (<c>_left</c>/<c>_right</c>/<c>_up</c>/
+    /// <c>_down</c>), or <see cref="Assets.Facing.Idle"/> for any other name. Picks the axis a
+    /// travel-driven clip (<see cref="CellsPerFrame"/>) measures travel along.
+    /// </summary>
+    public Facing Facing { get; init; }
+
     /// <summary>How this clip cycles through its frames. Defaults to Loop.</summary>
     public AnimationMode AnimationMode { get; init; } = AnimationMode.Loop;
 

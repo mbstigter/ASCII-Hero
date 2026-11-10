@@ -190,7 +190,7 @@ The live game state and the entity types that make it up.
 	climbing/hanging hazard) could implement the same way.
   - `StaticObject2D` - solid, static terrain (platforms, walls, decoration).
   - `TwoStateObject2D` - a `StaticObject2D` with an off/on state that swaps between
-    two clips of its sprite (`Clip` / `OnClip`) via `SetState`; subclasses react in
+    two clips of its sprite (`Clip` / `ClipWhenOn`) via `SetState`; subclasses react in
     `OnStateChanged`. Four subclasses:
     `Gate2D` (door/hatch: solid while closed, passable while open; opened by a key
     `Lock` via `World2D.TryOpenGate`, or driven by a switch through `Link`),
@@ -704,9 +704,15 @@ The live game state and the entity types that make it up.
   The box and text sit on the world's `InterfaceBackdrop` panel color when set
   (transparent otherwise); the HUD strip uses the same color.
 
-- **`AnimationSystem`** - advances every body's animation timer once per
+- **`AnimationSystem`** - advances every body's animation once per
   frame (bodies with no animation configured, or a single frame, no-op
-  internally) and ticks the lifetime of any `EffectInstance2D`, queuing it
+  internally). A time-driven clip advances by elapsed time; a travel-driven
+  clip (`CellsPerFrame`) by the distance `Body2D.GetAnimationTravelVelocity`
+  reports - the body's velocity relative to its ground/grip/medium
+  (`Player2D` overrides the reference for climbing, hanging and swimming;
+  `CurrentFlow` is set by `PhysicsSystem` alongside `CurrentMedium`), a static
+  body's `ConveyorVelocity`, or a `FlowZone2D`'s `Flow` - falling back to time
+  when there is none. It also ticks the lifetime of any `EffectInstance2D`, queuing it
   for removal once its effect finishes playing (unless configured to
   persist). It also moves each following effect onto its target (plus the
   clip's offset) and sets the target's temporary `TintColor`, which
@@ -897,7 +903,8 @@ large jumps after e.g. a tab switch):
    active hazard contacts, previous airborne state), so nothing from the
    previous world leaks into the new one.
 2. **Animation** - `AnimationSystem.Update` advances every body's animation
-   frame timer and ticks down any active effect's remaining lifetime. Runs
+   (by time, or by travel using the velocities and contacts the physics steps
+   just produced) and ticks down any active effect's remaining lifetime. Runs
    once per real frame (using the frame's full elapsed time, not the fixed
    fraction any one Physics/Collision step used), not once per fixed step,
    since it is purely presentational and already tolerant of a larger delta.

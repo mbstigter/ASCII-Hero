@@ -279,4 +279,18 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// </summary>
     public string ResolvedPose { get; private set; } = "Walk";
 
+    /// <summary>
+    /// What the player's limbs push against: the climbable/hangable it grips (including that
+    /// surface's own running speed, see <see cref="Body2D.GetCarryVelocity"/>) while climbing or
+    /// hanging, the water's flow while swimming, otherwise the ground or medium as for any body.
+    /// </summary>
+    protected override Vector2D GetLocomotionReferenceVelocity()
+    {
+        var grip = IsClimbing ? GetContactingBodies(Physics.ContactType.Climbable).FirstOrDefault()
+            : IsHanging ? GetContactingBodies(Physics.ContactType.Hangable).FirstOrDefault()
+            : null;
+        return grip?.GetCarryVelocity()
+            ?? (IsSwimming ? CurrentFlow : base.GetLocomotionReferenceVelocity());
+    }
+
 }

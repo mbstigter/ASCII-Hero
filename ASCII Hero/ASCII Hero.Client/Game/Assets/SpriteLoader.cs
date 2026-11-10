@@ -1,4 +1,4 @@
-namespace ASCII_Hero.Client.Game.Assets;
+﻿namespace ASCII_Hero.Client.Game.Assets;
 
 /// <summary>
 /// Loads a sprite asset's files (settings.ini + one or more clips' characters/foregroundcolors/
@@ -25,6 +25,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         var defaultBackColor = IniValueParser.ParseBackColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
         var defaultMaterial = settings.TryGetValue("Physics", "DefaultMaterial");
         var defaultFrameDurationSeconds = ParseFrameDurationSeconds(settings.TryGetValue("Animation", "FrameDurationSeconds"));
+        var defaultCellsPerFrame = ParseCellsPerFrame(settings.TryGetValue("Animation", "CellsPerFrame"));
         var defaultAnimationMode = ParseAnimationMode(settings.TryGetValue("Animation", "Mode"));
         var defaultDefaultFrame = ParseDefaultFrame(settings.TryGetValue("Animation", "DefaultFrame"));
         var (poses, defaultPose) = ParsePoses(assetName, settings.Section("Poses"));
@@ -51,6 +52,9 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             var frameDurationSeconds = clipAnimationSection.TryGetValue("FrameDurationSeconds", out var clipDurationText)
                 ? ParseFrameDurationSeconds(clipDurationText)
                 : defaultFrameDurationSeconds;
+            var cellsPerFrame = clipAnimationSection.TryGetValue("CellsPerFrame", out var clipCellsPerFrameText)
+                ? ParseCellsPerFrame(clipCellsPerFrameText)
+                : defaultCellsPerFrame;
             var animationMode = clipAnimationSection.TryGetValue("Mode", out var clipModeText)
                 ? ParseAnimationMode(clipModeText)
                 : defaultAnimationMode;
@@ -64,6 +68,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             {
                 Name = clipName,
                 Frames = [],
+                CellsPerFrame = cellsPerFrame,
                 EffectOffsetX = IniValueParser.TryParseInt(clipAnimationSection.GetValueOrDefault("OffsetX"), out var offsetX) ? offsetX : 0,
                 EffectOffsetY = IniValueParser.TryParseInt(clipAnimationSection.GetValueOrDefault("OffsetY"), out var offsetY) ? offsetY : 0,
                 TintColor = IniValueParser.ParseColorCode(clipAnimationSection.GetValueOrDefault("TintColor")),
@@ -144,6 +149,8 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             Name = clipName,
             Frames = frames,
             FrameDurationSeconds = frameDurationSeconds,
+            CellsPerFrame = effectSettings.CellsPerFrame,
+            Facing = ResolveFacingFromClipName(clipName),
             AnimationMode = animationMode,
             DefaultFrame = defaultFrame,
             EffectDurationSeconds = effectDurationSeconds,
@@ -297,6 +304,10 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             ? parsed
             : null;
     }
+
+    /// <summary>Parses a <c>CellsPerFrame</c> value; anything but a positive finite number means "not travel-driven" (null).</summary>
+    internal static double? ParseCellsPerFrame(string? rawValue) =>
+        ParseFrameDurationSeconds(rawValue) is { } parsed && parsed > 0 && double.IsFinite(parsed) ? parsed : null;
 
     internal static AnimationMode ParseAnimationMode(string? rawValue) =>
         Enum.TryParse<AnimationMode>(rawValue, ignoreCase: true, out var parsed) ? parsed : AnimationMode.Loop;

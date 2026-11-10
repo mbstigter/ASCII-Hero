@@ -6,7 +6,7 @@ namespace ASCII_Hero.Client.Game.World;
 /// A static object that is either off or on and shows a different clip of its own sprite asset
 /// for each state - the shared base of <see cref="Switch2D"/> (off/on) and <see cref="Gate2D"/>
 /// (closed/open). The off clip is the placement's <c>Clip</c>; the on clip is its optional
-/// <c>OnClip</c> (without one the state still changes, but the sprite stays the same).
+/// <c>ClipWhenOn</c> (without one the state still changes, but the sprite stays the same).
 /// </summary>
 public abstract class TwoStateObject2D : StaticObject2D
 {

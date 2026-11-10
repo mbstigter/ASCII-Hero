@@ -248,7 +248,28 @@ multiple frames. If omitted, multi-frame clips remain static at frame `DefaultFr
 (or `0` if that's also unset):
 - `FrameDurationSeconds` (required for animation to occur) — how long each frame
   displays before advancing to the next, in seconds. Must be parseable as a
-  floating-point number. If absent or unparseable, the clip does not animate.
+  floating-point number. If absent or unparseable, the clip does not animate
+  (unless it is travel-driven, see `CellsPerFrame`).
+- `CellsPerFrame` (optional) ? makes the clip **travel-driven** instead of
+  time-driven: it steps to the next frame each time the body has travelled this
+  many cells, so the animation keeps pace with actual movement (and holds while
+  the body stands still or is blocked). Must be a positive number; anything else
+  is ignored. Travel is measured along the clip's own axis (horizontal for a
+  `_left`/`_right` clip, vertical for an `_up`/`_down` clip, total speed
+  otherwise) and relative to what the body moves against:
+  - a moving body: its velocity relative to the ground it stands on, the
+    ladder/rope it grips (including that surface's own running speed), or the
+    flowing water it swims in ? so a body carried along without moving itself
+    does not animate;
+  - a body that stays put: its own running surface speed
+    (`ConveyorSpeed`/`ConveyorDirection`, e.g. a running rope or belt), or the
+    flow of a `FlowZone` (zero while switched off, so the frame holds).
+  When set, it wins over `FrameDurationSeconds`, which stays the fallback for a
+  body that has no travel to measure (e.g. a running-surface clip placed without
+  a `ConveyorSpeed`). With `CellsPerFrame = 1` and a repeating unit whose
+  pattern shifts one cell per frame, the pattern moves at exactly the surface's
+  speed; give such a clip a unit of at least 3 cells so its direction reads
+  unambiguously.
 - `Mode` (default `Loop`) — playback pattern:
   - `Loop`: cycles sequentially, wrapping at the end (0, 1, 2, 0, 1, 2, ...).
   - `PingPong`: bounces back and forth (0, 1, 2, 1, 0, 1, 2, 1, ...).
@@ -289,7 +310,7 @@ same asset can have very different frame counts and desired pacing (e.g. a
 3-frame idle head-turn bouncing slowly vs. a 2-frame walk cycle looping
 quickly). The `[Animation]` section above is the **default** applied to every
 clip of the asset; an optional `[Animation.{clipName}]` section overrides any
-of its three keys for one specific clip only, falling back to the asset-wide
+of its keys for one specific clip only, falling back to the asset-wide
 default for any key it doesn't itself set:
 
 ```ini
@@ -299,14 +320,14 @@ Mode = PingPong
 DefaultFrame = 1
 
 [Animation.walk_left]
-FrameDurationSeconds = 0.2
+CellsPerFrame = 2.4
 Mode = Loop
 DefaultFrame = 0
 ```
 
 Here, every clip defaults to the slow `PingPong` idle-style timing, except
-`walk_left`, which overrides all three keys for a fast `Loop`ing walk cycle
-starting at frame `0`. A genuinely different animation *state* (e.g. dead vs.
+`walk_left`, which is a `Loop`ing walk cycle starting at frame `0` that steps
+once per 2.4 cells walked. A genuinely different animation *state* (e.g. dead vs.
 alive) still requires a separate asset (its own settings.ini) — per-clip
 `[Animation.{clipName}]` overrides one clip's timing, not a per-instance
 runtime toggle.
@@ -1079,7 +1100,7 @@ EffectPersists = true
 
 **Gates, keys and switches.** A *gate* (`Kind = Gate`) is a door, hatch or similar
 passage: solid while closed, passable while open. It has two clips of its sprite
-asset - `Clip` (closed) and `OnClip` (open) - and swaps between them. The clip
+asset - `Clip` (closed) and `ClipWhenOn` (open) - and swaps between them. The clip
 names are free (conventionally `closed`/`open` for gates and `off`/`on` for
 switches); `Clip` defaults to
 `default` when omitted. `Span`, `ForegroundColor` etc. work as for any sprite
@@ -1094,7 +1115,7 @@ placement. A gate is opened in one of two ways, never both (a gate with both
 - **By switch**: `Link = <name>`, see below.
 
 A *switch* (`Kind = Switch`) is a button or lever: a passable object with an off
-clip (`Clip`) and an on clip (`OnClip`). The player operates it by standing next
+clip (`Clip`) and an on clip (`ClipWhenOn`). The player operates it by standing next
 to it (within one cell) and pressing the action key. It drives every target that has
 the same `Link` name (a `Gate`, a `Device`, a `FlowZone`, or a `KinematicObject`, which
 stops while off and moves while on). A `Device` is a machine-like object (fan, lamp,
@@ -1106,7 +1127,7 @@ The switch's `Sound` plays when it is operated.
 | Key            | Meaning |
 |----------------|---------|
 | `Link`         | Name shared by a switch and its target. |
-| `OnClip`       | Clip shown while on/open. Without it the state still changes but the sprite stays. |
+| `ClipWhenOn`   | Clip shown while on/open. Without it the state still changes but the sprite stays. |
 | `InitialState` | `On` to start on/open (the target is synchronised on load). Default off/closed. |
 | `Latching`     | Switches only. `true`: operating turns it on and it stays on. `false` (default): each operation toggles it. |
 
@@ -1121,7 +1142,7 @@ Sound = KeyPickup
 [RedDoor]
 Asset = Door
 Clip = closed
-OnClip = open
+ClipWhenOn = open
 Kind = Gate
 Lock = Red
 Sound = DoorOpen  ; Played when the door opens
@@ -1129,7 +1150,7 @@ Sound = DoorOpen  ; Played when the door opens
 [Lever]
 Asset = Lever
 Clip = off
-OnClip = on
+ClipWhenOn = on
 Kind = Switch
 Latching = false
 Link = Bridge
@@ -1138,7 +1159,7 @@ Sound = SwitchClick
 [BridgeGate]
 Asset = Hatch
 Clip = closed
-OnClip = open
+ClipWhenOn = open
 Kind = Gate
 Link = Bridge
 ```
@@ -1160,7 +1181,7 @@ zones should be avoided; the level designer is responsible for that.
 | `FlowSpeed`     | How fast the medium moves, in cells per second. Default `12`. |
 | `Link`          | Optional. A switch with the same `Link` turns the flow on and off. |
 | `InitialState`  | `On` to flow from the start. Default off. |
-| `OnClip`        | Optional clip shown while flowing (as for a gate or switch). |
+| `ClipWhenOn`    | Optional clip shown while flowing (as for a gate or switch). |
 
 ```ini
 [River]

@@ -15,7 +15,7 @@ namespace ASCII_Hero.Client.Game.World;
 public abstract class Body2D
 {
     private IReadOnlyList<Rect> _localCollisionRects = [];
-    private double _animationElapsedSeconds;
+    private double _animationProgress;
     private int _animationFrameIndex;
     private int _animationDirection = 1;
     private int _span;
@@ -268,6 +268,13 @@ public abstract class Body2D
     public Assets.Material CurrentMedium { get; set; } = Assets.MaterialLibrary.Undefined;
 
     /// <summary>
+    /// Velocity of the medium this body is immersed in (a <see cref="FlowZone2D"/>'s flow, scaled
+    /// by how much of the body is inside it; zero in a still medium), assigned together with
+    /// <see cref="CurrentMedium"/> once per physics step.
+    /// </summary>
+    public Vector2D CurrentFlow { get; set; }
+
+    /// <summary>
     /// Bounciness applied on collision (0 = no bounce, 1 = perfectly elastic), resolved the same
     /// way as <see cref="Density"/> unless a placement explicitly overrides it via the
     /// <c>Restitution</c> ini key (see <see cref="World.World2D.LoadAsync"/>).
@@ -368,7 +375,7 @@ public abstract class Body2D
         Clip = sprite.GetClip(clipName);
         _animationFrameIndex = frameIndex;
         _span = span;
-        _animationElapsedSeconds = 0;
+        _animationProgress = 0;
         // Starting already at the last frame means the next PingPong tick should move backward,
         // not forward-then-immediately-clamp (which would otherwise waste one full tick doing
         // nothing visible - noticeable on short clips, e.g. a 2-frame walk cycle started at index 1).
@@ -378,27 +385,44 @@ public abstract class Body2D
     }
 
     /// <summary>
-    /// Advances the animation timer and cycles to the next frame if enough time has elapsed.
-    /// No-ops immediately if the clip has no animation settings, only one frame, or the clip's
-    /// <see cref="AnimationMode"/> is <see cref="AnimationMode.Off"/> (holds forever on the
-    /// frame set at spawn, e.g. a dead/inanimate variant of an otherwise-animated asset).
+    /// Advances the animation and cycles to the next frame once enough progress has built up:
+    /// time for an ordinary clip (<see cref="SpriteClip.FrameDurationSeconds"/>), or distance
+    /// travelled for a travel-driven clip (<see cref="SpriteClip.CellsPerFrame"/>) - see
+    /// <see cref="GetAnimationTravelVelocity"/>. A travel-driven clip on a body with no travel to
+    /// measure falls back to its time-based timing. No-ops immediately if the clip has neither
+    /// setting, only one frame, or the clip's <see cref="AnimationMode"/> is
+    /// <see cref="AnimationMode.Off"/> (holds forever on the frame set at spawn, e.g. a
+    /// dead/inanimate variant of an otherwise-animated asset).
     /// Returns true if at least one frame step was taken this call (used to time per-frame
     /// sounds, e.g. footsteps).
     /// </summary>
     public bool AdvanceAnimation(double deltaSeconds)
     {
-        // No animation configured, only one frame, or animation explicitly disabled - nothing to animate.
-        if (Clip.FrameDurationSeconds is null || Clip.Frames.Count <= 1 || Clip.AnimationMode == AnimationMode.Off)
+        if (Clip.Frames.Count <= 1 || Clip.AnimationMode == AnimationMode.Off)
+        {
+            return false;
+        }
+
+        double progressPerFrame;
+        if (Clip.CellsPerFrame is { } cellsPerFrame && GetAnimationTravelVelocity() is { } travelVelocity)
+        {
+            _animationProgress += GetTravelSpeedAlongClip(travelVelocity) * deltaSeconds;
+            progressPerFrame = cellsPerFrame;
+        }
+        else if (Clip.FrameDurationSeconds is { } frameDurationSeconds && frameDurationSeconds > 0)
+        {
+            _animationProgress += deltaSeconds;
+            progressPerFrame = frameDurationSeconds;
+        }
+        else
         {
             return false;
         }
 
         var advanced = false;
-        _animationElapsedSeconds += deltaSeconds;
-
-        while (_animationElapsedSeconds >= Clip.FrameDurationSeconds.Value)
+        while (_animationProgress >= progressPerFrame)
         {
-            _animationElapsedSeconds -= Clip.FrameDurationSeconds.Value;
+            _animationProgress -= progressPerFrame;
             advanced = true;
 
             if (Clip.AnimationMode == AnimationMode.Loop)
@@ -437,6 +461,44 @@ public abstract class Body2D
 
         return advanced;
     }
+
+    /// <summary>
+    /// The velocity a travel-driven clip (<see cref="SpriteClip.CellsPerFrame"/>) keeps pace
+    /// with, or null when this body has no travel to measure (the clip then falls back to its
+    /// <see cref="SpriteClip.FrameDurationSeconds"/>). A body that stays put reports its moving
+    /// surface (<see cref="ConveyorVelocity"/>, e.g. a running rope or conveyor belt), or null if it
+    /// has none; a moving body reports its own velocity relative to what it moves against (see
+    /// <see cref="GetLocomotionReferenceVelocity"/>), so feet keep pace with the ground they
+    /// step on rather than with the world.
+    /// </summary>
+    public virtual Vector2D? GetAnimationTravelVelocity()
+    {
+        if (IsStatic || this is not IPhysicsBody moving)
+        {
+            return ConveyorVelocity.X != 0.0 || ConveyorVelocity.Y != 0.0 ? ConveyorVelocity : null;
+        }
+
+        return moving.Velocity - GetLocomotionReferenceVelocity();
+    }
+
+    /// <summary>
+    /// The velocity of whatever this moving body's own locomotion pushes against: the solid it
+    /// stands on (see <see cref="GetSurfaceVelocityX"/>) while grounded, otherwise the medium it is
+    /// immersed in (<see cref="CurrentFlow"/>, zero in still air or water).
+    /// </summary>
+    protected virtual Vector2D GetLocomotionReferenceVelocity() =>
+        IsGrounded ? new Vector2D(GetSurfaceVelocityX(), 0.0) : CurrentFlow;
+
+    /// <summary>
+    /// The travel speed along the active clip's own axis: horizontal for a <c>_left</c>/<c>_right</c>
+    /// clip, vertical for an <c>_up</c>/<c>_down</c> clip, and the full speed for any other clip.
+    /// </summary>
+    private double GetTravelSpeedAlongClip(Vector2D travelVelocity) => Clip.Facing switch
+    {
+        Facing.Left or Facing.Right => Math.Abs(travelVelocity.X),
+        Facing.Up or Facing.Down => Math.Abs(travelVelocity.Y),
+        _ => Math.Sqrt(travelVelocity.X * travelVelocity.X + travelVelocity.Y * travelVelocity.Y),
+    };
 
     /// <summary>
     /// Switches this body to display/collide as the clip for the given pose/facing pair (see

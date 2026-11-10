@@ -54,9 +54,10 @@ public static class PhysicsConstants
     /// <summary>
     /// Default gravity acceleration, in world cells per second squared - see
     /// <see cref="World.World2D.Gravity"/>. Overridable via the <c>[Physics] Gravity</c> key in
-    /// <c>Global/Settings.ini</c>.
+    /// <c>Global/Settings.ini</c> (for every world) or in a world's own <c>settings.ini</c> (for
+    /// that world only, taking precedence).
     /// </summary>
-    public const double DefaultGravity = 40;
+    public const double DefaultGravity = 40.0;
 
     // --- Collision solver ---
 
@@ -161,6 +162,7 @@ public static class PhysicsConstants
     public const double KinematicPlatformAcceleration = 20.0;
 
     // --- Swimming ---
+
     /// <summary>
     /// Minimum <see cref="Assets.Material.Density"/> for a body's <see cref="World.Body2D.CurrentMedium"/>
     /// to count as "swimmable" (see <see cref="Physics.PhysicsSystem.IsSwimmableMedium"/>) - set

@@ -62,21 +62,28 @@ that is not a multiple of the unit ends with a partial unit; for a clean end, pi
 | Rope (running) | `horizontal_left`, `horizontal_right` | 3 wide | 1 tall |
 | Rope (still) | `vertical` | 2 tall | 1 wide |
 | Rope (running) | `vertical_up`, `vertical_down` | 3 tall | 1 wide |
+| Vine | `vertical` | 2 tall | 1 wide |
 | Laser | `left`, `right` | 3 wide | 1 tall |
 | Laser | `up`, `down` | 3 tall | 1 wide |
-| Conveyor | `horizontal_left`, `horizontal_right` | 2 wide | 1 tall |
-| Conveyor | `vertical_up`, `vertical_down` | 2 tall | 3 wide |
+| Conveyor | `horizontal_left`, `horizontal_right` | 3 wide | 1 tall |
+| Conveyor | `vertical_up`, `vertical_down` | 3 tall | 3 wide |
 | Ladder | `vertical` | 1 tall | 3 wide |
 | Ladder | `horizontal` | 1 wide | 3 tall |
 | Pipe | `horizontal` / `vertical` | 1 | 1 |
-| Water surface | `horizontal` / `vertical` | 2 | 1 |
+| Water surface (still) | `still` | 2 wide | 1 tall |
+| Water surface (flowing) | `horizontal_left`, `horizontal_right` | 3 wide | 1 tall |
+| Waterfall | `vertical_down` | 3 tall | 1 wide |
 
 Examples: `Span = 12` on a running rope gives four whole 3-cell units; `Span = 10` gives three units
 plus one cell of a fourth.
 
 - Running (animated) units look smoothest when the span is a multiple of the unit.
-- Pick the animated clip whose direction matches the object's `ConveyorDirection`, so the motion
-  you see matches the way the player is carried.
+- Pick the animated clip whose direction matches the object's `ConveyorDirection` (or the water's
+  `FlowDirection`), so the motion you see matches the way the player is carried. Running ropes and
+  belts animate at exactly their own speed; flowing water's waves move at a third of its
+  `FlowSpeed`, about as fast as things drift in it. Either way, a faster object also looks faster.
+- For water that only flows while switched on, use the `still` clip with
+  `ClipWhenOn = horizontal_left`/`horizontal_right`.
 
 ## General
 
