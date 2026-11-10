@@ -503,7 +503,8 @@ public partial class World2D
     }
 
     /// <summary>
-    /// Reads a placement's <c>BackgroundColor</c> override: a single-character color code, or the
+    /// Reads a placement's <c>BackgroundColor</c> override: a single-character color code, the word
+    /// <c>None</c> (no fill, see <see cref="IniValueParser.NoFillColorCode"/>), or the
     /// word <c>WorldBackdrop</c>, which uses the world's own <c>WorldBackdrop</c> so the cell shows the
     /// world's backdrop. It is rejected when the world sets no <c>WorldBackdrop</c>.
     /// </summary>
@@ -512,7 +513,7 @@ public partial class World2D
         section.Values.TryGetValue("BackgroundColor", out var text);
         if (!string.Equals(text?.Trim(), "WorldBackdrop", StringComparison.OrdinalIgnoreCase))
         {
-            return IniValueParser.ParseColorCode(text);
+            return IniValueParser.ParseBackColorCode(text);
         }
 
         return world.WorldBackdrop
@@ -529,10 +530,11 @@ public partial class World2D
         player.Spawn(sprite);
         player.Position = position;
         world.PlayerSpawnPosition = position;
-        player.HazardHitEffectClipName = effects.HazardHit;
+        player.HurtEffectClipName = effects.Hurt;
         player.CheckpointReachedEffectClipName = effects.CheckpointReached;
         player.LevelEndReachedEffectClipName = effects.LevelEndReached;
         player.DiedEffectClipName = effects.Died;
+        player.HealedEffectClipName = effects.Healed;
         player.Lives = world.StartingLives;
         player.Health = GameDefaults.PlayerFullHealth;
         ApplyMaterial(world, player, section);
@@ -744,18 +746,19 @@ public partial class World2D
     private readonly record struct PatrolRoute(double? MinX, double? MaxX, double? MinY, double? MaxY, bool? TowardMaxX, bool? TowardMaxY);
 
     /// <summary>The effect clips a placement names; all null for a materials-only object.</summary>
-    private sealed record EffectClips(string? Effect, string? HazardHit, string? CheckpointReached, string? LevelEndReached, string? Died)
+    private sealed record EffectClips(string? Effect, string? Hurt, string? CheckpointReached, string? LevelEndReached, string? Died, string? Healed)
     {
-        public static readonly EffectClips None = new(null, null, null, null, null);
+        public static readonly EffectClips None = new(null, null, null, null, null, null);
 
         public static EffectClips Read(ObjectSection section) => new(
             section.Text("EffectClip"),
-            section.Text("HazardHitEffectClip"),
+            section.Text("HurtEffectClip"),
             section.Text("CheckpointReachedEffectClip"),
             section.Text("LevelEndReachedEffectClip"),
-            section.Text("DiedEffectClip"));
+            section.Text("DiedEffectClip"),
+            section.Text("HealedEffectClip"));
 
-        public IEnumerable<string> Names => new[] { Effect, HazardHit, CheckpointReached, LevelEndReached, Died }.OfType<string>();
+        public IEnumerable<string> Names => new[] { Effect, Hurt, CheckpointReached, LevelEndReached, Died, Healed }.OfType<string>();
     }
 
     /// <summary>

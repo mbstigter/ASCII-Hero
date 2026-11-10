@@ -234,7 +234,7 @@ The live game state and the entity types that make it up.
 	behavior is not yet implemented.
   - `Collectable2D` - a static, non-solid item removed from the world when a
 	collector body touches it (e.g. a coin or power-up), regardless of its
-	`Type` (`CollectableType`: `Ring`/`Diamond`/`Checkpoint`/`LevelEnd`/`Key`,
+	`Type` (`CollectableType`: `Ring`/`Diamond`/`Checkpoint`/`LevelEnd`/`Key`/`HealthPack`,
 	set from the placement's optional `Type` ini key; absent = inert) - see
 	`InteractionHandler.OnCollected` below for the actual
 	per-type pickup behavior. `Checkpoint`/`LevelEnd` typically set
@@ -243,7 +243,9 @@ The live game state and the entity types that make it up.
 	killed hazard's effect can persist as a husk.
   - `EffectInstance2D` - a purely cosmetic, non-collidable body that plays a
 	short visual effect clip (a pickup fade, a kill "crumble") and then
-	either self-removes or persists as a permanent decorative husk.
+	either self-removes or persists as a permanent decorative husk. An
+	effect may follow a target body (the player's own effects always do),
+	staying at its clip's offset and optionally tinting the target.
   - **Capability interfaces** - behavior is selected by interface, never by concrete type; a
     system that needs to act on "any body that can X" checks one of these
   instead. Some are bare markers (no state, just identity); others carry
@@ -309,10 +311,11 @@ The live game state and the entity types that make it up.
 	`SpawnEffect` helper can also spawn an explicit, call-site-chosen clip
 	independent of `EffectClipName` - used so the player can have more than
 	one distinct effect for different situations (e.g. `Player2D`'s
-	"hurt" on a hazard hit and its "checkpointreached" clip;
+	"hurt" on non-fatal damage and its "checkpointreached" clip;
 	`Player2D` is deliberately not an `IEffectTrigger`) as
 	independent, possibly-overlapping `EffectInstance2D`s, rather than being
-	limited to one fixed clip per body.
+	limited to one fixed clip per body. The player's effects follow the
+	player; all other effects stay where they were spawned.
   - `IClimberBody` - can climb an `IsClimbable` surface;
 	carries `IsTouchingClimbable` (mere overlap, recomputed every frame) and
 	`IsClimbing` (actually engaged, driven by input). Independent of
@@ -456,7 +459,9 @@ The live game state and the entity types that make it up.
   a landing; detection
   history only; fall damage = the player's highest non-hazard bottom-contact
   impact speed this step reaching `Player2D.FallDamageImpactSpeed`, checked by
-  `ResolveFallDamage` right after hazards/collectables;
+  `ResolveFallDamage` right after hazards/collectables; while
+  `Player2D.IsRecovering` (post-hazard-hit safe window, ticked down at the start of
+  each `Resolve`) the player's hazard contacts are skipped and not recorded;
   what each interaction does - kills, damage (including fall damage via
   `InteractionHandler.OnHardLanding`), lives, score,
   rings, keys, checkpoints, level-end/death transitions, their sounds and
@@ -613,7 +618,9 @@ The live game state and the entity types that make it up.
   `ForeColorOverride`/`BackColorOverride` > its sprite's own default color >
   its resolved material's own `ForegroundColor`/`BackgroundColor` (see
   `MaterialLibrary`) > the world's own default color > a hardcoded engine
-  fallback (see `GlyphBuilder.ResolveColor`). The background/foreground
+  fallback (see `GlyphBuilder.ResolveColor`). A background code of
+  `IniValueParser.NoFillColorCode` (`BackgroundColor = None` on a placement,
+  sprite or material) stops the chain with no fill. The background/foreground
   layers are purely static level data, so their colors are instead resolved
   once at world load time into `World2D.BackgroundForeColors`/
   `BackgroundBackColors`/`ForegroundForeColors`/`ForegroundBackColors`
@@ -701,7 +708,11 @@ The live game state and the entity types that make it up.
   frame (bodies with no animation configured, or a single frame, no-op
   internally) and ticks the lifetime of any `EffectInstance2D`, queuing it
   for removal once its effect finishes playing (unless configured to
-  persist).
+  persist). It also moves each following effect onto its target (plus the
+  clip's offset) and sets the target's temporary `TintColor`, which
+  `WorldRenderer` puts first in the foreground color chain. While a level end
+  or death is pending, the player is held in its default pose's idle clip
+  without animating.
 
 ### Browser
 

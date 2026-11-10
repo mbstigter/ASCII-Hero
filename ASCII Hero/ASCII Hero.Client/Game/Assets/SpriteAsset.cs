@@ -69,6 +69,34 @@ public class SpriteClip
     public double? EffectDurationSeconds { get; init; }
 
     /// <summary>
+    /// Cell offset (from <c>[Animation.{clipName}] OffsetX</c>/<c>OffsetY</c>) of this clip's
+    /// effect relative to the body it plays for, e.g. <c>OffsetY = -2</c> to show it above the
+    /// player. Defaults to 0. Ignored for any clip not played as an effect.
+    /// </summary>
+    public int EffectOffsetX { get; init; }
+
+    /// <inheritdoc cref="EffectOffsetX"/>
+    public int EffectOffsetY { get; init; }
+
+    /// <summary>
+    /// Optional foreground color code (from <c>[Animation.{clipName}] TintColor</c>) that
+    /// temporarily recolors the followed body while this clip plays as an effect. Null means no tint.
+    /// </summary>
+    public char? TintColor { get; init; }
+
+    /// <summary>
+    /// Optional second color (from <c>TintAlternateColor</c>) that <see cref="TintColor"/> blinks
+    /// against every <see cref="TintBlinkSeconds"/>. Null blinks against the body's normal colors.
+    /// </summary>
+    public char? TintAlternateColor { get; init; }
+
+    /// <summary>
+    /// How long each blink phase of <see cref="TintColor"/> lasts, in seconds (from
+    /// <c>TintBlinkSeconds</c>). Null means a steady tint without blinking.
+    /// </summary>
+    public double? TintBlinkSeconds { get; init; }
+
+    /// <summary>
     /// The frame index this clip starts at when spawned, e.g. a "Center" frame in a
     /// Left/Center/Right clip so PingPong mode bounces symmetrically (Center, Right, Center,
     /// Left, ...). Defaults to 0.
@@ -145,7 +173,10 @@ public class SpriteAsset
     /// </summary>
     public char? DefaultForeColor { get; init; }
 
-    /// <summary>See <see cref="DefaultForeColor"/>.</summary>
+    /// <summary>
+    /// See <see cref="DefaultForeColor"/>. May be <see cref="IniValueParser.NoFillColorCode"/>
+    /// (<c>DefaultBackgroundColor = None</c>): no fill, overriding the material and world defaults.
+    /// </summary>
     public char? DefaultBackColor { get; init; }
 
     /// <summary>

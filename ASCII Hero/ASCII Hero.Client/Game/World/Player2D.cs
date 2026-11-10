@@ -55,13 +55,13 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// Optional clip name (on this instance's own <see cref="Body2D.Sprite"/>) to play as a
     /// cosmetic effect on an ordinary (non-fatal) hazard hit. Null (the default) means no effect.
     /// </summary>
-    public string? HazardHitEffectClipName { get; set; }
+    public string? HurtEffectClipName { get; set; }
 
     /// <summary>
     /// Optional clip name (on this instance's own <see cref="Body2D.Sprite"/>) to play as a
     /// cosmetic effect when a <see cref="CollectableType.Checkpoint"/> is reached. Null (the
     /// default) means no effect. Kept as its own separate slot rather than reusing
-    /// <see cref="HazardHitEffectClipName"/> so the player can show different effects for
+    /// <see cref="HurtEffectClipName"/> so the player can show different effects for
     /// different situations - see
     /// <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/>.
     /// </summary>
@@ -78,6 +78,12 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// <see cref="PendingTransition.Death"/>). Null (the default) means no effect.
     /// </summary>
     public string? DiedEffectClipName { get; set; }
+
+    /// <summary>
+    /// Optional clip name to play as a cosmetic effect when a <see cref="CollectableType.HealthPack"/>
+    /// restores health. Null (the default) means no effect.
+    /// </summary>
+    public string? HealedEffectClipName { get; set; }
 
     /// <summary>
     /// The mass-scaled force this frame's sustained locomotion input contributes - computed each
@@ -175,6 +181,15 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// the <c>FallDamageImpactSpeed</c> ini key overrides it.
     /// </summary>
     public double FallDamageImpactSpeed { get; set; } = GameDefaults.DefaultFallDamageImpactSpeed;
+
+    /// <summary>
+    /// Seconds left of the safe window after surviving a hazard hit (see
+    /// <see cref="GameDefaults.HazardRecoverySeconds"/>); 0 when not recovering.
+    /// </summary>
+    public double RecoveryRemainingSeconds { get; set; }
+
+    /// <summary>Whether the player is inside its post-hit safe window and cannot be hurt by hazards.</summary>
+    public bool IsRecovering => RecoveryRemainingSeconds > 0;
 
     /// <summary>Remaining lives (shown in the HUD). Lost when <see cref="Health"/> runs out, gained every <see cref="World2D.RingsPerLife"/> rings.</summary>
     public int Lives { get; set; } = GameDefaults.PlayerStartingLives;

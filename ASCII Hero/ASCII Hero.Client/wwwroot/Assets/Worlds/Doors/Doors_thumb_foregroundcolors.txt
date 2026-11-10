@@ -1,6 +1,6 @@
                 
-  U YY         A
-AAAAVVALLAAAAA A
+  U  YY        A
+AAAVVAALLAAAAA A
                A
           I U  A
           I U  A
@@ -8,8 +8,8 @@ AAAAVVALLAAAAA A
 AAAAAAAAAAAAAAAA
 //end
                 
-  U ZZ         A
-AAAAVVALLAAAAA A
+  U  ZZ        A
+AAAVVAALLAAAAA A
                A
           I U  A
           I U  A

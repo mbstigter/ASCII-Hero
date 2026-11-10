@@ -19,6 +19,35 @@ namespace ASCII_Hero.Client.Game.World;
 public class EffectInstance2D : Body2D
 {
     private double _remainingSeconds;
+    private double _elapsedSeconds;
+
+    /// <summary>
+    /// The body this effect stays attached to (e.g. the player), re-positioned every frame by
+    /// <see cref="Follow"/> at the clip's <see cref="SpriteClip.EffectOffsetX"/>/<see cref="SpriteClip.EffectOffsetY"/>.
+    /// Null for an effect that stays where it was spawned (e.g. a collectable's pickup fade).
+    /// </summary>
+    public Body2D? FollowTarget { get; private set; }
+
+    /// <summary>
+    /// The tint color this effect currently applies to its <see cref="FollowTarget"/>, following
+    /// the clip's <see cref="SpriteClip.TintColor"/>/<see cref="SpriteClip.TintAlternateColor"/>/
+    /// <see cref="SpriteClip.TintBlinkSeconds"/>. Null when the clip has no tint, or during a
+    /// blink phase that shows the body's normal colors.
+    /// </summary>
+    public char? CurrentTintColor
+    {
+        get
+        {
+            if (Clip.TintColor is not { } tint)
+            {
+                return null;
+            }
+
+            return Clip.TintBlinkSeconds is { } blinkSeconds && (int)(_elapsedSeconds / blinkSeconds) % 2 == 1
+                ? Clip.TintAlternateColor
+                : tint;
+        }
+    }
 
     /// <summary>
     /// Whether this instance keeps existing/rendering (holding its clip's last frame) once its
@@ -41,13 +70,16 @@ public class EffectInstance2D : Body2D
 
     /// <summary>
     /// Assigns the loaded sprite asset/clip and world position for this effect, and computes its
-    /// lifetime from the clip's own frame count/duration.
+    /// lifetime from the clip's own frame count/duration. With a <paramref name="followTarget"/>,
+    /// the effect is positioned on that body (plus the clip's offset) instead, and keeps following it.
     /// </summary>
-    public void Spawn(SpriteAsset sprite, string clipName, Vector2D position, bool persistsAfterPlayback = false)
+    public void Spawn(SpriteAsset sprite, string clipName, Vector2D position, bool persistsAfterPlayback = false, Body2D? followTarget = null)
     {
         SetFrame(sprite, clipName);
         Position = position;
         PersistsAfterPlayback = persistsAfterPlayback;
+        FollowTarget = followTarget;
+        Follow();
 
         var clip = sprite.GetClip(clipName);
         _remainingSeconds = clip.EffectDurationSeconds is { } effectDuration
@@ -58,7 +90,19 @@ public class EffectInstance2D : Body2D
     }
 
     /// <summary>
-    /// Decrements this effect's remaining lifetime. When it reaches zero: if
+    /// Moves this effect onto its <see cref="FollowTarget"/> (plus the clip's offset). No-op for
+    /// an effect without a follow target.
+    /// </summary>
+    public void Follow()
+    {
+        if (FollowTarget is { } target)
+        {
+            Position = new Vector2D(target.Position.X + Clip.EffectOffsetX, target.Position.Y + Clip.EffectOffsetY);
+        }
+    }
+
+    /// <summary>
+    /// Decrements this effect's remaining lifetime (and advances its tint blink timer). When it reaches zero: if
     /// <see cref="PersistsAfterPlayback"/> is false, flags this instance for removal (see
     /// <see cref="IsExpiredAndShouldBeRemoved"/>); if true, just stops decrementing and leaves the
     /// body holding whatever frame its own animation last landed on. Does not duplicate
@@ -67,6 +111,7 @@ public class EffectInstance2D : Body2D
     /// </summary>
     public void Tick(double deltaSeconds)
     {
+        _elapsedSeconds += deltaSeconds;
         if (_remainingSeconds <= 0)
         {
             return;

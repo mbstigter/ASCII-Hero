@@ -115,4 +115,30 @@ public sealed class FallDamageTests
         Assert.AreEqual(lives - 1, player.Lives);
         Assert.AreEqual(PendingTransition.Death, world.PendingTransition);
     }
+
+    [TestMethod]
+    public async Task FatalHardLanding_ShowsOnlyDiedEffect()
+    {
+        var world = await LoadGroundedPlayerAsync();
+        var player = world.Player;
+        player.HurtEffectClipName = "hurt";
+        player.Health = GameDefaults.DefaultFallDamage / 2;
+
+        LandAt(world, player.FallDamageImpactSpeed * 1.2);
+
+        var effectClips = world.Objects.OfType<EffectInstance2D>().Select(effect => effect.Clip.Name).ToList();
+        CollectionAssert.AreEqual(new[] { "died" }, effectClips);
+    }
+
+    [TestMethod]
+    public async Task HardLandingDuringHazardRecovery_StillHurts()
+    {
+        var world = await LoadGroundedPlayerAsync();
+        var player = world.Player;
+        player.RecoveryRemainingSeconds = GameDefaults.HazardRecoverySeconds;
+
+        LandAt(world, player.FallDamageImpactSpeed * 1.2);
+
+        Assert.AreEqual(GameDefaults.PlayerFullHealth - GameDefaults.DefaultFallDamage, player.Health, 1e-9);
+    }
 }

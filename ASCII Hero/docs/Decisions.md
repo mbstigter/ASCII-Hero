@@ -410,6 +410,18 @@ capture the "why" behind a decision without needing a lengthy narrative.
   no grace period after a spawn or respawn: levels place the player and
   checkpoints near the floor instead. World edges record no
   contacts and so never cause fall damage.
+- **A survived hazard hit starts a safe window.** For
+  `GameDefaults.HazardRecoverySeconds` (1 second, a code constant, not a world
+  setting) after a non-fatal hazard hit, hazards can't hurt the player; hazard
+  contacts are not recorded during it, so one still touching when it ends hurts
+  immediately. It is a timer on the player (ticked per physics step), not a
+  per-hazard cooldown, so several hazards cannot stack hits either. Hard
+  landings neither start nor respect it: a hard fall always hurts. Respawn
+  clears it.
+- **Hurt and died effects are mutually exclusive.** Damage is applied before
+  choosing the effect: a hit the player survives plays `HurtEffectClip`, a fatal
+  hit plays only `DiedEffectClip`. An already-dead player (during the death
+  delay) gets no further hazard sounds or effects.
 - **How a hazard is touched follows how the solver treats it.** A solid hazard
   (any moving hazard, or a static one that is not passable) is pushed apart,
   never left overlapping, so it is touched only through a surface contact
@@ -440,7 +452,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   Gravity` are already world-level settings rather than per-placement keys.
 - **Collectable variants are driven by a required `Type` key on the
   placement** (`Diamond`/`Ring`/
-  `Checkpoint`/`LevelEnd`/`Key`), not
+  `Checkpoint`/`LevelEnd`/`Key`/`HealthPack`), not
   asset-level `_settings.ini` key - matching how
   `Killable`/`EffectPersists`/`EffectClip` are already placement-level keys,
   and keeping the same sprite asset (e.g. `Ring`) reusable across multiple
@@ -451,6 +463,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   during testing instead of silently behaving like some other variant.
   `Diamond`/`Ring` are removed on pickup and increment
   `Player2D.Score` (and `Rings` for `Ring`);
+  `HealthPack` restores `Player2D.Health` fully and is removed, but is left in
+  place untouched while health is already full, so it isn't wasted;
   `Key` is removed on pickup and adds its required `Lock` name to
   `Player2D.Keys` (inert without one; the lock name lives on `Key2D`, not on
   `Body2D`); a `Gate2D` with a matching `Lock` is opened by the action key
@@ -465,7 +479,15 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `Checkpoint` records `World2D.RespawnPoint`, consumed by `World2D.Respawn()`;
   `LevelEnd` starts a `PendingTransition.LevelEnd`, consumed by `GameLoop`
   (see below).
-- **Level end and death share one pending-transition mechanism**:
+- **Player effects follow the player**: every effect the player plays stays
+  attached to the player at its clip's `OffsetX`/`OffsetY`, and may tint the
+  player via `TintColor`/`TintAlternateColor`/`TintBlinkSeconds` in the same
+  `[Animation.{clip}]` section (no separate tint structure). The tint is
+  temporary and wins over the normal foreground color chain. Non-player
+  effects stay where they were spawned. While a level end or death is pending,
+  the player is shown standing still in its default pose's idle clip (solved in
+  code, not a setting, since physics is frozen then too).
+- **Level end and death share
   `CollisionSystem` sets `World2D.PendingTransition` (`LevelEnd` or `Death`)
   and spawns the player's own effect clip (`LevelEndReachedEffectClip` /
   `DiedEffectClip`); the collectable's/hazard's sound plays as usual. While a
@@ -563,7 +585,14 @@ capture the "why" behind a decision without needing a lengthy narrative.
   game is then green on black. `game-interop.js` holds no colors; the browser
   styling (loading message, page behind the canvas) repeats the same pair in
   CSS. A drawn cell without
-  a background color has no fill (null), not a default color. Callers
+  a background color has no fill (null), not a default color. An absent
+  background code means "next tier decides"; `BackgroundColor = None`
+  (placement, sprite `DefaultBackgroundColor`, material) means "no fill" and
+  stops the chain, so partial-block sprites can be see-through while keeping
+  their physical material. Per-cell codes still beat placement overrides.
+  `BackgroundColor = WorldBackdrop` stays for the opposite case: looks empty
+  but masks what's behind it.
+  Foreground has no `None`: a glyph always needs a color. Callers
   pick tints explicitly (e.g. a label's `HighlightColor`); nothing derives a
   darker/lighter tint automatically. End-screen ripples use the light tint
   for the leading box and the dark tint for the trail; once settled, the box

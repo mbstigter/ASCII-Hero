@@ -1,4 +1,4 @@
-using ASCII_Hero.Client.Game.Constants;
+﻿using ASCII_Hero.Client.Game.Constants;
 using ASCII_Hero.Client.Game.World;
 
 namespace ASCII_Hero.Client.Game.Physics;
@@ -67,6 +67,7 @@ public class CollisionSystem
     public void Resolve(World2D world, double stepSeconds)
     {
         _stepSeconds = stepSeconds;
+        world.Player.RecoveryRemainingSeconds = Math.Max(0, world.Player.RecoveryRemainingSeconds - stepSeconds);
         _movingBodies.Clear();
         _movingBodyIndices.Clear();
 
@@ -438,7 +439,7 @@ public class CollisionSystem
                 // the ordinary hazard-contact handling below. A hazard's own effect and the moving
                 // body's own effect are mutually exclusive with kill-vs-ordinary-hit: a hazard's
                 // EffectClipName is reserved for its kill reaction, while a moving body's
-                // EffectClipName (e.g. a player's hit spark) is reserved for ordinary, non-fatal
+                // EffectClipName (e.g. a player's hurt spark) is reserved for ordinary, non-fatal
                 // hazard contact.
                 if (movingBody is IKillerBody && hazard is IKillableBody { IsKillable: true } killable && IsKillingImpact(movingBody, hazard, killable))
                 {
@@ -448,6 +449,13 @@ public class CollisionSystem
 
                 // Ordinary (non-killing) hazard contact: consequences are gated to the first
                 // frame of a fresh contact so a sustained contact doesn't repeat every frame.
+                // During the player's post-hazard-hit safe window the contact is not recorded at all,
+                // so a hazard still touching the player when the window ends hurts it then.
+                if (body is Player2D { IsRecovering: true })
+                {
+                    continue;
+                }
+
                 var contact = (hazard, movingBody);
                 currentHazardContacts.Add(contact);
                 if (!_activeHazardContacts.Contains(contact))

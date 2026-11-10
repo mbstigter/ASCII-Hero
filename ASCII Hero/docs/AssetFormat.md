@@ -223,13 +223,22 @@ the color analog of `[Physics] DefaultMaterial` (§2.3):
   absent/empty. Resolution precedence for a given cell, checked in order,
   falling through whenever a step doesn't apply (code absent) or doesn't resolve
   (code not found in the palette): the cell's own per-cell code (from
-  `_foregroundcolors.txt`/`_backgroundcolors.txt`) > this asset's
+  `_foregroundcolors.txt`/`_backgroundcolors.txt`) > the placement's own
+  `ForegroundColor`/`BackgroundColor` (see §3) > this asset's default >
+  the placement's material's color (see §4.3) >
   the world's own `[Colors]` default (see §3) > the interface color
   (§4.2) for the foreground; no fill for the background.
   This lets an asset be authored with no color layer files at all (e.g. a
   single-color platform or ball) while still overriding the interface color,
   or with color layer files that only mark a few special cells and leave
   everything else to fall through to this default.
+- `DefaultBackgroundColor = None` — explicitly no background fill: every cell
+  without its own `_backgroundcolors.txt` code is see-through, even if the
+  material or the world has a background color (a placement's own
+  `BackgroundColor` still wins). Useful for sprites drawn with characters
+  that only partly fill their cell (e.g. `▄`, `▌`), so whatever is behind
+  shows through the empty part. Only for the background: a drawn character
+  always needs a foreground color.
 
 **`[Physics]`** — controls material assignment:
 - `DefaultMaterial` — the material used for every non-empty cell.
@@ -264,6 +273,16 @@ multiple frames. If omitted, multi-frame clips remain static at frame `DefaultFr
   `FrameDurationSeconds` (one pass). A looping clip therefore keeps looping for
   this long. It does not stop a persistent effect (one that holds its last frame,
   like a crumbled husk) from persisting.
+- `OffsetX` / `OffsetY` (optional, per-clip only, default `0`) — effect clips
+  only: shift in cells of the effect relative to the body it plays for
+  (negative `OffsetY` = higher). Player effects follow the player while they
+  play; other effects stay where they were spawned.
+- `TintColor` (optional, per-clip only) — effect clips that follow a body only:
+  palette code that recolors the followed body's foreground while the effect plays.
+- `TintAlternateColor` (optional) — color the tint blinks against; when absent
+  it blinks against the body's normal colors.
+- `TintBlinkSeconds` (optional) — length of each blink phase; when absent the
+  tint is steady.
 
 Animation settings are resolved **per clip**, not asset-wide, since clips of the
 same asset can have very different frame counts and desired pacing (e.g. a
@@ -1038,6 +1057,8 @@ instead of the effect fading away like an ordinary pickup:
 - `Key` — adds a key to the player's inventory and is removed. Requires a
   `Lock = <name>` key naming the lock it opens; a key without `Lock` is inert
   (like a missing `Type`). See "Gates, keys and switches" below.
+- `HealthPack` — restores the player's health fully and is removed. While the
+  player's health is already full it is left in place (no sound, no effect).
 
 ```ini
 [Ring]
@@ -1233,11 +1254,13 @@ FallDamage = 0.25
 FallDamageImpactSpeed = 30
 ```
 
-The `Player` section may also name effect clips (on the player's own sprite
-asset) for specific situations: `HazardHitEffectClip` plays when the player
-takes a non-fatal hazard hit, `CheckpointReachedEffectClip` plays when the
+The `Player` section
+asset) for specific situations: `HurtEffectClip` plays when the player
+takes non-fatal damage (a hazard hit or a hard landing; a fatal hit shows only
+`DiedEffectClip`), `CheckpointReachedEffectClip` plays when the
 player reaches a `Checkpoint`, `LevelEndReachedEffectClip` plays when the player
-reaches a `LevelEnd`, and `DiedEffectClip` plays when the player loses a life.
+reaches a `LevelEnd`, `DiedEffectClip` plays when the player loses a life, and
+`HealedEffectClip` plays when a `HealthPack` restores the player's health.
 All are optional (no effect if omitted).
 
 Any object type may also override its spawned body's material and/or color away
@@ -1300,11 +1323,20 @@ ForegroundColor = Y
   that tier has no color of its own and the chain continues unchanged.
 
   A placement's `BackgroundColor` may also be the word `WorldBackdrop` instead of a
-  code: it then uses the world's own `[Colors] WorldBackdrop`, so the cell shows
-  the world's backdrop (e.g. behind a half-block character) without repeating
-  the backdrop's code in every placement. It is a load error if the world sets
+  code: it then uses the world's own `[Colors] WorldBackdrop`, without repeating
+  the backdrop's code in every placement. The cell looks empty but still
+  covers whatever moves behind it (e.g. to mask busy art or hide something
+  behind a half-block character); use `None` (below) to show what's behind
+  instead. It is a load error if the world sets
   no `WorldBackdrop`. (`null` is not a keyword: it is read as the code `n`,
   which is not in the palette, so that tier is simply skipped.)
+
+  A `BackgroundColor` (placement, sprite `DefaultBackgroundColor`, or material)
+  may also be the word `None`: no background fill for this tier and every tier
+  below it, so the cell is truly see-through. Unlike `WorldBackdrop`, it does
+  not paint over objects behind it. A per-cell `_backgroundcolors.txt` code
+  still wins over it. `None` is not accepted for foreground colors or for the
+  world's own `DefaultBackgroundColor`.
 
 Any non-`Player` object type may also set `Passable`, `Climbable`, and/or
 `Hangable` (each default `false`, except `Passable` which defaults to `true`
@@ -1522,7 +1554,9 @@ Fields:
   sprite that has no `[Colors]` default of its own still render in a color
   appropriate to its physical material (e.g. any un-styled `Steel`-backed
   object rendering in a metallic gray) without every such sprite needing to
-  repeat the same color pairing individually.
+  repeat the same color pairing individually. `BackgroundColor = None` means
+  explicitly no background fill (see §3), also overriding the world's
+  default background color.
 - **Character** (optional) — a default glyph representing this material,
   used as the glyph for a materials-only world object (one naming this
   `Material` but no `Asset` — see §3, "Materials-only objects"); has no

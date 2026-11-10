@@ -27,6 +27,22 @@ public static class IniValueParser
         string.IsNullOrEmpty(rawValue) ? null : rawValue[0];
 
     /// <summary>
+    /// Marker code for an explicit "no fill" background (the word <c>None</c>): unlike an absent
+    /// code, which lets the next tier of the color chain decide, it stops the chain so the cell
+    /// gets no background fill at all. Never a palette code.
+    /// </summary>
+    public const char NoFillColorCode = '\0';
+
+    /// <summary>
+    /// Parses a background color value: the word <c>None</c> (case-insensitive) gives
+    /// <see cref="NoFillColorCode"/>, anything else is read as by <see cref="ParseColorCode"/>.
+    /// </summary>
+    public static char? ParseBackColorCode(string? rawValue) =>
+        string.Equals(rawValue?.Trim(), "None", StringComparison.OrdinalIgnoreCase)
+            ? NoFillColorCode
+            : ParseColorCode(rawValue);
+
+    /// <summary>
     /// Parses a numeric ini value, silently returning 0.0 when absent or unparsable (callers that
     /// must reject malformed input use <see cref="TryParseDouble"/> instead), using
     /// <see cref="CultureInfo.InvariantCulture"/> so a decimal point (e.g. "1.0") is never

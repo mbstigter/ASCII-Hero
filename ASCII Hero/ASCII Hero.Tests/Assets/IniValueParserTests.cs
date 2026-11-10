@@ -67,4 +67,22 @@ public sealed class IniValueParserTests
     {
         Assert.AreEqual('R', IniValueParser.ParseColorCode("R"));
     }
+
+    [TestMethod]
+    public void ParseBackColorCode_None_ReturnsNoFillCode()
+    {
+        Assert.AreEqual(IniValueParser.NoFillColorCode, IniValueParser.ParseBackColorCode(" none "));
+    }
+
+    [TestMethod]
+    public void ParseBackColorCode_Code_ReturnsCode()
+    {
+        Assert.AreEqual('N', IniValueParser.ParseBackColorCode("N"));
+    }
+
+    [TestMethod]
+    public void ParseBackColorCode_MissingValue_ReturnsNull()
+    {
+        Assert.IsNull(IniValueParser.ParseBackColorCode(null));
+    }
 }

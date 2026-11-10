@@ -42,4 +42,12 @@ public enum CollectableType
     /// name is inert. Opens a gate with the same lock name, see <see cref="World2D.TryOpenGate"/>.
     /// </summary>
     Key,
+
+    /// <summary>
+    /// Removed on pickup like <see cref="Diamond"/>/<see cref="Ring"/>, and restores the collecting
+    /// <see cref="Player2D"/>'s <see cref="Player2D.Health"/> to
+    /// <see cref="Constants.GameDefaults.PlayerFullHealth"/>. Left in place, silently, while the
+    /// player's health is already full (or the collector isn't the player).
+    /// </summary>
+    HealthPack,
 }

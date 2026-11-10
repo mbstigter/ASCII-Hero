@@ -13,7 +13,10 @@ namespace ASCII_Hero.Client.Game.Assets;
 /// via <see cref="Rendering.WorldRenderer"/>). Null if this material doesn't define one, in which
 /// case the chain continues past it unchanged.
 /// </param>
-/// <param name="BackgroundColor">See <see cref="ForegroundColor"/>.</param>
+/// <param name="BackgroundColor">
+/// See <see cref="ForegroundColor"/>. May be <see cref="IniValueParser.NoFillColorCode"/>
+/// (<c>BackgroundColor = None</c>): no fill, overriding the world's default background.
+/// </param>
 /// <param name="Character">
 /// Optional default glyph representing this material - used as the glyph for a materials-only
 /// world object placement that names this material but no <c>Asset</c>; such a placement may
@@ -100,7 +103,7 @@ public class MaterialLibrary
                 ? parsedHardness
                 : 1.0;
             var foregroundColor = IniValueParser.ParseColorCode(section.GetValueOrDefault("ForegroundColor"));
-            var backgroundColor = IniValueParser.ParseColorCode(section.GetValueOrDefault("BackgroundColor"));
+            var backgroundColor = IniValueParser.ParseBackColorCode(section.GetValueOrDefault("BackgroundColor"));
             var character = section.TryGetValue("Character", out var characterText) && !string.IsNullOrEmpty(characterText)
                 ? characterText[0]
                 : (char?)null;

@@ -335,13 +335,15 @@ public partial class World2D
     /// otherwise <see cref="PlayerSpawnPosition"/>; velocity to <see cref="Vector2D.Zero"/> so it
     /// doesn't retain any pre-death momentum; and health back to a full bar. Called by
     /// <see cref="GameLoop"/> once the <see cref="World.PendingTransition.Death"/> delay has passed
-    /// and the player still has lives left. Held keys and rings are kept.
+    /// and the player still has lives left. Held keys and rings are kept; any post-hurt safe
+    /// window is cleared.
     /// </summary>
     public void Respawn()
     {
         Player.Position = RespawnPoint ?? PlayerSpawnPosition;
         Player.Velocity = Vector2D.Zero;
         Player.Health = GameDefaults.PlayerFullHealth;
+        Player.RecoveryRemainingSeconds = 0;
     }
 
 }

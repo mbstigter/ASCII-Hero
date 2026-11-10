@@ -22,7 +22,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         var emptyChar = IniValueParser.ParseEmptyChar(settings.TryGetValue("Layout", "EmptyChar"));
         var tileAxis = ParseTileAxis(settings.TryGetValue("Layout", "TileAxis"));
         var defaultForeColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultForegroundColor"));
-        var defaultBackColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
+        var defaultBackColor = IniValueParser.ParseBackColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
         var defaultMaterial = settings.TryGetValue("Physics", "DefaultMaterial");
         var defaultFrameDurationSeconds = ParseFrameDurationSeconds(settings.TryGetValue("Animation", "FrameDurationSeconds"));
         var defaultAnimationMode = ParseAnimationMode(settings.TryGetValue("Animation", "Mode"));
@@ -60,7 +60,19 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             var effectDurationSeconds = clipAnimationSection.TryGetValue("EffectDurationSeconds", out var effectDurationText)
                 ? ParseFrameDurationSeconds(effectDurationText)
                 : null;
-            // Per-clip [Layout.{clipName}] TileAxis likewise falls back to the asset-wide [Layout].
+            var effectSettings = new SpriteClip
+            {
+                Name = clipName,
+                Frames = [],
+                EffectOffsetX = IniValueParser.TryParseInt(clipAnimationSection.GetValueOrDefault("OffsetX"), out var offsetX) ? offsetX : 0,
+                EffectOffsetY = IniValueParser.TryParseInt(clipAnimationSection.GetValueOrDefault("OffsetY"), out var offsetY) ? offsetY : 0,
+                TintColor = IniValueParser.ParseColorCode(clipAnimationSection.GetValueOrDefault("TintColor")),
+                TintAlternateColor = IniValueParser.ParseColorCode(clipAnimationSection.GetValueOrDefault("TintAlternateColor")),
+                TintBlinkSeconds = clipAnimationSection.TryGetValue("TintBlinkSeconds", out var tintBlinkText)
+                    ? ParseFrameDurationSeconds(tintBlinkText)
+                    : null,
+            };
+            // Per-clip [Layout.{clipName}]
             var clipTileAxis = settings.Section($"Layout.{clipName}").TryGetValue("TileAxis", out var clipTileAxisText)
                 ? ParseTileAxis(clipTileAxisText)
                 : tileAxis;
@@ -69,7 +81,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
 
             clips[clipName] = await LoadClipAsync(
                 clipFolder, assetName, clipName, emptyChar,
-                frameDurationSeconds, animationMode, clipDefaultFrame ?? 0, effectDurationSeconds, clipTileAxis);
+                frameDurationSeconds, animationMode, clipDefaultFrame ?? 0, effectDurationSeconds, clipTileAxis, effectSettings);
         }
 
         return new SpriteAsset
@@ -97,7 +109,8 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         AnimationMode animationMode,
         int defaultFrame,
         double? effectDurationSeconds,
-        TileAxis tileAxis)
+        TileAxis tileAxis,
+        SpriteClip effectSettings)
     {
         var baseName = $"{folder}/{AssetPathResolver.GetFileStem(assetName)}_{clipName}";
 
@@ -135,6 +148,11 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             DefaultFrame = defaultFrame,
             EffectDurationSeconds = effectDurationSeconds,
             TileAxis = tileAxis,
+            EffectOffsetX = effectSettings.EffectOffsetX,
+            EffectOffsetY = effectSettings.EffectOffsetY,
+            TintColor = effectSettings.TintColor,
+            TintAlternateColor = effectSettings.TintAlternateColor,
+            TintBlinkSeconds = effectSettings.TintBlinkSeconds,
         };
     }
 

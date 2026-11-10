@@ -73,6 +73,7 @@ a flying insect |
 - `Checkpoint` sets the player's respawn point.
 - `LevelEnd` finishes the level.
 - `Key` opens the gate with the same `Lock` (see below).
+- `HealthPack` restores health fully; it stays in place while health is already full.
 
 Add `EffectClip` to play an animation on pickup. Add `EffectPersists = true` to leave the effect
 behind as a permanent "already used" marker, for example a lit checkpoint.
@@ -162,6 +163,7 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
 - Lives, a health bar with per-hazard damage, rings, respawn and checkpoints.
 - Gentle fall damage when landing from too high (configurable `FallDamage` and
   `FallDamageImpactSpeed`).
+- A short safe window after a hazard hit, so the same or another hazard can't hit again right away.
 
 Climbable and hangable surfaces are ordinary terrain objects marked with `Climbable = true` or
 `Hangable = true` in their `objects.ini` section. They are usually also marked

@@ -205,9 +205,18 @@ public abstract class Body2D
 
     /// <summary>
     /// See <see cref="ForeColorOverride"/>. A placement may write <c>BackgroundColor = WorldBackdrop</c>,
-    /// which the loader resolves to the world's backdrop color code here.
+    /// which the loader resolves to the world's backdrop color code here, or <c>BackgroundColor = None</c>,
+    /// stored as <see cref="Assets.IniValueParser.NoFillColorCode"/> (no fill, see-through).
     /// </summary>
     public char? BackColorOverride { get; set; }
+
+    /// <summary>
+    /// Temporary foreground color code applied over every visible cell of this body while a
+    /// following <see cref="EffectInstance2D"/> with a tint plays (e.g. the player blinking on a
+    /// checkpoint). Recomputed every frame by <see cref="Rendering.AnimationSystem.Update"/> and
+    /// wins over the whole normal foreground color chain. Null when no tint is active.
+    /// </summary>
+    public char? TintColor { get; set; }
 
     /// <summary>
     /// Relative mass per world-cell "volume", resolved from <see cref="MaterialName"/> via

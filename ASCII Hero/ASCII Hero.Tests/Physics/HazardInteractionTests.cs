@@ -95,6 +95,7 @@ public sealed class HazardInteractionTests
             snake.Position = snakePosition;
             snake.Velocity = new Vector2D(0, 0);
             player.Health = health;
+            player.RecoveryRemainingSeconds = 0;
             player.Position = new Vector2D(x: snakeRects.Min(rect => rect.Left) - playerRightOffset + Penetration, y: y);
             player.Velocity = new Vector2D(snake.KillImpactSpeed * 4, 0);
 
@@ -108,6 +109,36 @@ public sealed class HazardInteractionTests
         Assert.AreEqual(0.0, player.GetContactImpactSpeed(ContactType.SurfaceBottom, snake));
         Assert.Contains(snake, world.Objects);
         Assert.IsLessThan(health, player.Health);
+    }
+
+    [TestMethod]
+    public async Task SurvivedHazardHit_StartsRecovery()
+    {
+        var (world, snake) = await LoadSnakeAsync();
+        snake.Damage = 0.1;
+        var player = world.Player;
+        player.Position = new Vector2D(snake.Position.X, snake.Position.Y - player.Size.Y + Penetration);
+        player.Velocity = new Vector2D(0, snake.KillImpactSpeed / 2);
+
+        Resolve(world);
+
+        Assert.AreEqual(GameDefaults.HazardRecoverySeconds, player.RecoveryRemainingSeconds, 1e-9);
+    }
+
+    [TestMethod]
+    public async Task HazardHitDuringRecovery_DoesNotHurt()
+    {
+        var (world, snake) = await LoadSnakeAsync();
+        snake.Damage = 0.1;
+        var player = world.Player;
+        player.RecoveryRemainingSeconds = GameDefaults.HazardRecoverySeconds;
+        player.Position = new Vector2D(snake.Position.X, snake.Position.Y - player.Size.Y + Penetration);
+        player.Velocity = new Vector2D(0, snake.KillImpactSpeed / 2);
+        var health = player.Health;
+
+        Resolve(world);
+
+        Assert.AreEqual(health, player.Health);
     }
 
     [TestMethod]

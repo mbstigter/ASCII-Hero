@@ -28,38 +28,43 @@ public static class InteractionHandler
     }
 
     /// <summary>
-    /// First frame of a fresh, ordinary (non-killing) hazard contact: the moving body's own
-    /// effect plays and, if the moving body is the player, the hazard's damage is deducted. If
-    /// that deduction is what brings health to exactly 0 (a fresh death, not an already-dead
-    /// player standing in a hazard), a Death transition starts: it costs a life, and GameLoop
-    /// respawns (or ends the game) once the death effect has played.
+    /// First frame of a fresh, ordinary (non-killing) hazard contact: if the moving body is the
+    /// player, the hazard's damage is deducted first, and the player's hurt effect only plays if it
+    /// survived - a fatal hit shows just the died effect. A survived hit also starts a short safe
+    /// window (<see cref="GameDefaults.HazardRecoverySeconds"/>) in which hazards can't hurt it again.
+    /// a hazard during the death delay) gets no sound or effect. If the deduction brings health to
+    /// exactly 0, a Death transition starts: it costs a life, and GameLoop respawns (or ends the
+    /// game) once the death effect has played. Any other moving body just plays its own effect.
     /// </summary>
     public static void OnHazardHit(World2D world, Body2D body, Body2D hazard)
     {
-        if (body is Player2D { Health: > 0 })
-        {
-            world.PlaySound(hazard.SoundName);
-        }
-
-        if (body is Player2D { HazardHitEffectClipName: { } hazardHitClipName })
-        {
-            SpawnEffect(body, hazardHitClipName, world);
-        }
-        else
+        if (body is not Player2D player)
         {
             SpawnEffectIfConfigured(body, world);
+            return;
         }
 
-        if (body is Player2D player)
+        if (player.Health <= 0)
         {
-            DamagePlayer(world, player, ((IHazardBody)hazard).Damage);
+            return;
+        }
+
+        world.PlaySound(hazard.SoundName);
+        if (!DamagePlayer(world, player, ((IHazardBody)hazard).Damage))
+        {
+            player.RecoveryRemainingSeconds = GameDefaults.HazardRecoverySeconds;
+            if (player.HurtEffectClipName is { } hurtClipName)
+            {
+                SpawnEffect(player, hurtClipName, world);
+            }
         }
     }
 
     /// <summary>
     /// The player landed hard (see <see cref="Player2D.FallDamageImpactSpeed"/>): it plays the
-    /// player sprite's "HardLanding" sound and hit effect and loses <see cref="Player2D.FallDamage"/>,
-    /// which can cost a life just like a hazard hit. Unlike a hazard hit there is no other body to
+    /// player sprite's "HardLanding" sound and loses <see cref="Player2D.FallDamage"/>, which can
+    /// cost a life just like a hazard hit. The hurt effect only plays if the player survived - a
+    /// fatal landing shows just the died effect. Unlike a hazard hit there is no other body to
     /// supply the sound, so it comes from the player's own [Sounds] section.
     /// </summary>
     public static void OnHardLanding(World2D world, Player2D player)
@@ -74,42 +79,46 @@ public static class InteractionHandler
             world.PlaySound(hardLandingSound);
         }
 
-        if (player.HazardHitEffectClipName is { } hitClipName)
+        if (!DamagePlayer(world, player, player.FallDamage)
+            && player.HurtEffectClipName is { } hurtClipName)
         {
-            SpawnEffect(player, hitClipName, world);
+            SpawnEffect(player, hurtClipName, world);
         }
-
-        DamagePlayer(world, player, player.FallDamage);
     }
 
     /// <summary>
-    /// Deducts <paramref name="damage"/> from a living player's health (clamped at 0). If that is
+    /// Deducts
     /// what empties the bar (a fresh death, not an already-dead player), a Death transition starts:
-    /// it costs a life, and GameLoop respawns (or ends the game) once the death effect has played.
+    /// it costs a life, plays the died effect, and GameLoop respawns (or ends the game) once that
+    /// effect has played. Returns whether this hit killed the player, so callers skip the hurt effect.
     /// </summary>
-    private static void DamagePlayer(World2D world, Player2D player, double damage)
+    private static bool DamagePlayer(World2D world, Player2D player, double damage)
     {
         if (player.Health <= 0)
         {
-            return;
+            return false;
         }
 
         player.Health = Math.Max(0, player.Health - damage);
-        if (player.Health <= 0)
+        if (player.Health > 0)
         {
-            player.Lives = Math.Max(0, player.Lives - 1);
-            world.PendingTransition = PendingTransition.Death;
-            if (player.DiedEffectClipName is { } diedEffectClipName)
-            {
-                SpawnEffect(player, diedEffectClipName, world);
-            }
+            return false;
         }
+
+        player.Lives = Math.Max(0, player.Lives - 1);
+        world.PendingTransition = PendingTransition.Death;
+        if (player.DiedEffectClipName is { } diedEffectClipName)
+        {
+            SpawnEffect(player, diedEffectClipName, world);
+        }
+
+        return true;
     }
 
     /// <summary>
     /// A collector body overlaps a collectable. Only the collectable's own effect fires here
     /// (e.g. a ring's pickup fade) - the collector side is deliberately left silent so a
-    /// collector's own EffectClipName (e.g. a player's hazard-hit spark) never fires on an
+    /// collector's own EffectClipName (e.g. a player's hurt spark) never fires on an
     /// unrelated pickup.
     /// </summary>
     public static void OnCollected(World2D world, IPhysicsBody movingBody, Body2D collectable)
@@ -119,6 +128,14 @@ public static class InteractionHandler
             world.PlaySound(collectable.SoundName);
             SpawnEffectIfConfigured(collectable, world);
             world.QueueRemoval(collectable);
+            return;
+        }
+
+        // A health pack is only taken by a player who actually needs it; otherwise it stays in
+        // place without sound or effect, as if it was never touched.
+        if (typedCollectable.Type == CollectableType.HealthPack
+            && movingBody is not Player2D { Health: < GameDefaults.PlayerFullHealth })
+        {
             return;
         }
 
@@ -205,6 +222,21 @@ public static class InteractionHandler
                 world.QueueRemoval(collectable);
                 break;
 
+            case CollectableType.HealthPack:
+                // Same as Diamond/Ring, but restores the player's health fully and plays the
+                // player's own healed effect clip (e.g. a temporary recolor).
+                SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
+                world.QueueRemoval(collectable);
+                if (movingBody is Player2D healthPlayer)
+                {
+                    healthPlayer.Health = GameDefaults.PlayerFullHealth;
+                    if (healthPlayer.HealedEffectClipName is { } healedEffectClipName)
+                    {
+                        SpawnEffect(healthPlayer, healedEffectClipName, world);
+                    }
+                }
+                break;
+
             case null:
                 // This placement's Type key was omitted/unrecognized in {World}_objects.ini -
                 // deliberately inert (no effect, not removed, no player state changed) so a
@@ -235,12 +267,13 @@ public static class InteractionHandler
     /// current position - for an explicit, call-site-chosen clip rather than a body's own single
     /// configured <see cref="IEffectTrigger.EffectClipName"/>. Lets one body (e.g. the player)
     /// play different effects for different situations as independent, possibly-overlapping
-    /// <see cref="EffectInstance2D"/> instances.
+    /// <see cref="EffectInstance2D"/> instances. A player's effects follow the player (at the
+    /// clip's offset, applying its tint); every other effect stays where it was spawned.
     /// </summary>
     private static void SpawnEffect(Body2D body, string clipName, World2D world, bool persists = false)
     {
         var effect = new EffectInstance2D();
-        effect.Spawn(body.Sprite, clipName, body.Position, persists);
+        effect.Spawn(body.Sprite, clipName, body.Position, persists, followTarget: body as Player2D);
         world.Objects.Add(effect);
     }
 }

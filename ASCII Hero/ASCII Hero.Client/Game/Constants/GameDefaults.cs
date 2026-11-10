@@ -290,6 +290,13 @@ public static class GameDefaults
     public const double DefaultFallDamage = 0.2;
 
     /// <summary>
+    /// Length, in seconds, of the safe window after the player survives a hazard hit during which
+    /// hazards cannot hurt it again (see <see cref="World.Player2D.RecoveryRemainingSeconds"/>).
+    /// Hard landings are not affected.
+    /// </summary>
+    public const double HazardRecoverySeconds = 1.0;
+
+    /// <summary>
     /// The highest drop, in cells at <see cref="PhysicsConstants.DefaultGravity"/>, the player can
     /// land from without being hurt; it defines <see cref="DefaultFallDamageImpactSpeed"/>.
     /// </summary>
