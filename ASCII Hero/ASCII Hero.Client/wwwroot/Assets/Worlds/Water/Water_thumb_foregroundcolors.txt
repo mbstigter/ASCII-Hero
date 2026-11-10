@@ -1,26 +1,26 @@
                 
-  K  N    K  N  
+  K  M    K  M  
                 
                 
        AJIIIIIIJ
        AJIIIIIIJ
        AJIIIIIIJ
-UUUUUUUUJJJJJJJJ
+22222222JJJJJJJJ
 //end
                 
                 
   K       K     
-     N       N  
+     M       M  
        AJIIIIIIJ
        AJIIIIIIJ
        AJIIIIIIJ
-UUUUUUUUJJJJJJJJ
+22222222JJJJJJJJ
 //end
                 
                 
                 
   K       K     
-       AJIIIINIJ
-     N AJIIIIIIJ
+       AJIIIIMIJ
+     M AJIIIIIIJ
        AJIIIIIIJ
-UUUUUUUUJJJJJJJJ
+22222222JJJJJJJJ

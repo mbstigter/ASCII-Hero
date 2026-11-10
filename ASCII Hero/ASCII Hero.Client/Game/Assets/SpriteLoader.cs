@@ -20,6 +20,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         var settings = IniDocument.Parse(settingsContent ?? string.Empty);
 
         var emptyChar = IniValueParser.ParseEmptyChar(settings.TryGetValue("Layout", "EmptyChar"));
+        var materialChar = IniValueParser.ParseOptionalChar(settings.TryGetValue("Layout", "MaterialChar"));
         var tileAxis = ParseTileAxis(settings.TryGetValue("Layout", "TileAxis"));
         var defaultForeColor = IniValueParser.ParseColorCode(settings.TryGetValue("Colors", "DefaultForegroundColor"));
         var defaultBackColor = IniValueParser.ParseBackColorCode(settings.TryGetValue("Colors", "DefaultBackgroundColor"));
@@ -93,6 +94,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         {
             Name = assetName,
             EmptyChar = emptyChar,
+            MaterialChar = materialChar,
             Clips = clips,
             Poses = poses,
             DefaultPose = defaultPose,

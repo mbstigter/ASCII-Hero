@@ -11,7 +11,7 @@ public partial class World2D
 
     /// <summary>
     /// The body the camera should follow. Defaults to <see cref="Player"/>, but a world can
-    /// designate a different body instead (e.g. the bouncing ball in TestMovement) by setting
+    /// designate a different body instead (e.g. the bouncing ball in PhysicsTest1) by setting
     /// <c>CameraTarget = true</c> on that object's section in the world's objects.ini.
     /// </summary>
     public IPhysicsBody CameraTarget { get; set; } = null!;

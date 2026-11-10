@@ -94,7 +94,7 @@ palettes, materials) from disk/HTTP into in-memory game objects.
   projection, so both classes differ only in how they turn a parsed
   `IniDocument` into their own dictionary entries.
 - **`IniValueParser`** - shared parsing helpers (`ParseEmptyChar`,
-  `ParseColorCode`, `ParseDouble`/`TryParseDouble`, `TryParseInt`) for the
+  `ParseOptionalChar`, `ParseColorCode`/`ParseBackColorCode`, `ParseDouble`/`TryParseDouble`, `TryParseInt`) for the
   small ini value shapes repeated across `SpriteLoader`, `WorldCatalog`, and
   `World2D`'s settings.ini/objects.ini parsing, keeping a single
   culture-invariant, consistently-named implementation of each.
@@ -620,7 +620,9 @@ The live game state and the entity types that make it up.
   `MaterialLibrary`) > the world's own default color > a hardcoded engine
   fallback (see `GlyphBuilder.ResolveColor`). A background code of
   `IniValueParser.NoFillColorCode` (`BackgroundColor = None` on a placement,
-  sprite or material) stops the chain with no fill. The background/foreground
+  sprite or material) stops the chain with no fill. A cell drawn with its
+  sprite's `MaterialChar` placeholder is drawn with its resolved material's
+  `Character` instead. The background/foreground
   layers are purely static level data, so their colors are instead resolved
   once at world load time into `World2D.BackgroundForeColors`/
   `BackgroundBackColors`/`ForegroundForeColors`/`ForegroundBackColors`

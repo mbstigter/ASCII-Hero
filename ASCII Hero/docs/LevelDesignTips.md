@@ -68,8 +68,16 @@ that is not a multiple of the unit ends with a partial unit; for a clean end, pi
 | Conveyor | `horizontal_left`, `horizontal_right` | 3 wide | 1 tall |
 | Conveyor | `vertical_up`, `vertical_down` | 3 tall | 3 wide |
 | Ladder | `vertical` | 1 tall | 3 wide |
-| Ladder | `horizontal` | 1 wide | 3 tall |
+| Ladder | `horizontal` | 2 wide | 2 tall |
 | Pipe | `horizontal` / `vertical` | 1 | 1 |
+| Fan (lying flat) | `horizontal_up_*`, `horizontal_down_*` | 7 wide (one rotor) | 3 tall |
+| Fan (upright) | `vertical_left_*`, `vertical_right_*` | 5 tall (one rotor) | 4 wide |
+| Door (closed) | `closed` | 1 tall | 2 wide |
+| Hatch (closed) | `closed` | 1 wide | 1 tall |
+| Floor | `ancient` | 8 wide | 1 tall |
+| Wall | `ancient` | 2 tall | 2 wide |
+| Column | `ancient` | 1 tall | 3 wide |
+| Ornament (frieze) | `ancient_1` | 4 wide | 2 tall |
 | Water surface (still) | `still` | 2 wide | 1 tall |
 | Water surface (flowing) | `horizontal_left`, `horizontal_right` | 3 wide | 1 tall |
 | Waterfall | `vertical_down` | 3 tall | 1 wide |

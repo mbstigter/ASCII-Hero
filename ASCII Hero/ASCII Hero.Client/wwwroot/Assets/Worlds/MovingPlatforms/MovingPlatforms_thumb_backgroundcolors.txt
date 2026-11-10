@@ -1,35 +1,35 @@
                 
                 
                 
-    SSS111      
-             SSS
-   SSS   SSS    
+    TTTKKK      
+             TTT
+   TTT   TTT    
                 
-8888888888888888
+AAAAAAAAAAAAAAAA
 //end
                 
                 
                 
-   SSS 111   SSS
-         SSS    
-  SSS           
+   TTT KKK   TTT
+         TTT    
+  TTT           
                 
-8888888888888888
+AAAAAAAAAAAAAAAA
 //end
                 
                 
-             SSS
-  SSS  111SS    
+             TTT
+  TTT  KKKTT    
                 
- SSS            
+ TTT            
                 
-8888888888888888
+AAAAAAAAAAAAAAAA
 //end
                 
-             SSS
-         SSS    
- SSS   111      
+             TTT
+         TTT    
+ TTT   KKK      
                 
-SSS             
+TTT             
                 
-8888888888888888
+AAAAAAAAAAAAAAAA

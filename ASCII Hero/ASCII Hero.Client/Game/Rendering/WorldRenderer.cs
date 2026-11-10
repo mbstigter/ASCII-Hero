@@ -172,6 +172,11 @@ public class WorldRenderer
                 var cellForeCode = GlyphBuilder.NullIfEmpty(frame.Fore[row, col], emptyChar);
                 var cellBackCode = GlyphBuilder.NullIfEmpty(frame.Back[row, col], emptyChar);
                 var material = world.Materials.Get(gameObject.MaterialName);
+                if (character == gameObject.Sprite.MaterialChar && material.Character is { } materialCharacter)
+                {
+                    character = materialCharacter;
+                }
+
                 var foreColor = GlyphBuilder.ResolveColor(palette, GlyphBuilder.DefaultForeColor, gameObject.TintColor, cellForeCode, gameObject.ForeColorOverride, gameObject.Sprite.DefaultForeColor, material.ForegroundColor, world.DefaultForeColor);
                 var backColor = GlyphBuilder.ResolveColor(palette, null, cellBackCode, gameObject.BackColorOverride, gameObject.Sprite.DefaultBackColor, material.BackgroundColor, world.DefaultBackColor);
                 glyphs.Add(ToGlyph(cellPosition, character, foreColor, backColor, camera));

@@ -180,6 +180,15 @@ public class SpriteAsset
 {
     public required string Name { get; init; }
     public required char EmptyChar { get; init; }
+
+    /// <summary>
+    /// Optional placeholder from this asset's <c>[Layout] MaterialChar</c> settings.ini key: any
+    /// cell drawn with it is rendered with the body's material's own <c>Character</c> (so one
+    /// drawing serves wooden, steel, stone... variants). Null when not set. Like any non-empty
+    /// cell, a placeholder cell is solid.
+    /// </summary>
+    public char? MaterialChar { get; init; }
+
     public required IReadOnlyDictionary<string, SpriteClip> Clips { get; init; }
 
     /// <summary>

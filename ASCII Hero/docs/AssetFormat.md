@@ -214,6 +214,11 @@ DefaultFrame = 0
 
 **`[Layout]`**
 - `EmptyChar` (default `' '`) — which character in layer files means "no cell here."
+- `MaterialChar` (optional) — a placeholder character: every cell drawn with it is shown with the
+  body's material's `Character` (§4.3), so one drawing serves every material (e.g. a door drawn
+  once as `^^` shows as wood, steel or glass depending on its `Material`). Placeholder cells are
+  ordinary solid cells, and their colors follow the usual color rules. Every material such a
+  sprite is used with must have a `Character`; otherwise loading the world fails.
 - `TileAxis` (default `None`) — whether this asset is a tileable unit (see §2.5); can be overridden per clip in `[Layout.{clipName}]`.
 
 **`[Colors]`** (optional) — whole-asset default color codes (see `Global/ColorPalette.ini`),
@@ -518,6 +523,37 @@ A busy multi-pose asset (such as a playable character) can use this: its `{Asset
 one-off effect clip) stay in the root folder, while each pose's clips (`walk`, `crawl`,
 `jump`, ...) live in their own matching
 subfolder (`Sprites/Hero/Walk/`, `Sprites/Hero/Crawl/`, ...).
+
+### 2.8 Building kits (styles as clips)
+
+Architectural level pieces come in **styles** (an era or theme). Each kind of
+piece is one sprite asset, and each style is one clip of it:
+
+```
+Sprites/
+	Column/
+		Column_settings.ini
+		Column_stylea_characters.txt
+		Column_styleb_characters.txt
+	Floor/
+		Floor_settings.ini
+		Floor_stylea_characters.txt
+		...
+```
+
+- Clip names are the lowercase style name, optionally followed by a variant
+  (`stylea_left`, `stylea_1`).
+- All styles of one piece share the same footprint (width/height of the
+  authored unit and tiling axis), so a level can switch style by changing
+  only `Clip` (and `Material`) in its `_objects.ini`, without moving anything.
+- Each style has its own material in `MaterialLibrary.ini` for its physics
+  and default colors; set it with `Material` on the placement or as the
+  asset's `DefaultMaterial`.
+- Whether a piece blocks the player (a load-bearing column) or stands in the
+  background is chosen per placement with `Passable` (§3.4), not per clip.
+- Shared, style-neutral pieces (ladders, pipes, doors, hatches) keep their
+  own sprites and take the style's colors through the placement's
+  `ForegroundColor`/`BackgroundColor` and `Material`.
 
 ## 3. World files
 
@@ -857,7 +893,7 @@ initial motion:
 ```ini
 [BouncingBall]
 Asset = Ball
-Clip = default
+Clip = medium
 Kind = DynamicObject
 GravityAffected = false
 Restitution = 1.0
@@ -1053,7 +1089,7 @@ grid scan order) wins:
 ```ini
 [BouncingBall]
 Asset = Ball
-Clip = default
+Clip = medium
 Kind = DynamicObject
 CameraTarget = true
 ```
@@ -1123,6 +1159,15 @@ pump) that only swaps between its off and on clips. Links are one switch to many
 targets: a switch without a matching target, a target without a switch, or two switches
 with the same `Link` are load errors.
 The switch's `Sound` plays when it is operated.
+
+A gate becomes passable the moment it opens. Its open clip may be a short animation
+(`[Animation.open] Mode = Once`) that plays once and holds its last frame. Closing
+returns to the closed clip at once. A clip's frames grow from the gate's top-left
+corner, so a growing door swings out to the right and a growing hatch swings down.
+The shared `Door` and `Hatch` sprites are drawn with `MaterialChar` (§2.4): a closed door
+is 2 cells wide and a closed hatch 1 cell high, both shown in their material's
+character, and they swing open to 6 cells wide / 3 cells high. Set `Material` on the
+placement for a wooden, steel or other door.
 
 | Key            | Meaning |
 |----------------|---------|
@@ -1295,14 +1340,14 @@ near-duplicate asset per variant:
 ```ini
 [BallRubberOnConcrete]
 Asset = Ball
-Clip = default
+Clip = medium
 Kind = DynamicObject
 Material = Rubber
 ForegroundColor = N
 
 [BallPlasticOnConcrete]
 Asset = Ball
-Clip = default
+Clip = medium
 Kind = DynamicObject
 Material = Plastic
 ForegroundColor = Y
@@ -1580,9 +1625,10 @@ Fields:
   default background color.
 - **Character** (optional) — a default glyph representing this material,
   used as the glyph for a materials-only world object (one naming this
-  `Material` but no `Asset` — see §3, "Materials-only objects"); has no
-  effect on any `Asset`-based placement, whose glyphs always come from its
-  own sprite's `_characters.txt`. A materials-only placement may also
+  `Material` but no `Asset` — see §3, "Materials-only objects"), and for
+  the placeholder cells of a sprite that declares `[Layout] MaterialChar`
+  (§2.4). Has no other effect on an `Asset`-based placement, whose glyphs
+  otherwise come from its own sprite's `_characters.txt`. A materials-only placement may also
   override it per-instance via its own `Character` key.
 
 ### 4.4 `Global/Settings.ini`

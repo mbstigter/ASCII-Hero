@@ -108,7 +108,7 @@ public sealed class TravelAnimationTests
     [TestMethod]
     public async Task PlayerHangingStillOnRunningRope_HasNoTravelOfItsOwn()
     {
-        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "Ropes");
+        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "RopesAndVines");
         var rope = world.Objects.OfType<StaticObject2D>().First(o => o.Sprite.Name == "Rope" && o.ConveyorVelocity.X > 0);
         var player = world.Player;
         var physics = new PhysicsSystem();

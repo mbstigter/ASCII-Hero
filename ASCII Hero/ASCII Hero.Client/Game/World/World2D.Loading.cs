@@ -568,6 +568,11 @@ public partial class World2D
         }
 
         var material = world.Materials.Get(materialName);
+        if (body.Sprite.MaterialChar is not null && material.Character is null)
+        {
+            throw section.Error($"uses an asset drawn with MaterialChar, but its material '{materialName ?? "(none)"}' has no Character in MaterialLibrary.ini");
+        }
+
         body.Density = section.Number("Density") ?? material.Density;
         body.Friction = section.Number("Friction") ?? material.Friction;
         body.Restitution = section.Number("Restitution") ?? material.Restitution;

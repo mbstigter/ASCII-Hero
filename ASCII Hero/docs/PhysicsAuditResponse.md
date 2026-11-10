@@ -40,5 +40,5 @@ Verdict after the follow-up work: **yes, for the modelled scope.** Remaining dev
 
 ## Open (not physics correctness)
 
-- **Performance:** the Crates world runs ~7 FPS vs ~30 in TestPhysics. Many mutually touching dynamic bodies cost far more than many static ones. Unmeasured suspects: no sleeping of resting bodies, per-cell `HasCharacterOverlap` per touching pair per iteration, per-contact allocations (LINQ, `new List<Contact>`, `_movingBodies.IndexOf`) causing WASM GC pauses, and rendering many multi-cell sprites. Profile Crates vs TestPhysics before choosing a fix.
+- **Performance:** the Crates world runs ~7 FPS vs ~30 in PhysicsTest2. Many mutually touching dynamic bodies cost far more than many static ones. Unmeasured suspects: no sleeping of resting bodies, per-cell `HasCharacterOverlap` per touching pair per iteration, per-contact allocations (LINQ, `new List<Contact>`, `_movingBodies.IndexOf`) causing WASM GC pauses, and rendering many multi-cell sprites. Profile Crates vs PhysicsTest2 before choosing a fix.
 - **Done: grip-based climbing/hanging and moving ladders/pipes.** See docs/Decisions.md (climbing/hanging) for the current rules.

@@ -1,0 +1,35 @@
+                
+                
+  2VI   J    U  
+ A222222222222A 
+ A            A 
+22IIIIIIIIIIII22
+22  K         22
+2222222222222222
+//end
+                
+                
+  2I J   J   U  
+ A222222222222A 
+ A            A 
+22IIIIIIIIIIII22
+22   K        22
+2222222222222222
+//end
+                
+                
+  2I  J   J  U  
+ A222222222222A 
+ A            A 
+22IIIIIIIIIIII22
+22    K       22
+2222222222222222
+//end
+                
+                
+  2I   J   J U  
+ A222222222222A 
+ A            A 
+22IIIIIIIIIIII22
+22     K      22
+2222222222222222

@@ -5,7 +5,7 @@
         IHHHHHHI
         IHHHHHHI
         IHHHHHHI
-SSSSSSSSIIIIIIII
+11111111IIIIIIII
 //end
                 
                 
@@ -14,7 +14,7 @@ SSSSSSSSIIIIIIII
         IHHHHHHI
         IHHHHHHI
         IHHHHHHI
-SSSSSSSSIIIIIIII
+11111111IIIIIIII
 //end
                 
                 
@@ -23,4 +23,4 @@ SSSSSSSSIIIIIIII
         IHHHHHHI
         IHHHHHHI
         IHHHHHHI
-SSSSSSSSIIIIIIII
+11111111IIIIIIII

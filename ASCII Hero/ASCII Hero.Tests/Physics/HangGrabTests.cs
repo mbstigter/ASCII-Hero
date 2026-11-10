@@ -20,7 +20,7 @@ public sealed class HangGrabTests
     [TestMethod]
     public async Task TouchingHangable_WithoutUp_DoesNotHang()
     {
-        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "Ropes");
+        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "RopesAndVines");
         var player = world.Player;
         player.IsTouchingHangable = true;
 
@@ -32,7 +32,7 @@ public sealed class HangGrabTests
     [TestMethod]
     public async Task TouchingHangable_WithUpHeld_Hangs()
     {
-        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "Ropes");
+        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "RopesAndVines");
         var player = world.Player;
         player.IsTouchingHangable = true;
         var input = new InputState();
@@ -47,7 +47,7 @@ public sealed class HangGrabTests
     [TestMethod]
     public async Task CrawlingUnderHangable_UpPress_GrabsStraightIntoClamber()
     {
-        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "Ropes");
+        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "RopesAndVines");
         var player = world.Player;
         var physics = new PhysicsSystem();
         var collision = new CollisionSystem();
@@ -72,7 +72,7 @@ public sealed class HangGrabTests
     [TestMethod]
     public async Task LetGo_BlocksRegrabUntilLanding_EvenWhileStillTouchingHangable()
     {
-        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "Ropes");
+        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "RopesAndVines");
         var player = world.Player;
         var physics = new PhysicsSystem();
         var collision = new CollisionSystem();
@@ -102,7 +102,7 @@ public sealed class HangGrabTests
     [TestMethod]
     public async Task PassingThroughHangable_IsOnlySnappedWhileHanging()
     {
-        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "Ropes");
+        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "RopesAndVines");
         var player = world.Player;
         var hangable = world.Objects.First(body => body.IsStatic && body.IsHangable && body.GetCarryVelocity().X == 0);
         var hangableRect = hangable.CollisionRects.OrderBy(rect => rect.Top).First();

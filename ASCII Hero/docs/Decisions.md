@@ -288,6 +288,14 @@ capture the "why" behind a decision without needing a lengthy narrative.
   (`SyntheticSpriteFactory`) filled with the material's `Character`, reusing
   the exact same body/collision/render pipeline as any sprite-backed object.
   `Span`/`TileAxis` don't apply to these (no smaller authored unit to tile).
+- **A sprite can take its glyph from its material**: cells drawn with the
+  sprite's `[Layout] MaterialChar` placeholder render as the body's material's
+  `Character` (swapped by `WorldRenderer`; physics is unaffected, placeholder
+  cells are solid). Used by the shared Door/Hatch so one drawing serves every
+  material, picked per placement with `Material`. A material without a
+  `Character` used with such a sprite is a load error. A closed door is as
+  thick as a wall and a closed hatch as a floor; their open clip is a
+  play-once swing animation growing right/down.
 - **Tileable placements set their length with `Span` (cells), not a repeat
   count.** The authored unit may be any number of cells long; the unit is
   repeated to fill the span exactly, cutting the last unit short when needed.
@@ -297,6 +305,20 @@ capture the "why" behind a decision without needing a lengthy narrative.
   a complete, independent asset with its own settings and clips, and its files
   keep the plain variant name as prefix - grouping only organizes folders, it
   adds no shared settings or inheritance between variants.
+- **Level building kits are styles, expressed as clips**: each architectural
+  component is one sprite family (`Floor`, `Wall`, `Column`, `ColumnCapital`,
+  `ColumnBase`, `AnchorVertical`, `AnchorHorizontal`, `Ornament`) with one clip
+  per style (`ancient`, ...), plus one `{Style}Stone`-like material per style
+  for physics and default colors. A world names its placements
+  `{Style}{Component}`; swapping style means changing clip and material, never
+  geometry. Footprints are shared across styles so a level can be restyled
+  without re-laying it. Column shafts use half blocks at their sides so
+  capital and base read wider at the same width; walls match a door's width
+  so a door fits flush under a short wall. Solid vs. background use is
+  chosen per placement via
+  `Passable`. Shared pieces (ladders, pipes, doors, hatches) are recolored per
+  style through placement `ForegroundColor`/`Material`. Each style has a
+  `{Style}TestWorld` showcase world.
 - **Posed bodies** (`[Poses]` section) resolve
   their active clip - and facing, including a vertical axis for `Climb` - from
   each clip name's own suffix

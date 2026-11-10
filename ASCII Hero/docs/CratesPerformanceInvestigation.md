@@ -7,7 +7,7 @@ profile has been captured yet. Uncertainties are labelled explicitly.
 
 - The `Crates` world drops to as low as ~5 FPS, even while the player stands still and
   nothing visibly moves.
-- Every other world runs smoothly. `TestPhysics` is a convenient smooth comparison.
+- Every other world runs smoothly. `PhysicsTest2` is a convenient smooth comparison.
 - The slowdown occurs under F5, Ctrl+F5 and the published (AOT) build alike.
 - Input is sluggish too: even the Escape key press registers late.
 
@@ -131,7 +131,7 @@ instead: in the app-mode Edge window press F12, then Ctrl+Shift+P, and run
 1. Crates, settled, standing still.
 2. Press Escape and wait a few seconds on "Exit Game?" (physics stops, the same world is
    still drawn).
-3. TestPhysics, standing still.
+3. PhysicsTest2, standing still.
 
 | Result on Escape screen | Indicates |
 |---|---|
@@ -153,7 +153,7 @@ Managed method names may not resolve in an AOT/WebAssembly capture; the split be
 
 The physics is browser-independent (the test project already loads worlds from disk). A
 BenchmarkDotNet benchmark or MSTest that loads Crates and runs N fixed physics+collision
-steps would give a .NET CPU and allocation profile, with TestPhysics as the baseline. This
+steps would give a .NET CPU and allocation profile, with PhysicsTest2 as the baseline. This
 requires adding a new measurement artifact, so it was not done in this read-only
 investigation.
 
@@ -188,7 +188,7 @@ and reduce redundant `fillStyle` changes in `drawFrame`.
   contradicts docs/Architecture.md.
 - Package or framework upgrades - nothing points at the runtime itself.
 
-Each change should be measured against the same baseline (Crates and TestPhysics) before and
+Each change should be measured against the same baseline (Crates and PhysicsTest2) before and
 after, with the MSTest suite kept green.
 
 ## 7. Response: what was done

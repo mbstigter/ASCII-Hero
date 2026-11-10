@@ -64,7 +64,7 @@ public sealed class RegrabTests
     [TestMethod]
     public async Task HangLetGo_HeldKeyBlocks_FreshPressRegrabsMidAir()
     {
-        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "Ropes");
+        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "RopesAndVines");
         var player = world.Player;
         player.IsTouchingHangable = true;
         player.IsHanging = true;

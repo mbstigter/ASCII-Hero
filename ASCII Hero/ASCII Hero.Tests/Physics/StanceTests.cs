@@ -21,7 +21,7 @@ public sealed class StanceTests
 
     private static async Task<(World2D World, Player2D Player, Stepper Physics, InputState Input)> LoadAirborneAsync()
     {
-        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "TestMovement");
+        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "PhysicsTest1");
         var player = world.Player;
         Assert.IsFalse(player.IsGrounded, "A freshly loaded player has no contacts yet.");
         return (world, player, new Stepper(), new InputState());

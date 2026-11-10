@@ -19,6 +19,13 @@ public static class IniValueParser
         string.IsNullOrEmpty(rawValue) ? ' ' : rawValue[0];
 
     /// <summary>
+    /// Parses an optional single character (e.g. a <c>[Layout] MaterialChar</c> placeholder) from
+    /// a settings.ini value. Returns null if absent/empty.
+    /// </summary>
+    public static char? ParseOptionalChar(string? rawValue) =>
+        string.IsNullOrEmpty(rawValue) ? null : rawValue[0];
+
+    /// <summary>
     /// Parses a single-character color code (see <c>Global/ColorPalette.ini</c>) from a
     /// <c>DefaultForegroundColor</c>/<c>DefaultBackgroundColor</c>-shaped settings.ini value.
     /// Returns null if absent/empty; resolution against the palette happens at render time.

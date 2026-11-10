@@ -1,6 +1,6 @@
 # ASCII Hero – Physics-First Audit
 
-Scope: `Game/Physics/*`, `Game/World/Body2D.cs`, `KinematicObject2D.cs`, `DynamicObject2D.cs`, `GameLoop.cs`, `Constants/*`, `Global/MaterialLibrary.ini`, the `MovingPlatforms` and `TestMovement` worlds.
+Scope: `Game/Physics/*`, `Game/World/Body2D.cs`, `KinematicObject2D.cs`, `DynamicObject2D.cs`, `GameLoop.cs`, `Constants/*`, `Global/MaterialLibrary.ini`, the `MovingPlatforms` and `PhysicsTest1` worlds.
 Method: read-only static analysis. No files were changed apart from this report. No tests were run because the solution has no test project.
 Line numbers refer to the files as they were at the time of the audit.
 
@@ -74,7 +74,7 @@ Other significant findings:
 
   For a platform at a fractional `T_y` (every moving platform), landing from above gives the interval `[T_y, P_bottom)`. It only contains `ceil(T_y)`, so the rider sinks by `1 − frac(T_y)` before detection, almost a full cell when `frac` is small.
 - **Scenarios:**
-  1. **TestMovement ball vs. top border (known issue 2).** The wall is `y ∈ [0,2)` and the ball moves at `v_y = −20`, i.e. 0.33 cells/step. The ball overlaps the wall by up to 1 cell before reflecting. The same ball on the floor, approached from above at integer `T_y`, is detected at the first sliver. This explains the asymmetry.
+  1. **PhysicsTest1 ball vs. top border (known issue 2).** The wall is `y ∈ [0,2)` and the ball moves at `v_y = −20`, i.e. 0.33 cells/step. The ball overlaps the wall by up to 1 cell before reflecting. The same ball on the floor, approached from above at integer `T_y`, is detected at the first sliver. This explains the asymmetry.
   2. **SteelVertical platform (known issue 1).** `PatrolSpeedY = 2` keeps `T_y` fractional. On each landing, and on each re-contact after the restitution micro-bounce, the rider sinks up to about 1 cell and then pops by the full depth. While it is sunk, `IsGrounded` is false: the pose flickers, jumps are gated off, and stance resets.
   3. **Fall-through at speed (known issue 1).** When detection finally happens on a 1-cell-thick platform, the depth is `d ∈ [1−frac(T_y), 1−frac(T_y) + v·dt]`. For the 3-row player, the MTV picks "push down" (`pushDown = 3 − d` from the column rect) once `d > 1.5`, i.e. once `v·dt > 0.5 + frac(T_y)`, which is `v > 30 cells/s` in the worst case. A fall of `v²/2g ≈ 11` cells reaches that speed. The rider is then ejected **below** the platform. (Strongly supported: the exact threshold depends on the sprite's rectangles.)
   4. **Predicted, not yet reported:**
@@ -97,7 +97,7 @@ Other significant findings:
 ### F3 – Restitution is applied to every resting contact; resting state is a limit cycle
 - **Severity:** Medium  **Confidence:** Confirmed
 - **Where:** `ResolveContact`, lines 849-862. There is no resting threshold.
-- **Analysis:** At rest, the per-step approach speed is `a_{n+1} = g·dt − e·a_n`. Its fixed point is `a* = g·dt/(1+e)`, and the contact persists every step, so this is fine on static ground. However, the body oscillates with relative velocity `±e·a*` and its position is projected every step. Combined with F1 on fractional surfaces, every micro-bounce can lose contact detection. With `e = 1` (TestMovement walls), a gravity-affected body never settles.
+- **Analysis:** At rest, the per-step approach speed is `a_{n+1} = g·dt − e·a_n`. Its fixed point is `a* = g·dt/(1+e)`, and the contact persists every step, so this is fine on static ground. However, the body oscillates with relative velocity `±e·a*` and its position is projected every step. Combined with F1 on fractional surfaces, every micro-bounce can lose contact detection. With `e = 1` (PhysicsTest1 walls), a gravity-affected body never settles.
 - **Fix:** Use `e_eff = 0` when `|v_n| < g·dt·c` for some `c` around 2. This is a standard numerical rest threshold, not a gameplay hack. Document it as such.
 
 ### F4 – Friction cap is inflated by restitution: effective sliding deceleration = μ(1+e)g
@@ -110,7 +110,7 @@ Other significant findings:
 ### F5 – Locomotion forces are not limited by traction and do not react against the support
 - **Severity:** Medium (design-level)  **Confidence:** Confirmed
 - **Where:** `UpdateWalkForce` (lines 634-653) and `DynamicObject2D.UpdatePatrolDirection` (line 294).
-- **Mechanism:** The walk motor is an external force `k·m·Δv` applied to the body's centre. It is not bounded by `μ·N`. It works the same on ice, on steel, and in mid-air (scaled by `AirControlMultiplier`). No equal and opposite force is applied to the support: walking on a finite-mass body (the ball, `BigDiamond`) does not push it back, so momentum is not conserved. The material `Friction` only acts in the contact solver, where it opposes the motor (the code handles this with the `GetSurfaceVelocityX` reference frame).
+- **Mechanism:** The walk motor is an external force `k·m·Δv` applied to the body's centre. It is not bounded by `μ·N`. It works the same on ice, on steel, and in mid-air (scaled by `AirControlMultiplier`). No equal and opposite force is applied to the support: walking on a finite-mass body (the ball, a `Rock`) does not push it back, so momentum is not conserved. The material `Friction` only acts in the contact solver, where it opposes the motor (the code handles this with the `GetSurfaceVelocityX` reference frame).
 - **Assessment:** This is a deliberate simplification ("motor"), but it contradicts "explicit material parameters drive behaviour". Surface friction has no effect on how fast a player can accelerate or stop.
 - **Fix (optional):** Clamp the horizontal motor force to `μ_combined · N` while grounded, where `N ≈ m·g` or the last normal impulse divided by `dt`. Apply `−F` to finite-mass supports. Risk: much lower grip on low-μ materials (water floors are `μ = 0.05`), so speeds would need retuning.
 

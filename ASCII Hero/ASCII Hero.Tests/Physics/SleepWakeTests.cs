@@ -29,7 +29,7 @@ public sealed class SleepWakeTests
     [TestMethod]
     public async Task OpeningGateUnderSleepingCrate_WakesItAndItFalls()
     {
-        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "Doors");
+        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "DoorsAndHatches");
         var crates = await World2D.LoadAsync(new DiskAssetFileProvider(), "Crates");
         var crate = crates.Objects.OfType<DynamicObject2D>().First();
         var hatch = world.Objects.OfType<Gate2D>().Single(gate => gate.LinkName == "GreyHatch");
