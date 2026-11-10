@@ -37,6 +37,10 @@ prerendering - using its own `wwwroot/index.html` (separate from the host's
 Actions workflow (`.github/workflows/deploy-gh-pages.yml`) publishes this
 standalone build and deploys it to GitHub Pages on every push to `master`.
 
+Start-up shows a green "Loading..." message throughout: first from `index.html`, then (once
+`Home.razor` mounts) from an overlay in `Home.razor` that stays until `GameLoop.StartAsync`
+has fetched the start-up assets and the menu is ready.
+
 ## Subsystems
 
 ### Assets
@@ -778,7 +782,7 @@ The live game state and the entity types that make it up.
   `StateHasChanged`.
   - Internally a strict `GameMode` state machine (`WorldSelecting` ->
     `LoadingWorld` -> `Playing` -> `LevelComplete` or `GameOver` -> back to
-    `WorldSelecting`, plus `ConfirmExit` while the "Exit game?" prompt is
+    `WorldSelecting`, plus `ConfirmExit` while the "Exit Game?" prompt is
     open during play) - never more than one is active, and
     `OnFrame` switches on it to decide whether to drive
     `WorldSelectScreen`/`WorldSelectRenderer`, redraw the frozen selection
@@ -955,7 +959,7 @@ large jumps after e.g. a tab switch):
    the text and tint, `EndScreenRenderer.AddMessage` draws it: a
    short trail of `UIFrame` boxes shrinks in a ripple onto the final box, then
    the `UILabel` appears inside it on a solid black background; green for
-   Level Complete, red for Game Over (amber for the "Exit game?" prompt, which
+   Level Complete, red for Game Over (amber for the "Exit Game?" prompt, which
    uses the same method); once settled the box border keeps glowing in steps
    through the dark/normal/light tints while the text stays put; the animation is driven by an elapsed
    timer reset on entering the mode), and a confirm-key press (only after

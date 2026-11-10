@@ -1158,7 +1158,8 @@ stops while off and moves while on). A `Device` is a machine-like object (fan, l
 pump) that only swaps between its off and on clips. Links are one switch to many
 targets: a switch without a matching target, a target without a switch, or two switches
 with the same `Link` are load errors.
-The switch's `Sound` plays when it is operated.
+The switch's `Sound` plays when it is operated. A locked gate's `Sound` plays when a key unlocks it; a gate
+opened by a switch has no sound of its own, only the switch's.
 
 A gate becomes passable the moment it opens. Its open clip may be a short animation
 (`[Animation.open] Mode = Once`) that plays once and holds its last frame. Closing
@@ -1190,7 +1191,7 @@ Clip = closed
 ClipWhenOn = open
 Kind = Gate
 Lock = Red
-Sound = DoorOpen  ; Played when the door opens
+Sound = GateUnlock  ; Played when the key unlocks the door
 
 [Lever]
 Asset = Lever
@@ -1257,7 +1258,7 @@ can therefore have two different sounds - `Sound` for hurting the player and
 [Creature]
 Kind = DynamicHazard
 Sound
-KillSound = Squash    ; Played when the player squashes it from above
+KillSound = HazardKill    ; Played when the player kills it from above
 
 [Ring]
 Kind = Collectable

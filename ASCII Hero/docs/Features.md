@@ -181,7 +181,7 @@ Climbable and hangable surfaces are ordinary terrain objects marked with `Climba
   `Clamber`, `Swim`) to a sound played on each animation frame step. `JumpStart` and `Land`
   play when the player leaves and returns to the ground, and `HardLanding` when a fall hurts.
 - **Built-in sounds** in the global library include `DiamondPickup`, `RingPickup`,
-  `KeyPickup`, `DoorOpen`, `Checkpoint`, `LevelEnd`, `Squash`, `Jump`, `Land`, `Step`,
+  `KeyPickup`, `GateUnlock`, `Checkpoint`, `LevelEnd`, `HazardKill`, `Jump`, `Land`, `Step`,
   `SoftStep`, `Grab`, `Splash`, `MenuMove` and `MenuSelect` (subtle sounds for moving through
   the world selection menu and choosing a world).
 - **Per-world sound overrides.** A world can replace or add sounds with its own

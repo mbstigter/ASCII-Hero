@@ -684,6 +684,6 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `Global/Worlds.ini` catalog (world metadata/thumbnails loaded without
   loading the full playable world).
 - **`Esc` asks before leaving a world.** During play it freezes the game behind an
-  "Exit game?" prompt: any confirm key (`InputState.IsConfirmKeyDown`: Enter, E, Space or
+  "Exit Game?" prompt: any confirm key (`InputState.IsConfirmKeyDown`: Enter, E, Space or
   Left Control) confirms and returns to the world-select screen, a second `Esc` cancels.
   Menu and end-screen confirmations accept the same keys.

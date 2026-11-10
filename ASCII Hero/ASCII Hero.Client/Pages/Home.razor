@@ -25,10 +25,18 @@
 -->
 <canvas id="game-canvas" style="display:block; margin:0 auto; image-rendering:pixelated;"></canvas>
 
+@* Covers the still-empty canvas while the game fetches its asset files and shows the menu; the
+   index.html "Loading" message is gone as soon as this component mounts. *@
+@if (_isStarting)
+{
+    <div class="loading">Loading<span class="loading-dots"></span></div>
+}
+
 @code {
     private CanvasBridge? _canvasBridge;
     private WebAudioSoundPlayer? _soundPlayer;
     private GameLoop? _gameLoop;
+    private bool _isStarting = true;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -37,7 +45,15 @@
             _canvasBridge = new CanvasBridge(JsRuntime);
             _soundPlayer = new WebAudioSoundPlayer(JsRuntime);
             _gameLoop = new GameLoop(_canvasBridge, new HttpAssetFileProvider(Http), _soundPlayer);
-            await _gameLoop.StartAsync("game-canvas");
+            try
+            {
+                await _gameLoop.StartAsync("game-canvas");
+            }
+            finally
+            {
+                _isStarting = false;
+                StateHasChanged();
+            }
         }
     }
 
