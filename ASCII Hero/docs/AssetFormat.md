@@ -1152,10 +1152,12 @@ A *switch* (`Kind = Switch`) is a button or lever: a passable object with an off
 (`Clip`) and an on clip (`ClipWhenOn`). The player operates it by standing next to it
 (within one cell) and pressing the action key. It drives every target that has the same
 `Link` name (a `Gate`, a `Device`, a `FlowZone`, or a `KinematicObject`, which stops while
-off and moves while on). A `Device` is a machine-like object (fan, lamp, pump) that only
-swaps between its off and on clips. Links are one switch to many targets: a switch without
-a matching target, a target without a switch, or two switches with the same `Link` are
-load errors. The switch's `Sound` plays when it is operated. A locked gate's `Sound` plays
+off and moves while on). A `Device` is a machine-like object (fan, lamp, pump) that
+swaps between its off and on clips; if it also has `ConveyorDirection`/`ConveyorSpeed`
+(e.g. a rope), its surface only moves while on (always, if it has no `Link`). Links are
+one switch to many targets: a switch without a matching target, a target without a
+switch, or two switches with the same `Link` are load errors. The switch's `Sound` plays
+when it is operated. A locked gate's `Sound` plays
 when a key unlocks it; a gate opened by a switch has no sound of its own, only the
 switch's.
 

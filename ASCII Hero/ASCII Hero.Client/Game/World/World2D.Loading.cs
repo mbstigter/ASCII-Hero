@@ -490,7 +490,18 @@ public partial class World2D
             throw section.Error($"is a {kind} and cannot have 'ConveyorDirection' or 'ConveyorSpeed'; only objects that stay in place or follow a fixed path can have a moving surface");
         }
 
-        body.ConveyorVelocity = ReadConveyorVelocity(section, clipName);
+        var conveyorVelocity = ReadConveyorVelocity(section, clipName);
+        if (body is Device2D device)
+        {
+            // A linked device's surface only moves while it is on; an unlinked one always moves.
+            device.RunningConveyorVelocity = conveyorVelocity;
+            device.ConveyorVelocity = device.LinkName is null || device.IsOn ? conveyorVelocity : default;
+        }
+        else
+        {
+            body.ConveyorVelocity = conveyorVelocity;
+        }
+
         body.ForeColorOverride = IniValueParser.ParseColorCode(section.Values.TryGetValue("ForegroundColor", out var foreColorText) ? foreColorText : null);
         body.BackColorOverride = ReadBackColorOverride(world, section);
         ApplyMaterial(world, body, section);

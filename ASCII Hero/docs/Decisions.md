@@ -249,8 +249,9 @@ capture the "why" behind a decision without needing a lengthy narrative.
   hangables, not ladders and pipes.
 - **Gates and switches share one two-state mechanism** (`TwoStateObject2D`): a
   `Gate2D` is a door/hatch whose `IsPassable` follows its state; a `Switch2D` is a
-  passable button/lever; a `Device2D` is a machine-like object that only swaps clips (a
-  fan, lamp). A switch drives every `ILinkTarget` sharing its `Link` name (one switch to
+  passable button/lever; a `Device2D` is a machine-like object that swaps clips (a
+  fan, lamp) and applies its conveyor velocity (e.g. a rope) only while on - or always,
+  when unlinked, like a `KinematicObject2D`. A switch drives every `ILinkTarget` sharing its `Link` name (one switch to
   many targets, validated at load); `Latching` (per placement, default false)
   decides whether it toggles or only turns on. A gate is key-operated (`Lock`, stays
   open) or switch-operated (`Link`), never both. Hazards operating switches are not

@@ -204,7 +204,8 @@ The live game state and the entity types that make it up.
     `Lock` via `World2D.TryOpenGate`, or driven by a switch through `Link`),
     `Switch2D` (button/lever: toggles, or only turns on if `Latching`, and pushes the
     state to all its `Targets`; operated via `World2D.TryOperateSwitch`),
-    `Device2D` (a machine-like object - fan, lamp - that only swaps its off/on clip) and
+    `Device2D` (a machine-like object - fan, lamp - that swaps its off/on clip; a conveyor
+    surface, e.g. a rope, only moves while on, or always when unlinked) and
     `FlowZone2D` (a passable medium volume - water, air - whose medium flows in a
     `FlowDirection` at a `FlowSpeed` while on).
   - `ILinkTarget` - capability of an object a switch can drive (`LinkName`, `SetState`),
