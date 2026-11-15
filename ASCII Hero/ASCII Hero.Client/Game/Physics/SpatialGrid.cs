@@ -5,7 +5,7 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// <summary>
 /// A reusable broad-phase spatial hash grid: buckets arbitrary items by the world-space cells
 /// their AABB (position/size) overlaps, then answers "what's near this AABB" without testing
-/// against every item in the level. This is the broad phase proper - it only ever reasons about
+/// against every item in the world. This is the broad phase proper - it only ever reasons about
 /// whole bounding boxes and grid buckets, never about a body's actual collision shape/rectangles
 /// or rendered characters (that finer-grained work is the narrow phase, done afterward by
 /// <see cref="CollisionSystem"/>'s Resolve*/TryFindContact/HasCharacterOverlap methods
@@ -13,18 +13,13 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// <see cref="CollisionSystem"/> keeps one instance of this per broad-phase category (solids,
 /// moving bodies) rather than duplicating the bucket-and-query logic for each.
 /// </summary>
-public class SpatialGrid<T>
+public class SpatialGrid<T>(double cellSize)
 {
-    private readonly double _cellSize;
+    private readonly double _cellSize = cellSize;
     private readonly Dictionary<(int X, int Y), List<T>> _buckets = [];
 
     /// <summary>Reused per query to avoid a fresh allocation for every single candidate lookup.</summary>
     private readonly HashSet<T> _candidateBuffer = [];
-
-    public SpatialGrid(double cellSize)
-    {
-        _cellSize = cellSize;
-    }
 
     /// <summary>
     /// Clears every existing bucket and re-buckets <paramref name="items"/> - cheap enough to just

@@ -53,7 +53,7 @@ public class AnimationSystem
     /// Also ticks the lifetime of any <see cref="EffectInstance2D"/>, queuing it for removal once
     /// its effect has finished playing (unless it's configured to persist). A following effect is
     /// moved onto its target and applies its current tint (see <see cref="Body2D.TintColor"/>).
-    /// While a level end or death is pending (physics frozen), the player is shown standing still
+    /// While a world end or death is pending (physics frozen), the player is shown standing still
     /// in its default pose's idle clip instead of continuing its last movement animation.
     /// </summary>
     public void Update(World2D world, double deltaSeconds)

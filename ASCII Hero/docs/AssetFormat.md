@@ -35,15 +35,15 @@ Assets/
 				Wall_default_foregroundcolors.txt
 				Wall_default_backgroundcolors.txt
 	Worlds/
-		Level1/
-			Level1_settings.ini
-			Level1_background_characters.txt
-			Level1_background_foregroundcolors.txt
-			Level1_background_backgroundcolors.txt
-			Level1_objects.txt
-			Level1_objects.ini
-			Level1_thumb_characters.txt        (optional, world-selection screen preview)
-			Level1_thumb_foregroundcolors.txt  (optional)
+		World1/
+			World1_settings.ini
+			World1_background_characters.txt
+			World1_background_foregroundcolors.txt
+			World1_background_backgroundcolors.txt
+			World1_objects.txt
+			World1_objects.ini
+			World1_thumb_characters.txt        (optional, world-selection screen preview)
+			World1_thumb_foregroundcolors.txt  (optional)
 			ColorPalette.ini      (optional, world-specific overrides/additions)
 			MaterialLibrary.ini   (optional, world-specific overrides/additions)
 			Sprites/
@@ -414,7 +414,8 @@ Default = Walk
 Walk = walk_idle, walk_left, walk_right
 Crawl = crawl_idle, crawl_left, crawl_right
 Climb = climb_idle, climb_up, climb_down
-Swim = swim_idle, swim_left, swim_right, swim_up, swim_down
+Shimmy = climb_shimmy_idle, climb_shimmy_up, climb_shimmy_down
+Swim = swim_idle
 ```
 
 - Each non-`Default` key names a pose (`Walk`, `Crawl`, ...); its value is a
@@ -527,7 +528,7 @@ each pose's clips (`walk`, `crawl`, `jump`, ...) live in their own matching subf
 
 ### 2.8 Building kits (styles as clips)
 
-Architectural level pieces come in **styles** (an era or theme). Each kind of
+Architectural pieces come in **styles** (an era or theme). Each kind of
 piece is one sprite asset, and each style is one clip of it:
 
 ```
@@ -545,7 +546,7 @@ Sprites/
 - Clip names are the lowercase style name, optionally followed by a variant
   (`stylea_left`, `stylea_1`).
 - All styles of one piece share the same footprint (width/height of the
-  authored unit and tiling axis), so a level can switch style by changing
+  authored unit and tiling axis), so a world can switch style by changing
   only `Clip` (and `Material`) in its `_objects.ini`, without moving anything.
 - Each style has its own material in `MaterialLibrary.ini` for its physics
   and default colors; set it with `Material` on the placement or as the
@@ -563,33 +564,33 @@ authoritative layout definition) plus optional purely-visual background/
 foreground art layers.
 
 ```
-Level1_settings.ini
-Level1_background_characters.txt        (optional)
-Level1_background_foregroundcolors.txt  (optional)
-Level1_background_backgroundcolors.txt  (optional)
-Level1_foreground_characters.txt        (optional)
-Level1_foreground_foregroundcolors.txt  (optional)
-Level1_foreground_backgroundcolors.txt  (optional)
-Level1_objects.txt
-Level1_objects.ini
+World1_settings.ini
+World1_background_characters.txt        (optional)
+World1_background_foregroundcolors.txt  (optional)
+World1_background_backgroundcolors.txt  (optional)
+World1_foreground_characters.txt        (optional)
+World1_foreground_foregroundcolors.txt  (optional)
+World1_foreground_backgroundcolors.txt  (optional)
+World1_objects.txt
+World1_objects.ini
 ```
 
-- `Level1_objects.txt`/`Level1_objects.ini` are the world's **mandatory,
+- `World1_objects.txt`/`World1_objects.ini` are the world's **mandatory,
   sole authoritative** layout definition. `World2D.LoadAsync` always infers
-  the world's width/height from `Level1_objects.txt`'s own content (widest
+  the world's width/height from `World1_objects.txt`'s own content (widest
   line, line count) — never from the background or foreground layers, which
   are always purely visual and optional, padded to those dimensions with
   any missing rows/columns filled with `EmptyChar`, exactly like any other
-  secondary layer. `Level1_objects.txt` marks where object instances spawn;
+  secondary layer. `World1_objects.txt` marks where object instances spawn;
   it never overwrites or conflicts with the background/foreground layers —
   all are composited independently at load/render time.
-- `Level1_background_*` follows the exact same rules as a sprite clip (empty
+- `World1_background_*` follows the exact same rules as a sprite clip (empty
   cells, `//end` frames — though a world background typically
   has a single frame). This layer is purely visual/background terrain (e.g. distant
   mountains) and is never physically solid. Entirely optional - a world with no
-  `Level1_background_characters.txt` simply has nothing drawn on this layer, same as an absent
-  `Level1_foreground_characters.txt`.
-- `Level1_foreground_*` is the background layer's counterpart on the other side
+  `World1_background_characters.txt` simply has nothing drawn on this layer, same as an absent
+  `World1_foreground_characters.txt`.
+- `World1_foreground_*` is the background layer's counterpart on the other side
   of the scene: purely visual, drawn last — on top of every game object,
   static or otherwise (see [Structure.md](Structure.md)'s Rendering/per-frame
   tick sections for the full render-order note, including where the HUD
@@ -597,15 +598,15 @@ Level1_objects.ini
   for decoration meant to always read as being in front of everything else
   (e.g. prison bars, an overhanging foliage strip, a window frame) without
   needing a full per-object z-order system. Entirely optional — a world with
-  no `Level1_foreground_characters.txt` simply has nothing drawn on this
+  no `World1_foreground_characters.txt` simply has nothing drawn on this
   layer. When present, it is **not** sized independently
   from its own content — like the background layer, its dimensions are fixed
-  to the world's own width/height (from `Level1_objects.txt`), with any missing
+  to the world's own width/height (from `World1_objects.txt`), with any missing
   rows/columns padded with `EmptyChar`. This layer is always purely visual, never physically
   solid.
 
 
-`Level1_settings.ini` mirrors an asset's `settings.ini` (§2.4), but at world
+`World1_settings.ini` mirrors an asset's `settings.ini` (§2.4), but at world
 scope:
 
 ```ini
@@ -640,7 +641,7 @@ applied to this world's own background/object-placement grids.
 - `InterfaceBackdrop` (optional) — a color code, or the word `WorldBackdrop`
   (use the world's own backdrop; a load error if the world sets none). It is
   the solid panel color drawn behind the HUD strip and behind the text of the
-  end-screen message boxes (Level Complete, Game Over, exit confirmation), so
+  end-screen message boxes (World Complete, Game Over, exit confirmation), so
   they stay readable on a light or busy world. Unset, the HUD and message
   boxes have no panel and the world shows through behind them.
 
@@ -654,7 +655,7 @@ horizontal cap stays unlimited.
 
 **`[World]`** (optional)
 this world's thumbnail on the world-selection screen (see §3.2). Falls back
-to the world's own folder/asset name (e.g. `Level1`) if omitted. `Lives`
+to the world's own folder/asset name (e.g. `World1`) if omitted. `Lives`
 (default 3) is the number of lives the player starts with. `RingsPerLife`
 (default 25) is how many rings give an extra life. The player's health is a
 bar that is always full at the start of each life; hazards remove part of it
@@ -663,9 +664,9 @@ bar that is always full at the start of each life; hazards remove part of it
 ### 3.1 World thumbnail (`{Name}_thumb_*`)
 
 ```
-Level1_thumb_characters.txt
-Level1_thumb_foregroundcolors.txt   (optional)
-Level1_thumb_backgroundcolors.txt   (optional)
+World1_thumb_characters.txt
+World1_thumb_foregroundcolors.txt   (optional)
+World1_thumb_backgroundcolors.txt   (optional)
 ```
 
 - An ordinary clip grid (§2.1-§2.3's rules apply as-is: `EmptyChar`-is-blank,
@@ -733,16 +734,16 @@ filesystem" approach `[Poses]` already uses for a sprite's clips.
   dimensions. There are no multi-character codes. The same code can be placed any number
   of times, and every placement shares that code's section.
 - Letter choices (e.g. `P` = player/spawn, `E` = hazard, `M` = moving object,
-  `S` = static/scenery) are a **level-author convention only**. The engine treats every
+  `S` = static/scenery) are a **world-author convention only**. The engine treats every
   code as an opaque lookup key into `[ObjectCodes]` — it does not assign meaning to the
   character itself.
 - A marker only needs to appear once, at an object's anchor cell (its top-left).
   The object's own sprite dimensions (from its `_characters.txt`) determine its
   full footprint — multi-cell objects do not need repeated markers.
-- Empty cells in `Level1_objects.txt` use the same space-is-empty convention as
+- Empty cells in `World1_objects.txt` use the same space-is-empty convention as
   every other layer.
 
-### 3.4 `Level1_objects.ini`
+### 3.4 `World1_objects.ini`
 
 ```ini
 [ObjectCodes]
@@ -806,7 +807,7 @@ table above):
   material's own `ForegroundColor`/`BackgroundColor`, for this placement only.
 
 For example, to simulate a patch of polluted water without affecting every
-other `Water` placement in the level:
+other `Water` placement in the world:
 
 ```ini
 [PollutedWater]
@@ -908,7 +909,7 @@ class name with the `2D` suffix dropped (e.g. `Kind = DynamicHazard` spawns a
 `DynamicHazard2D`, `Kind = StaticObject` spawns a `StaticObject2D`), so the mapping is
 discoverable directly from the codebase rather than needing to be memorized separately.
 Valid values: `Player` (the player's spawn point and sprite - exactly one placement per
-level should use this), `StaticObject` (immovable terrain, e.g. a platform),
+world should use this), `StaticObject` (immovable terrain, e.g. a platform),
 `DynamicObject` (moves under its own velocity/gravity, e.g. a bouncing ball),
 `KinematicObject` (moves at a prescribed velocity, easing to rest at route ends - never
 affected by gravity, restitution, or `GravityAffected`/`Restitution` keys),
@@ -957,7 +958,7 @@ its own schedule, with no separate "diagonal mode" needed:
   needed when no bound is given. `Patrol = false` keeps the object still even
   when bounds are set.
 - With `Patrol = true` and no bounds at all, the object patrols the entire
-  width of the world - enough to "just patrol the level" with no further
+  width of the world - enough to "just patrol the world" with no further
   authoring.
 
 Further optional keys tune the patrol force itself rather than its range:
@@ -972,7 +973,7 @@ speed, i.e. how fast this hazard patrols along X once it gets there;
 is the equivalent target speed for vertical patrol, letting a diagonally- or
 vertically-patrolling hazard cruise at a different pace on each axis;
 `PatrolInitialDirectionX` (`Left` or `Right`) overrides which way it starts
-heading horizontally the instant the level loads, in place of the default
+heading horizontally the instant the world loads, in place of the default
 inference (toward whichever patrol bound is farther from its spawn
 position); `PatrolInitialDirectionY` (`Up` or `Down`) is the equivalent
 override for vertical patrol:
@@ -1095,7 +1096,7 @@ CameraTarget = true
 A `Kind = Collectable` placement must set a `Type` key choosing what picking
 it up actually does — there is no default variant; an omitted or unrecognized
 `Type` makes the collectable inert (no effect, not removed, no player state
-changed) on pickup. Every variant below is removed from the level on pickup;
+changed) on pickup. Every variant below is removed from the world on pickup;
 a placement's own `EffectPersists = true` (see below) leaves its pickup
 effect behind in its place afterward as a permanent "already used" marker,
 instead of the effect fading away like an ordinary pickup:
@@ -1107,7 +1108,7 @@ instead of the effect fading away like an ordinary pickup:
 - `Checkpoint` — records itself as where the player should next respawn
   from. Typically paired with `EffectPersists = true` so the checkpoint
   stays visibly marked as reached.
-- `LevelEnd` — finishes the level. Typically paired with
+- `WorldEnd` — finishes the world. Typically paired with
   `EffectPersists = true` for the same reason as `Checkpoint`.
 - `Key` — adds a key to the player's inventory and is removed. Requires a
   `Lock = <name>` key naming the lock it opens; a key without `Lock` is inert
@@ -1219,7 +1220,7 @@ A medium may use any material, including `Air` (e.g. for a wind tunnel).
 moves - a river, a wind tunnel. It is passable by default and still needs
 `Medium = true`. Bodies in it are dragged along through the medium's own viscosity,
 so the same strength pushes much harder in water than in air. Overlapping flow
-zones should be avoided; the level designer is responsible for that.
+zones should be avoided; the world designer is responsible for that.
 
 | Key             | Meaning |
 |-----------------|---------|
@@ -1239,6 +1240,44 @@ Medium = true
 FlowDirection = Right
 FlowSpeed = 6
 InitialState = On
+```
+
+**Sub-worlds, portals and named player entries.** A world can have extra *sub-worlds*
+(a cellar, a cave...) numbered `1`, `2`... (`0` is the main world). A sub-world is only an
+object grid and its definitions, in the main world's folder:
+`{World}/{n}/{World}_{n}_objects.txt` and `{World}_{n}_objects.ini`. Settings, palette,
+materials, sounds and sprites come from the main world; a sub-world has no art layers. Its
+object sections are its own (so it needs its own `Player` section and so on).
+
+A *portal* (`Kind = Portal`) sends the player to another world when they step into it. It is
+passable, stays in place and can be used again: it fires when the player starts overlapping
+it, and not again until they have left it. Any asset can be its visuals (a hatch, a door).
+
+| Key           | Meaning |
+|---------------|---------|
+| `TargetWorld` | Required on a portal. The world to go to: `0` is the main world, `1`+ a sub-world. |
+| `TargetEntry` | Optional. The `Entry` name in the target world to appear at. When absent, the player appears at the target world's unnamed player placement. |
+| `Entry`       | Only on a `Kind = Player` placement: gives it a name, making it an invisible arrival spot instead of the player. |
+
+Every world has exactly one *unnamed* player placement (where the player starts); any
+number of named ones can be added, with unique names. A world's state (opened gates,
+collected items) is kept while the game is played, so coming back finds it as it was left.
+Score, lives, health, rings and keys go along. `TargetWorld`, `TargetEntry` and `Entry`
+on any other kind are rejected.
+
+```ini
+[PortalHatch]
+Asset = Hatch
+Clip = ancient_closed
+Kind = Portal
+TargetWorld = 1
+TargetEntry = FromMain
+
+[PlayerFromCellar]
+Asset = Player
+Clip = walk_idle
+Kind = Player
+Entry = FromCellar
 ```
 
 **Sound keys on object placements.** `Sound` and `KillSound` name a sound from
@@ -1308,7 +1347,7 @@ speed from which it hurts. Because it is a landing speed rather than a height,
 the player can drop further safely in lower gravity, and water slowing a fall
 makes it safer too. An ordinary jump never lands hard enough. Landing on a hazard
 never counts as a fall: that is a squash or a hazard hit instead. This also
-applies right after the level starts or after losing a life, so place the
+applies right after the world starts or after losing a life, so place the
 player (and checkpoints) on or just above the floor.
 `FallDamage = 0` or `FallDamageImpactSpeed = Infinity` turns fall damage off:
 
@@ -1325,9 +1364,15 @@ The `Player` section
 asset) for specific situations: `HurtEffectClip` plays when the player
 takes non-fatal damage (a hazard hit or a hard landing; a fatal hit shows only
 `DiedEffectClip`), `CheckpointReachedEffectClip` plays when the
-player reaches a `Checkpoint`, `LevelEndReachedEffectClip` plays when the player
-reaches a `LevelEnd`, `DiedEffectClip` plays when the player loses a life, and
-`HealedEffectClip` plays when a `HealthPack` restores the player's health.
+player reaches a `Checkpoint`, `WorldEndReachedEffectClip` plays when the player
+reaches a `WorldEnd`, `DiedEffectClip` plays when the player loses a life, and
+`HealedEffectClip` plays when a `HealthPack` restores the player's health, and
+`PortalEnteredEffectClip` plays when the player steps into a `Portal`, with
+`PortalEnteredSound` naming a sound played then (the move to the
+target world waits a moment for it; with no clip there is no wait), and
+`PortalArrivedEffectClip` plays when the player arrives through a portal (play is frozen
+briefly meanwhile; `PortalArrivedSound` names a sound played then). Use the reverse of the
+enter clip for a matching pair.
 All are optional (no effect if omitted).
 
 Any object type may also override its spawned body's material and/or color away
@@ -1385,7 +1430,7 @@ ForegroundColor = Y
   chain, in precedence order after the cell's own per-cell code:
   per-cell layer file > this section's override > the sprite asset's own
   `[Colors]` default > this object's resolved material's own
-  `ForegroundColor`/`BackgroundColor` (see §4.3) > the level's own `[Colors]`
+  `ForegroundColor`/`BackgroundColor` (see §4.3) > the world's own `[Colors]`
   default (§3, above) > the interface color (§4.2; foreground only). Absent at any tier means
   that tier has no color of its own and the chain continues unchanged.
 
@@ -1411,7 +1456,7 @@ StaticHazard`/`KinematicHazard`/`Collectable`/`Switch`/`FlowZone`) to control ho
 interacts with moving bodies, independent of its `Kind`:
 
 - **`Passable`** — if `true`, the object never blocks movement even though it
-  is otherwise solid terrain (e.g. a wall type used as a level design
+  is otherwise solid terrain (e.g. a wall type used as a world design
   "secret passage"). These kinds default to `true` because a hazard is meant
   to be walked into and a collectable is picked up on contact.
 - **`Climbable`** — if `true`, the player can climb straight up/down while
@@ -1422,6 +1467,12 @@ interacts with moving bodies, independent of its `Kind`:
   horizontal centre. Usually paired with `Passable = true` so the object doesn't also
   block horizontal movement. Use it on upright objects (a vertical ladder,
   vertical pipe or hanging rope).
+- **`ClimbStyle`** (optional, only with `Climbable = true`) - which pose the player
+  shows while climbing this object: `Climb` (default, ladder-style) or `Shimmy`
+  (pole-style, for pipes, ropes and vines). Purely visual; climbing behaves
+  identically. The style of the object grabbed first is kept for the whole climb. A
+  sprite without a `Shimmy` pose shows `Climb` instead. An unknown value, or
+  `ClimbStyle` without `Climbable`, is a load error.
 - **`Hangable`** — if `true`, the player can hang from and move laterally
   along this object, held by grip in the same way as
   `Climbable`. The player grabs on by holding Up while touching it with their
@@ -1524,9 +1575,9 @@ GreenLight = #9dff9d
   panel of their own; a world can add one with `InterfaceBackdrop` (§3).
 - `[Green]`, `[Amber]`, `[Red]`, `[Blue]`, `[White]` - each holds
   `<Name>Dark`, `<Name>Normal` and `<Name>Light`. Green always colors the
-  Level Complete box, Amber the exit confirmation box and Red the Game Over box.
+  World Complete box, Amber the exit confirmation box and Red the Game Over box.
 
-Each message box (Level Complete, Game Over, exit confirmation) opens with a
+Each message box (World Complete, Game Over, exit confirmation) opens with a
 shrinking ripple drawn in its light tint at the front and its dark tint
 trailing, then the box keeps glowing through its dark, normal and light tints
 while the message stays in its normal tint.
@@ -1690,7 +1741,7 @@ Each section is one sound, named by its section header, with these keys:
 - **`Vibrato`** (optional) — wobble in Hz, for a warbly arcade feel (or a watery
   texture on `Noise`).
 
-A sound that isn't defined is simply silent - there is no fallback, so a level
+A sound that isn't defined is simply silent - there is no fallback, so a world
 can be made completely silent.
 
 Sounds are referenced by name from: an object's `Sound` / `KillSound` keys in
@@ -1698,7 +1749,7 @@ Sounds are referenced by name from: an object's `Sound` / `KillSound` keys in
 means on a hazard versus a collectable), and a sprite's
 `[Sounds]` section in its settings file, which maps a pose name to a sound
 played on each animation frame step of a moving clip. The pose is the one
-currently displayed (`Walk`, `Crawl`, `Climb`, `Hang`, `Clamber`, `Swim`). Two
+(`Walk`, `Crawl`, `Climb`, `Shimmy`, `Hang`, `Clamber`, `Swim`)
 extra keys, `JumpStart` and `Land`, play once when the player leaves the
 ground upward and when it lands. `HardLanding` plays when a landing is hard
 enough to cause fall damage (on top of `Land`).
@@ -1712,7 +1763,7 @@ The explicit, authored manifest of every world available to play, shown in
 that order on the world-selection screen (§3.2):
 
 ```ini
-[Levels]
+[Worlds]
 Order = FirstWorld, SecondWorld, TestWorld
 ```
 

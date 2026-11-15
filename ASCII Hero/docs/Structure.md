@@ -244,10 +244,10 @@ The live game state and the entity types that make it up.
 	behavior is not yet implemented.
   - `Collectable2D` - a static, non-solid item removed from the world when a
 	collector body touches it (e.g. a coin or power-up), regardless of its
-	`Type` (`CollectableType`: `Ring`/`Diamond`/`Checkpoint`/`LevelEnd`/`Key`/`HealthPack`,
+	`Type` (`CollectableType`: `Ring`/`Diamond`/`Checkpoint`/`WorldEnd`/`Key`/`HealthPack`,
 	set from the placement's optional `Type` ini key; absent = inert) - see
 	`InteractionHandler.OnCollected` below for the actual
-	per-type pickup behavior. `Checkpoint`/`LevelEnd` typically set
+	per-type pickup behavior. `Checkpoint`/`WorldEnd` typically set
 	`EffectPersists = true` so their pickup effect remains in the removed
 	collectable's place as a permanent "already used" marker, the same way a
 	killed hazard's effect can persist as a husk.
@@ -307,7 +307,7 @@ The live game state and the entity types that make it up.
   - `ICollectableBody` - removed from the world on contact with a collector
 	(marker only); see `Collectable2D`'s own entry above for how its
 	`EffectPersists` can leave its pickup effect behind as a permanent marker
-	(used by `Checkpoint`/`LevelEnd` in practice).
+	(used by `Checkpoint`/`WorldEnd` in practice).
   - `ICollectorBody` - can pick up collectables on contact (e.g. the player).
   - `IKillerBody` - can "kill" a killable hazard by landing on top of it
 	(e.g. the player); kept independent of `ICollectorBody` since the two
@@ -431,7 +431,9 @@ The live game state and the entity types that make it up.
   pushes a finite-mass gripped body the other way, and measures every target, grip-speed
   check and jump-off relative to the gripped body's `GetCarryVelocity()` (recorded as a
   `ContactType.Climbable`/`Hangable` contact by `CollisionSystem`), so moving moving and
-  running climbables/hangables carry the player. Both resolve their own dedicated poses
+  running climbables/hangables carry the player. A climb's pose is `Climb`, or
+  `Shimmy` when the gripped surface's `ClimbStyle` is `Shimmy` and the sprite declares that
+  pose (see `Player2D.ResolveClimbPose`). Both climbing and hanging resolve their own dedicated poses
   instead of the "Jump" swap - `Climb` (whose `Facing` is resolved along the vertical axis
   instead of horizontal, since it's a vertically-moving stance - see
   `SpriteAsset.Facing`/`StanceDefinition` - so its `Idle`/`Up`/`Down` clips distinguish
@@ -456,7 +458,7 @@ The live game state and the entity types that make it up.
   each `Resolve`) the player's hazard contacts are skipped and not recorded;
   what each interaction does - kills, damage (including fall damage via
   `InteractionHandler.OnHardLanding`), lives, score,
-  rings, keys, checkpoints, level-end/death transitions, their sounds and
+  rings, keys, checkpoints, world-end/death transitions, their sounds and
   effects - is applied by **`InteractionHandler`**), and any `IClimberBody`/`IHangerBody`'s
   `IsTouchingClimbable`/`IsTouchingHangable` overlap against
   `IsClimbable`/`IsHangable` terrain. Restitution/friction used in any given
@@ -542,7 +544,7 @@ The live game state and the entity types that make it up.
   uses a per-frame `SpatialGrid<T>` (one instance each for solids and moving
   bodies - `_solidsGrid`/`_movingBodiesGrid`, bucketed by `GridCellSize`)
   rather than testing every solid/mover pair unconditionally, so collision
-  cost scales with nearby objects rather than the level's total object
+  cost scales with nearby objects rather than the world's total object
   count - this bucket-and-candidate-lookup logic is the broad phase in its
   entirety; it only ever reasons about whole AABBs and grid cells, never
   about a body's actual collision rectangles or rendered characters.
@@ -615,7 +617,7 @@ The live game state and the entity types that make it up.
   sprite or material) stops the chain with no fill. A cell drawn with its
   sprite's `MaterialChar` placeholder is drawn with its resolved material's
   `Character` instead. The background/foreground
-  layers are purely static level data, so their colors are instead resolved
+  layers are purely static world data, so their colors are instead resolved
   once at world load time into `World2D.BackgroundForeColors`/
   `BackgroundBackColors`/`ForegroundForeColors`/`ForegroundBackColors`
   (see `World2D.LoadAsync`'s `PrecomputeLayerColors`), and `WorldRenderer`
@@ -710,7 +712,7 @@ The live game state and the entity types that make it up.
   for removal once its effect finishes playing (unless configured to
   persist). It also moves each following effect onto its target (plus the
   clip's offset) and sets the target's temporary `TintColor`, which
-  `WorldRenderer` puts first in the foreground color chain. While a level end
+  `WorldRenderer` puts first in the foreground color chain. While a world end
   or death is pending, the player is held in its default pose's idle clip
   without animating.
 
@@ -767,14 +769,14 @@ The live game state and the entity types that make it up.
   `requestAnimationFrame` calling back into C# - never by Blazor's
   `StateHasChanged`.
   - Internally a strict `GameMode` state machine (`WorldSelecting` ->
-    `LoadingWorld` -> `Playing` -> `LevelComplete` or `GameOver` -> back to
+    `LoadingWorld` -> `Playing` -> `WorldComplete` or `GameOver` -> back to
     `WorldSelecting`, plus `ConfirmExit` while the "Exit Game?" prompt is
     open during play) - never more than one is active, and
     `OnFrame` switches on it to decide whether to drive
     `WorldSelectScreen`/`WorldSelectRenderer`, redraw the frozen selection
     layout plus a filling "Loading..." `UIBar` (a world's `World2D.LoadAsync`
     is in flight), run the normal gameplay tick, or freeze gameplay and show
-    a "Level Complete!"/"Game Over!" message (see below) before looping back to
+    a "World Complete!"/"Game Over!" message (see below) before looping back to
     world selection.
   - `OnFrame` is invoked by JS in a fire-and-forget fashion - the next
     `requestAnimationFrame` call is scheduled without waiting for the
@@ -876,8 +878,8 @@ large jumps after e.g. a tab switch):
    (`CollectableType`): all variants are removed on pickup. `Diamond`
    adds 1 to `Player2D.Score`; `Ring` increments `Rings`, adds 5 to `Score` and, every
    `World2D.RingsPerLife` rings, resets `Rings` and adds a life; `Checkpoint`
-   records `World2D.RespawnPoint`; `LevelEnd` sets `World2D.PendingTransition`
-   to `LevelEnd` for `GameLoop` to act on. Collectables (and hazards) with an
+   records `World2D.RespawnPoint`; `WorldEnd` sets `World2D.PendingTransition`
+   to `WorldEnd` for `GameLoop` to act on. Collectables (and hazards) with an
    effect clip (e.g. a
    collectable with `EffectPersists = true`) spawn their pickup effect as a
    permanent husk in their place, the same way a killed hazard's effect can
@@ -927,19 +929,35 @@ large jumps after e.g. a tab switch):
    stacks directly under the FPS overlay, showing `World2D.Objects`'s live count (e.g. "42
    Obj") - same right-aligned-by-rendered-length approach, also off by default.
 
-   When `CollisionSystem` sets `World2D.PendingTransition` (`LevelEnd` on a
-   `CollectableType.LevelEnd` pickup, `Death` when hazard damage empties `Player2D.Health`
+   Portals: `CollisionSystem.ResolvePortals` (after hazards/collectables) fires a `Portal2D`
+   the player has just started overlapping through `InteractionHandler.OnPortalEntered`
+   (which plays the player's `PortalEnteredSound` and shows the player's
+   `PortalEnteredEffectClip`). `GameLoop`
+   configured it first waits `PortalTransitionSeconds` (physics frozen, effect animating); then
+   `EnterPortalTargetAsync` loads the
+   target with `World2D.LoadAsync(..., subWorld: n)` (or reuses it from `_sessionWorlds`,
+   cleared when a world starts), copies the progress with `Player2D.CarryOverFrom`, places
+   the player with `World2D.EnterAt(entry)`, then `InteractionHandler.OnPortalArrived` plays the
+   player's `PortalArrivedSound` and `PortalArrivedEffectClip` (an effect freezes play for
+   `PortalTransitionSeconds` through `PendingTransition.Arrive`, counted down in
+   `AdvancePendingTransition`), and `ResetForNewActiveWorld` resets the
+   systems, arms the portals the player already overlaps and snaps the camera. A load
+   failure is logged and play continues. `World2D.Entries` holds the named player
+   placements.
+
+   When `CollisionSystem` sets `World2D.PendingTransition` (`WorldEnd` on a
+   `CollectableType.WorldEnd` pickup, `Death` when hazard damage empties `Player2D.Health`
    - see above), the Playing tick skips Physics/Collision (Animation, Camera and Render
-   keep running, so the player's own `LevelEndReachedEffectClip`/`DiedEffectClip` plays)
+   keep running, so the player's own `WorldEndReachedEffectClip`/`DiedEffectClip` plays)
    until `PendingTransitionSeconds` have passed. `GameLoop.AdvancePendingTransition` then
-   carries it out: `LevelEnd` switches to `GameMode.LevelComplete`; `Death` calls
+   carries it out: `WorldEnd` switches to `GameMode.WorldComplete`; `Death` calls
    `World2D.Respawn()` and play continues if `Player2D.Lives` is above 0, otherwise it
    switches to `GameMode.GameOver`. In both end modes gameplay is frozen, the last
-   rendered world frame is redrawn with a centered "Level Complete!"/"Game Over!" message
+   rendered world frame is redrawn with a centered "World Complete!"/"Game Over!" message
    on top (`GameLoop.AddEndScreenMessage` picks the text and tint,
    `EndScreenRenderer.AddMessage` draws it: a short trail of `UIFrame` boxes shrinks in a
    ripple onto the final box, then the `UILabel` appears inside it on a solid black
-   background; green for Level Complete, red for Game Over (amber for the "Exit Game?"
+   background; green for World Complete, red for Game Over (amber for the "Exit Game?"
    prompt, which uses the same method); once settled the box border keeps glowing in steps
    through the dark/normal/light tints while the text stays put; the animation is driven
    by an elapsed timer reset on entering the mode), and a confirm-key press (only after

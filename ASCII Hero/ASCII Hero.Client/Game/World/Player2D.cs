@@ -68,10 +68,10 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     public string? CheckpointReachedEffectClipName { get; set; }
 
     /// <summary>
-    /// Optional clip name to play as a cosmetic effect when a <see cref="CollectableType.LevelEnd"/>
+    /// Optional clip name to play as a cosmetic effect when a <see cref="CollectableType.WorldEnd"/>
     /// is reached. Null (the default) means no effect.
     /// </summary>
-    public string? LevelEndReachedEffectClipName { get; set; }
+    public string? WorldEndReachedEffectClipName { get; set; }
 
     /// <summary>
     /// Optional clip name to play as a cosmetic effect when the player loses a life (see
@@ -84,6 +84,24 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// restores health. Null (the default) means no effect.
     /// </summary>
     public string? HealedEffectClipName { get; set; }
+
+    /// <summary>
+    /// Optional clip name to play as a cosmetic effect when the player steps into a <see cref="Portal2D"/>,
+    /// before the move to the target world. Null (the default) means no effect and no delay.
+    /// </summary>
+    public string? PortalEnteredEffectClipName { get; set; }
+
+    /// <summary>Optional sound name played when the player steps into a portal.</summary>
+    public string? PortalEnteredSoundName { get; set; }
+
+    /// <summary>
+    /// Optional clip name to play as a cosmetic effect when the player arrives in a world through a
+    /// portal. Null (the default) means no effect and no wait.
+    /// </summary>
+    public string? PortalArrivedEffectClipName { get; set; }
+
+    /// <summary>Optional sound name played when the player arrives in a world through a portal.</summary>
+    public string? PortalArrivedSoundName { get; set; }
 
     /// <summary>
     /// The mass-scaled force this frame's sustained locomotion input contributes - computed each
@@ -197,6 +215,19 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// <summary>Rings collected towards the next extra life; resets to 0 when it reaches <see cref="World2D.RingsPerLife"/>. Kept across respawns.</summary>
     public int Rings { get; set; }
 
+    /// <summary>
+    /// Takes over the progress a player carries from one world to another through a portal: score,
+    /// lives, rings, health and held keys. Position and everything about the body stay as they are.
+    /// </summary>
+    public void CarryOverFrom(Player2D other)
+    {
+        Score = other.Score;
+        Lives = other.Lives;
+        Rings = other.Rings;
+        Health = other.Health;
+        Keys.Clear();
+        Keys.AddRange(other.Keys);
+    }
     public Player2D()
     {
         IsStatic = false;
@@ -245,7 +276,12 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
         // Jump pose's clips while not grounded. Climbing/
         // hanging/swimming take priority over both: they're their own dedicated poses ("Climb",
         // "Hang"/"Clamber" depending on IsClambering, and "Swim"), shown regardless of IsGrounded.
-        var resolvedPose = IsClimbing ? "Climb"
+        if (!IsClimbing)
+        {
+            _gripClimbStyle = null;
+        }
+
+        var resolvedPose = IsClimbing ? ResolveClimbPose()
             : IsHanging ? (IsClambering ? "Clamber" : "Hang")
             : IsSwimming ? "Swim"
             : !IsGrounded ? "Jump"
@@ -272,9 +308,19 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
         ResolvedPose = resolvedPose;
     }
 
+    /// <summary>Style of the climbable grabbed when the current climb began; kept so crossing another style mid-climb doesn't switch pose.</summary>
+    private ClimbStyle? _gripClimbStyle;
+
+    /// <summary>"Climb" or, for a <see cref="ClimbStyle.Shimmy"/> surface, "Shimmy" (falling back to "Climb" if the sprite declares no Shimmy pose).</summary>
+    private string ResolveClimbPose()
+    {
+        _gripClimbStyle ??= GetFirstContactingBody(Physics.ContactType.Climbable)?.ClimbStyle;
+        return _gripClimbStyle == ClimbStyle.Shimmy && Sprite.Poses?.ContainsKey("Shimmy") == true ? "Shimmy" : "Climb";
+    }
+
     /// <summary>
     /// The pose actually being shown after <see cref="UpdatePose"/> resolved it ("Walk", "Crawl",
-    /// "Jump", "Climb", "Hang", "Clamber" or "Swim"), as opposed to <see cref="Stance"/>, which only ever
+    /// "Jump", "Climb", "Shimmy", "Hang", "Clamber" or "Swim"), as opposed to <see cref="Stance"/>, which only ever
     /// holds "Walk"/"Crawl". Used to pick the pose's own movement sound.
     /// </summary>
     public string ResolvedPose { get; private set; } = "Walk";
@@ -286,8 +332,8 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// </summary>
     protected override Vector2D GetLocomotionReferenceVelocity()
     {
-        var grip = IsClimbing ? GetContactingBodies(Physics.ContactType.Climbable).FirstOrDefault()
-            : IsHanging ? GetContactingBodies(Physics.ContactType.Hangable).FirstOrDefault()
+        var grip = IsClimbing ? GetFirstContactingBody(Physics.ContactType.Climbable)
+            : IsHanging ? GetFirstContactingBody(Physics.ContactType.Hangable)
             : null;
         return grip?.GetCarryVelocity()
             ?? (IsSwimming ? CurrentFlow : base.GetLocomotionReferenceVelocity());

@@ -120,7 +120,7 @@ public partial class World2D
     /// Precomputed (resolved once at load time, see <see cref="PrecomputeLayerColors"/>) CSS
     /// foreground color for each <see cref="BackgroundChars"/> cell, or null for that cell's
     /// resolved default (see <see cref="Rendering.GlyphBuilder.BuildGlyph"/>). Background/
-    /// foreground layers are purely static level data - the palette, per-cell color codes, and
+    /// foreground layers are purely static world data - the palette, per-cell color codes, and
     /// this world's own default color codes are all already final by the time <see cref="LoadAsync"/>
     /// returns - so resolving each cell's actual color once here, rather than every frame in
     /// <see cref="Rendering.WorldRenderer"/>, removes a palette lookup per visible background/
@@ -245,8 +245,9 @@ public partial class World2D
     public Vector2D? RespawnPoint { get; set; }
 
     /// <summary>
-    /// The player's original spawn position, recorded once from its <c>Player</c> placement in
-    /// <c>{World}_objects.ini</c> during <see cref="LoadAsync"/>. Used by <see cref="Respawn"/> as
+    /// The player's spawn position: recorded from its unnamed <c>Player</c> placement in
+    /// <c>{World}_objects.ini</c> during <see cref="LoadAsync"/>, and replaced by the arrival point
+    /// each time <see cref="EnterAt"/> is called. Used by <see cref="Respawn"/> as
     /// the fallback respawn position when <see cref="RespawnPoint"/> hasn't been set yet (no
     /// checkpoint reached).
     /// </summary>
@@ -254,16 +255,58 @@ public partial class World2D
 
     /// <summary>
     /// Set by <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/> when the player
-    /// reaches a <see cref="CollectableType.LevelEnd"/> or loses their last health. While not
+    /// reaches a <see cref="CollectableType.WorldEnd"/> or loses their last health. While not
     /// <see cref="World.PendingTransition.None"/>, <see cref="GameLoop"/> freezes physics so the
     /// triggering effect and sound can play, then carries out the transition and resets this.
     /// </summary>
     public PendingTransition PendingTransition { get; set; }
 
+    /// <summary>The world's folder name under <c>Assets/Worlds</c>, shared by its main world and sub-worlds.</summary>
+    public string WorldName { get; private set; } = string.Empty;
+
+    /// <summary>Which part of the world folder this is: 0 for the main world, 1 and up for its sub-worlds.</summary>
+    public int SubWorld { get; private set; }
+
+    private readonly Dictionary<string, Vector2D> _entries = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Where the unnamed <c>Player</c> placement is; <see cref="PlayerSpawnPosition"/> starts here but follows the last arrival point.</summary>
+    private Vector2D _defaultEntryPosition;
+
+    /// <summary>The named arrival points - the <c>Player</c> placements with an <c>Entry</c> key - by name. The unnamed placement is <see cref="PlayerSpawnPosition"/>.</summary>
+    public IReadOnlyDictionary<string, Vector2D> Entries => _entries;
+
+    /// <summary>
+    /// The portal the player has just entered, set together with <see cref="World.PendingTransition.EnterWorld"/>
+    /// by <see cref="Physics.InteractionHandler.OnPortalEntered"/> for <see cref="GameLoop"/> to carry out.
+    /// </summary>
+    public Portal2D? PendingPortal { get; set; }
+
+    /// <summary>
+    /// Puts the player at an arrival point: the named <paramref name="entry"/>, or the unnamed
+    /// <c>Player</c> placement when it is null. The point also becomes the fallback respawn position
+    /// (until a checkpoint is reached), so a player who dies right after arriving comes back where
+    /// they arrived. Throws when the world has no such entry.
+    /// </summary>
+    public void EnterAt(string? entry)
+    {
+        var position = _defaultEntryPosition;
+        if (entry is not null && !_entries.TryGetValue(entry, out position))
+        {
+            var available = _entries.Count == 0 ? "none" : string.Join(", ", _entries.Keys);
+            throw new FormatException($"World '{WorldName}' (sub-world {SubWorld}) has no player entry '{entry}' (available: {available}).");
+        }
+
+        PlayerSpawnPosition = position;
+        Player.Position = position;
+        Player.Velocity = Vector2D.Zero;
+        Player.RecoveryRemainingSeconds = 0;
+        PendingTransition = World.PendingTransition.None;
+        PendingPortal = null;
+    }
+
     /// <summary>The player's collision rectangles grown by one cell on every side - "next to" for action key interactions.</summary>
-    private List<Physics.Rect> PlayerReach() => Player.CollisionRects
-        .Select(rect => new Physics.Rect(rect.X - 1, rect.Y - 1, rect.Width + 2, rect.Height + 2))
-        .ToList();
+    private List<Physics.Rect> PlayerReach() => [.. Player.CollisionRects
+        .Select(rect => new Physics.Rect(rect.X - 1, rect.Y - 1, rect.Width + 2, rect.Height + 2))];
 
     /// <summary>
     /// Opens one closed key-operated gate next to the player, if the player holds a key with the

@@ -23,7 +23,7 @@ AsciiHero is a browser-based retro ASCII platform game built with C# and .NET 10
 
 ### Asset File Comments
 
-- When writing or editing comments in .txt and .ini asset files (level/sprite/settings files, e.g. under wwwroot/Assets), write them in language appropriate for a level designer: describe what the setting/placement does and any relevant in-game/design intent, but avoid referencing internal implementation details, class/method names, development history, or test/validation framing.
+- When writing or editing comments in .txt and .ini asset files (world/sprite/settings files, e.g. under wwwroot/Assets), write them in language appropriate for a world designer: describe what the setting/placement does and any relevant in-game/design intent, but avoid referencing internal implementation details, class/method names, development history, or test/validation framing.
 
 ### Before Changing Architecture
 

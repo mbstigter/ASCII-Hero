@@ -3,7 +3,7 @@
 /// <summary>
 /// A single-line box-drawing border drawn directly in screen (viewport) cell coordinates -
 /// unaffected by any camera. An independent UI primitive: nothing ties a frame to any particular
-/// label (compare <see cref="UILabel"/>), so any screen (world HUD, level-select, a future menu,
+/// label (compare <see cref="UILabel"/>), so any screen (world HUD, world-select, a future menu,
 /// ...) can draw just a frame, just a label, or both side by side. Mutable so a caller can
 /// reposition/recolor it in place frame to frame without re-creating it.
 /// </summary>

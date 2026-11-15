@@ -37,6 +37,13 @@ public class CollisionSystem
     /// </summary>
     private HashSet<(Body2D Hazard, IPhysicsBody Body)> _activeHazardContacts = [];
 
+    /// <summary>
+    /// Portals the player overlapped last frame. A portal fires only when the player starts overlapping
+    /// it, so it cannot fire again until the player has left it - which also keeps a player who arrives
+    /// on a portal from being sent straight back (see <see cref="ArmPortals"/>).
+    /// </summary>
+    private HashSet<Portal2D> _activePortalContacts = [];
+
     /// <summary>Puts resting groups of bodies to sleep and wakes disturbed ones - see <see cref="SleepSystem"/>.</summary>
     private readonly SleepSystem _sleep = new();
 
@@ -54,8 +61,18 @@ public class CollisionSystem
         body.Wake();
     }
 
-    /// <summary>Forgets hazard contacts carried between frames, so a newly loaded world starts fresh.</summary>
-    public void Reset() => _activeHazardContacts.Clear();
+    /// <summary>Forgets contacts carried between frames, so a newly loaded or entered world starts fresh.</summary>
+    public void Reset()
+    {
+        _activeHazardContacts.Clear();
+        _activePortalContacts.Clear();
+    }
+
+    /// <summary>
+    /// Marks every portal the player currently overlaps as already entered, so none of them fires until
+    /// the player has left it. Called after the player is placed in a world, where an arrival point may sit on a portal.
+    /// </summary>
+    public void ArmPortals(World2D world) => ResolvePortals(world, fire: false);
 
     // ---------------------------------------------------------------------------------------
     // Per-frame orchestration
@@ -107,7 +124,7 @@ public class CollisionSystem
         var solids = world.Objects.Where(body => body.IsStatic && !body.IsPassable).ToList();
 
         // Broad phase: bucket solids into a spatial grid once per frame so each moving body only
-        // has to test collision against nearby solids, not every solid in the level - see
+        // has to test collision against nearby solids, not every solid in the world - see
         // SpatialGrid<T>. Everything from here through GetCandidates below is broad phase only
         // (whole-AABB/bucket reasoning); the actual per-rectangle/per-character narrow-phase
         // tests happen afterward, inside ResolveAgainstSolid/ResolveAgainstMover and the
@@ -130,7 +147,7 @@ public class CollisionSystem
 
             // Every moving body can also collide with every other moving body (e.g. the player
             // and the bouncing ball) - checked once per unordered pair, gathered from the same
-            // spatial grid so this scales with nearby movers only, not every mover in the level.
+            // spatial grid so this scales with nearby movers only, not every mover in the world.
             // Two sleeping bodies are at rest against each other by definition and are skipped; an
             // awake body pairs with every sleeping neighbour, waking it on overlap.
             for (var i = 0; i < _movingBodies.Count; i++)
@@ -187,6 +204,7 @@ public class CollisionSystem
         _sleep.Update(_movingBodies, stepSeconds);
 
         ResolveHazardsAndCollectables(world);
+        ResolvePortals(world, fire: true);
         ResolveFallDamage(world);
 
         foreach (var body in world.Objects)
@@ -205,7 +223,7 @@ public class CollisionSystem
 
     /// <summary>
     /// The broad-phase candidate solids for <paramref name="body"/> this frame - the spatial-grid
-    /// bucket contents (see <see cref="SpatialGrid{T}"/>), not every solid in the level.
+    /// bucket contents (see <see cref="SpatialGrid{T}"/>), not every solid in the world.
     /// </summary>
     private HashSet<Body2D> GetCandidateSolids(IPhysicsBody body) =>
         _solidsGrid.GetCandidates(body.Position, body.Size);
@@ -479,6 +497,35 @@ public class CollisionSystem
     }
 
     /// <summary>
+    /// Fires a portal the player has just started overlapping (see <see cref="InteractionHandler.OnPortalEntered"/>).
+    /// Nothing fires while another transition (a death, a world end) is pending. With
+    /// <paramref name="fire"/> false it only records the overlaps.
+    /// </summary>
+    private void ResolvePortals(World2D world, bool fire)
+    {
+        var currentContacts = new HashSet<Portal2D>();
+        var portals = world.Objects.OfType<Portal2D>().ToList();
+
+        if (portals.Count > 0)
+        {
+            // Snapshot: firing a portal may add the player's effect body to world.Objects.
+            foreach (var collector in world.Objects.OfType<IPhysicsBody>().Where(body => body is ICollectorBody).ToList())
+            {
+                foreach (var portal in portals.Where(portal => Overlaps(collector, portal)))
+                {
+                    currentContacts.Add(portal);
+                    if (fire && world.PendingTransition == PendingTransition.None && !_activePortalContacts.Contains(portal))
+                    {
+                        InteractionHandler.OnPortalEntered(world, portal, collector);
+                    }
+                }
+            }
+        }
+
+        _activePortalContacts = currentContacts;
+    }
+
+    /// <summary>
     /// Hurts the player on a hard landing: a bottom contact resolved this step whose impact speed
     /// (the closing speed with the surface landed on, so a moving platform or a falling crate counts
     /// relative to its own motion) reaches <see cref="Player2D.FallDamageImpactSpeed"/>. Impact speed
@@ -569,7 +616,7 @@ public class CollisionSystem
     /// component heading into that edge is reflected, scaled by the body's own restitution (zero
     /// below <see cref="PhysicsConstants.RestingBounceSpeedThreshold"/>, see
     /// <see cref="EffectiveRestitution"/>). World edges have no material, apply no friction and
-    /// record no contacts, so a body touching only an edge is never grounded - levels are expected
+    /// record no contacts, so a body touching only an edge is never grounded - worlds are expected
     /// to provide their own floors, walls and ceilings.
     /// </summary>
     private static void ResolveWorldBounds(World2D world, IPhysicsBody body)
@@ -867,10 +914,7 @@ public class CollisionSystem
         {
             var correction = contact.Depth - PhysicsConstants.ContactSlopCells / 2;
             body.Position += contact.Normal * (correction * bodyShare);
-            if (other is not null)
-            {
-                other.Position -= contact.Normal * (correction * otherShare);
-            }
+            other?.Position -= contact.Normal * (correction * otherShare);
 
             changed = true;
         }
@@ -900,10 +944,7 @@ public class CollisionSystem
 
         var normalImpulse = -(1.0 + EffectiveRestitution(restitution, -normalRelativeSpeed)) * normalRelativeSpeed / totalInverseMass;
         body.Velocity += contact.Normal * (normalImpulse * bodyInverseMass);
-        if (other is not null)
-        {
-            other.Velocity -= contact.Normal * (normalImpulse * otherInverseMass);
-        }
+        other?.Velocity -= contact.Normal * (normalImpulse * otherInverseMass);
 
         // Tangential (along-surface) velocity response: Coulomb friction (see
         // ApplyCoulombFriction), capped by the normal impulse magnitude just applied to body's own

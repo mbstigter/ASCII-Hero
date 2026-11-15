@@ -13,7 +13,7 @@ namespace ASCII_Hero.Client.Game.World;
 /// <see cref="Physics.CollisionSystem"/> (moving bodies, hazards, collectables). It also always
 /// sets <see cref="Body2D.IsPassable"/> = true in its constructor rather than exposing it as an
 /// overridable placement key like every other static body's <c>Passable</c> - this type is never
-/// authored in <c>_objects.ini</c> (it is only ever spawned directly by code), so there is no level
+/// authored in <c>_objects.ini</c> (it is only ever spawned directly by code), so there is no world
 /// data to override it from, and a spawned effect must never block movement regardless.
 /// </summary>
 public class EffectInstance2D : Body2D

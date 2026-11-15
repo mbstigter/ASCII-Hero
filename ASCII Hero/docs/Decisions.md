@@ -86,7 +86,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   previous-step contact history is kept).
 - **Broad phase uses a spatial grid** (`SpatialGrid<T>`, one for solids and
   one for moving bodies) so collision cost scales with nearby objects, not
-  the level's total object count. Narrow phase additionally requires actual
+  the world's total object count. Narrow phase additionally requires actual
   rendered-character overlap (`HasCharacterOverlap`), not just merged
   collision-rectangle overlap.
 - **`CollisionShapeBuilder` derives collision rectangles from two
@@ -118,7 +118,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   rather than overwritten from input. Patrolling kinematic platforms brake
   smoothly to rest at each route end and speed up again, with a global
   acceleration limit (`PhysicsConstants.KinematicPlatformAcceleration`, not
-  per level), so riders experience a finite acceleration held by ordinary
+  per world), so riders experience a finite acceleration held by ordinary
   friction instead of an instant velocity reversal.
 - **Locomotion is traction-limited and has a reaction.** The grounded
   walk/crawl motor force is clamped to the real grip - combined friction times
@@ -187,13 +187,13 @@ capture the "why" behind a decision without needing a lengthy narrative.
   additionally scaled by the body's own **overlap fraction** - the fraction (0 to 1) of
   the body's own collision area actually overlapped by the winning medium volume (both
   axes), computed by summing the overlapped area of every qualifying same-material volume
-  (which are assumed not to overlap each other - a level design rule, not enforced in
+  (which are assumed not to overlap each other - a world design rule, not enforced in
   code). A body only grazing a medium's edge therefore receives proportionally less
   buoyancy/drag than one fully immersed (fraction 1.0), which is what stops a
   surface-floating body from visibly bouncing as it crosses the binary overlap boundary
   each frame. When no placed medium volume overlaps at all, the body resolves to the
   default `Air` fallback at fraction 1.0 (not 0.0) - `Air` is the ambient substance
-  filling all otherwise-unoccupied space, not a bounded level-authored volume with edges
+  filling all otherwise-unoccupied space, not a bounded world-authored volume with edges
   to be partially submerged past, so its own low but nonzero `Viscosity` drag keeps
   applying continuously everywhere outside a placed volume. A placed volume of the same
   density as `Air` also displaces the fallback (only a strictly less dense one is
@@ -213,7 +213,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   by design rule, not summed or enforced.
 - **`ResolveCurrentMedium`'s scan only accepts placements that opt in**
   (`PhysicsSystem.IsMediumVolume`): static, passable terrain with `Body2D.IsMediumCandidate`
-  set, which a level designer does per placement with `Medium = true` (`WaterSurface`/
+  set, which a world designer does per placement with `Medium = true` (`WaterSurface`/
   `BodyOfWater`) to represent an occupiable ambient space. It is an opt-in flag rather
   than an exclusion list of body types, so no other passable body (hazard, collectable,
   effect, open gate, switch, ladder) can leak its own material into the medium
@@ -247,6 +247,12 @@ capture the "why" behind a decision without needing a lengthy narrative.
   just a representation - typically climbable when upright and hangable when
   lying flat (a rope can be either). Code and docs talk about climbables and
   hangables, not ladders and pipes.
+- **Climb style is visual only**: an optional per-object `ClimbStyle` (`Climb` default,
+  `Shimmy`) picks the player's climbing pose (`Climb` or `Shimmy`); physics, grip and
+  constants are identical. The style of the surface grabbed first is kept for the whole
+  climb, and a Player sprite without a `Shimmy` pose falls back to `Climb` (`Shimmy` is
+  deliberately not in `Player2D.RequiredPoses`). `Shimmy` clips live in the `Climb` clip folder
+  as `climb_shimmy_*`.
 - **Gates and switches share one two-state mechanism** (`TwoStateObject2D`): a
   `Gate2D` is a door/hatch whose `IsPassable` follows its state; a `Switch2D` is a
   passable button/lever; a `Device2D` is a machine-like object that swaps clips (a
@@ -261,11 +267,11 @@ capture the "why" behind a decision without needing a lengthy narrative.
   quadratic drag above, which already grow with speed and frontal area. Force gains
   (`MotorForceMultiplier`, `PatrolForceMultiplier`) and jump-off speeds are calibrated
   for that model directly.
-- **World edges are a symmetric, contact-free safety net, not level geometry.** All four
+- **World edges are a symmetric, contact-free safety net, not world geometry.** All four
   edges clamp a body back inside and reflect only the velocity heading into the edge, using
   the body's own restitution (with the resting-bounce threshold). They have no material,
   apply no friction and record no contacts, so a body touching only an edge is not grounded.
-  Levels must provide their own floors, walls and ceilings.
+  Worlds must provide their own floors, walls and ceilings.
 - **Added mass is not modelled.** A body accelerating through a fluid does not also
   accelerate the surrounding fluid, so bouncy bodies keep bouncing slightly longer
   underwater than they would in reality.
@@ -306,13 +312,13 @@ capture the "why" behind a decision without needing a lengthy narrative.
   a complete, independent asset with its own settings and clips, and its files
   keep the plain variant name as prefix - grouping only organizes folders, it
   adds no shared settings or inheritance between variants.
-- **Level building kits are styles, expressed as clips**: each architectural
+- **World building kits are styles, expressed as clips**: each architectural
   component is one sprite family (`Floor`, `Wall`, `Column`, `ColumnCapital`,
   `ColumnBase`, `AnchorVertical`, `AnchorHorizontal`, `Ornament`) with one clip
   per style (`ancient`, ...), plus one `{Style}Stone`-like material per style
   for physics and default colors. A world names its placements
   `{Style}{Component}`; swapping style means changing clip and material, never
-  geometry. Footprints are shared across styles so a level can be restyled
+  geometry. Footprints are shared across styles so a world can be restyled
   without re-laying it. Column shafts use half blocks at their sides so
   capital and base read wider at the same width; walls match a door's width
   so a door fits flush under a short wall. Solid vs. background use is
@@ -365,7 +371,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   not audio files; game logic only queues sound names on `World2D`, and
   `ISoundPlayer`/`audio.js` are the only audio code.
 - **No hard-coded fallback sounds**: an undefined sound is silent, so
-  designers can make silent levels.
+  designers can make silent worlds.
 - **Player movement sounds are per pose** (`[Sounds]` in the sprite
   settings), played on animation frame steps, kept subtle.
 - **Object sound keys are `Sound` and `KillSound`, with `Sound` meaning
@@ -439,7 +445,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `FallDamageImpactSpeed` (default: a 10-cell drop at default gravity) removes
   `FallDamage` (default 0.2) through the same health/death path as a hazard hit.
   Landing on a hazard is a squash or hazard hit, never fall damage. There is
-  no grace period after a spawn or respawn: levels place the player and
+  no grace period after a spawn or respawn: worlds place the player and
   checkpoints near the floor instead. World edges record no
   contacts and so never cause fall damage.
 - **A survived hazard hit starts a safe window.** For
@@ -485,7 +491,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   Gravity` are already world-level settings rather than per-placement keys.
 - **Collectable variants are driven by a required `Type` key on the
   placement** (`Diamond`/`Ring`/
-  `Checkpoint`/`LevelEnd`/`Key`/`HealthPack`), not
+  `Checkpoint`/`WorldEnd`/`Key`/`HealthPack`), not
   asset-level `_settings.ini` key - matching how
   `Killable`/`EffectPersists`/`EffectClip` are already placement-level keys,
   and keeping the same sprite asset (e.g. `Ring`) reusable across multiple
@@ -502,36 +508,38 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `Player2D.Keys` (inert without one; the lock name lives on `Key2D`, not on
   `Body2D`); a `Gate2D` with a matching `Lock` is opened by the action key
   (`E`/`Enter`) when the player is within one cell of it, consuming one key, and
-  then stays open. `Checkpoint`/`LevelEnd` are also removed on
+  then stays open. The HUD shows a single key icon (while at least one key is held) with a
+  superscript count (a superscript n above 9), not a list, since a world may use many locks.
+  `Checkpoint`/`WorldEnd` are also removed on
   pickup like every other collectable; a collectable's own
   `Collectable2D.EffectPersists` (mirroring `IKillableBody.EffectPersists`
   on hazards) controls whether its pickup effect remains in its
   place afterward
-  away - used by `Checkpoint`/`LevelEnd` in practice, but available to any
+  away - used by `Checkpoint`/`WorldEnd` in practice, but available to any
   collectable variant.
   `Checkpoint` records `World2D.RespawnPoint`, consumed by `World2D.Respawn()`;
-  `LevelEnd` starts a `PendingTransition.LevelEnd`, consumed by `GameLoop`
+  `WorldEnd` starts a `PendingTransition.WorldEnd`, consumed by `GameLoop`
   (see below).
 - **Player effects follow the player**: every effect the player plays stays
   attached to the player at its clip's `OffsetX`/`OffsetY`, and may tint the
   player via `TintColor`/`TintAlternateColor`/`TintBlinkSeconds` in the same
   `[Animation.{clip}]` section (no separate tint structure). The tint is
   temporary and wins over the normal foreground color chain. Non-player
-  effects stay where they were spawned. While a level end or death is pending,
+  effects stay where they were spawned. While a world end or death is pending,
   the player is shown standing still in its default pose's idle clip (solved in
   code, not a setting, since physics is frozen then too).
-- **Level end and death share
-  `CollisionSystem` sets `World2D.PendingTransition` (`LevelEnd` or `Death`)
-  and spawns the player's own effect clip (`LevelEndReachedEffectClip` /
+- **World end and death share
+  `CollisionSystem` sets `World2D.PendingTransition` (`WorldEnd` or `Death`)
+  and spawns the player's own effect clip (`WorldEndReachedEffectClip` /
   `DiedEffectClip`); the collectable's/hazard's sound plays as usual. While a
   transition is pending `GameLoop` skips physics/collision (effects keep
-  animating) and, after `PendingTransitionSeconds`, carries it out: `LevelEnd`
-  -> `GameMode.LevelComplete`; `Death` with lives left -> `World2D.Respawn()`
+  animating) and, after `PendingTransitionSeconds`, carries it out: `WorldEnd`
+  -> `GameMode.WorldComplete`; `Death` with lives left -> `World2D.Respawn()`
   and play resumes; `Death` with no lives left -> `GameMode.GameOver`. Both end
   screens are the same minimal mode (`OnEndScreenFrameAsync`): the last frame
-  with a centered "Level Complete!"/"Game Over!" `UILabel` (solid black
+  with a centered "World Complete!"/"Game Over!" `UILabel` (solid black
   background, inside a `UIFrame` box that ripples inward from a compact
-  larger size; green for Level Complete, red for Game Over), dismissed by a
+  larger size; green for World Complete, red for Game Over), dismissed by a
   confirm (action or jump) key press (only after that key has been released
   once, so a held key doesn't dismiss it instantly), then back to
   `GameMode.WorldSelecting` - the same reset path as a confirmed exit.
@@ -649,7 +657,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   simulating every body regardless of visibility.
 - **The camera follows its target with a dead zone** (only scrolls once the
   target nears the viewport edge) and is always clamped to the world's own
-  bounds.
+  bounds. On an axis where the world is smaller than the viewport the camera cannot
+  scroll, so the world is centered on that axis instead (negative view origin).
 - **An FPS overlay is a dev/testing toggle, off by default** (`GameLoop._showFpsOverlay`,
   `InputState.IsFpsToggleKeyDown` bound to `F`), showing a smoothed
   frames-per-second reading computed from each real frame's own raw,
@@ -663,7 +672,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   (`GameLoop._showObjectCounterOverlay`, `InputState.IsObjectCounterToggleKeyDown`
   bound to `O`), stacked directly under the FPS overlay (same row-1 vs.
   row-0 top-right corner), displaying `World2D.Objects.Count` (e.g. "42 Obj")
-  so a level author can watch the count drop live as collectables
+  so a world author can watch the count drop live as collectables
   are picked up.
   right-aligned-by-rendered-length approach as the FPS overlay.
 - **`World2D.Respawn()` resets the player's position, velocity, and health**
@@ -676,12 +685,27 @@ capture the "why" behind a decision without needing a lengthy narrative.
   already-dead player can't retrigger it). There is no debug respawn key.
 - **Background/foreground layer colors are precomputed once at world load**
   (`World2D.BackgroundForeColors`/`BackgroundBackColors`/`ForegroundForeColors`/
-  `ForegroundBackColors`), since these layers are static level data;
+  `ForegroundBackColors`), since these layers are static world data;
   `WorldRenderer` just reads the precomputed color directly.
 
-## Level/Game Flow
+## World/Game Flow
 
-- **Level selection is a strict `GameMode` state machine** backed by a
+- **Sub-worlds are extra object grids, reached through `Kind = Portal`.** A sub-world
+  (`{World}/{n}/{World}_{n}_objects.*`) has no art layers and inherits the main world's
+  settings, palette, materials, sounds and sprites. A portal is a static passable `Body2D`
+  (`Portal2D`) rather than a `Collectable`, because it must stay in place and be reusable;
+  it fires on a fresh overlap and re-arms after the player leaves (`CollisionSystem`),
+  and arrival re-arms it so the player is not bounced straight back. The caller picks the
+  arrival spot (`TargetEntry`, a named `Kind = Player` placement); the game does not
+  remember which portal was used. Visited worlds are cached for the play session so state
+  persists; progress (score, lives, health, rings, keys) is carried over.
+- **Portals have no sound or effect of their own; the player owns them.** The player's
+  `PortalEnteredEffectClip`/`PortalEnteredSound` play on stepping in and
+  `PortalArrivedEffectClip`/`PortalArrivedSound` on arrival, mirroring the other player
+  effect keys. A `Sound` key on a `Portal` placement is rejected. Play is frozen briefly
+  (`GameLoop.PortalTransitionSeconds`) only when the player has the matching effect clip.
+  A world smaller than the window is centred by the camera instead of left-aligned.
+- **World selection is a strict `GameMode` state machine** backed by a
   `Global/Worlds.ini` catalog (world metadata/thumbnails loaded without
   loading the full playable world).
 - **`Esc` asks before leaving a world.** During play it freezes the game behind an

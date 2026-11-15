@@ -9,7 +9,7 @@ public partial class World2D
     /// <summary>
     /// Pairs every <see cref="Switch2D"/> with the <see cref="ILinkTarget"/> sharing its link name
     /// and applies its initial state to it. One-to-many: an unmatched, duplicated-switch or target-less
-    /// link is a level authoring error and fails loudly.
+    /// link is a world authoring error and fails loudly.
     /// </summary>
     private static void ResolveLinks(World2D world, string worldName)
     {
@@ -61,12 +61,28 @@ public partial class World2D
     /// for the file formats and the Global/World fallback rule. The optional <paramref name="progress"/>
     /// callback reports 1-4 after settings, palette/materials, layers and object definitions,
     /// then fractionally through 4-5 per sprite asset loaded and 5-6 per placement-grid row
-    /// spawned. Purely a UI hook; it does not affect loading itself.
+    /// spawned. Purely a UI hook; it does not affect loading itself. A <paramref name="subWorld"/>
+    /// above 0 loads that sub-world's own object files from the main world's folder (no art layers;
+    /// everything else is inherited from the main world).
     /// </summary>
-    public static async Task<World2D> LoadAsync(IAssetFileProvider fileProvider, string worldName, IProgress<double>? progress = null)
+    public static async Task<World2D> LoadAsync(IAssetFileProvider fileProvider, string worldName, IProgress<double>? progress = null, int subWorld = 0)
     {
-        var world = new World2D();
+        if (subWorld < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(subWorld), subWorld, "A sub-world number is 0 (the main world) or more.");
+        }
+
+        var world = new World2D { WorldName = worldName, SubWorld = subWorld };
         var worldFolder = $"{AssetPathResolver.WorldsRoot}/{worldName}";
+
+        // A sub-world is only its own object grid and definitions; settings, palette, materials,
+        // sounds and sprites come from the main world's folder, and it has no art layers.
+        var displayName = subWorld == 0 ? worldName : $"{worldName}-{subWorld}";
+        var objectsPath = subWorld == 0
+            ? $"{worldFolder}/{worldName}_objects"
+            : $"{worldFolder}/{subWorld}/{worldName}_{subWorld}_objects";
+        Task<string?> ReadArtLayerAsync(string fileSuffix) =>
+            subWorld == 0 ? fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_{fileSuffix}") : Task.FromResult<string?>(null);
 
         var settingsContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_settings.ini");
         var settings = IniDocument.Parse(settingsContent ?? string.Empty);
@@ -118,20 +134,20 @@ public partial class World2D
         // WidthCells/HeightCells are always inferred from _objects.txt's own content (widest
         // line, line count), never from the background/foreground art layers, which are always
         // purely visual and optional, padded to these dimensions like any other secondary layer.
-        var objectsContentForSizing = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_objects.txt")
-            ?? throw new FileNotFoundException($"Missing required object placement grid for world '{worldName}'.");
+        var objectsContentForSizing = await fileProvider.TryReadTextAsync($"{objectsPath}.txt")
+            ?? throw new FileNotFoundException($"Missing required object placement grid for world '{displayName}'.");
         var sizingFrames = AssetTextReader.ParseCharsLayer(objectsContentForSizing, emptyChar);
         var width = sizingFrames[0].GetLength(1);
         var height = sizingFrames[0].GetLength(0);
         world.WidthCells = width;
         world.HeightCells = height;
 
-        var backgroundContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_background_characters.txt");
+        var backgroundContent = await ReadArtLayerAsync("background_characters.txt");
         var backgroundFrames = AssetTextReader.ParseFixedSizeFrames(backgroundContent ?? string.Empty, width, height, emptyChar);
         world.BackgroundChars = backgroundFrames.Count > 0 ? backgroundFrames[0] : new char[height, width];
 
-        var backgroundForeContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_background_foregroundcolors.txt");
-        var backgroundBackContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_background_backgroundcolors.txt");
+        var backgroundForeContent = await ReadArtLayerAsync("background_foregroundcolors.txt");
+        var backgroundBackContent = await ReadArtLayerAsync("background_backgroundcolors.txt");
         world.BackgroundFore = AssetTextReader.ParseFixedSizeSecondaryFrames(backgroundForeContent, 1, width, height, emptyChar)[0];
         world.BackgroundBack = AssetTextReader.ParseFixedSizeSecondaryFrames(backgroundBackContent, 1, width, height, emptyChar)[0];
 
@@ -141,15 +157,15 @@ public partial class World2D
         // absent background layer file already does. Dimensions are fixed, not independently
         // inferred - a foreground decoration is placed against the same grid, not sized on its
         // own.
-        var foregroundContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_foreground_characters.txt");
+        var foregroundContent = await ReadArtLayerAsync("foreground_characters.txt");
         var foregroundFrames = AssetTextReader.ParseFixedSizeFrames(foregroundContent ?? string.Empty, width, height, emptyChar);
         world.ForegroundChars = foregroundFrames.Count > 0 ? foregroundFrames[0] : new char[height, width];
-        var foregroundForeContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_foreground_foregroundcolors.txt");
-        var foregroundBackContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_foreground_backgroundcolors.txt");
+        var foregroundForeContent = await ReadArtLayerAsync("foreground_foregroundcolors.txt");
+        var foregroundBackContent = await ReadArtLayerAsync("foreground_backgroundcolors.txt");
         world.ForegroundFore = AssetTextReader.ParseFixedSizeSecondaryFrames(foregroundForeContent, 1, width, height, emptyChar)[0];
         world.ForegroundBack = AssetTextReader.ParseFixedSizeSecondaryFrames(foregroundBackContent, 1, width, height, emptyChar)[0];
 
-        // Background/foreground layers are static level data - resolve every cell's actual
+        // Background/foreground layers are static world data - resolve every cell's actual
         // color once here (rather than every frame in WorldRenderer) now that the palette and
         // every color code/default this world will ever have are already final.
         world.BackgroundForeColors = PrecomputeLayerColors(world.BackgroundFore, world.Palette, emptyChar, GlyphBuilder.DefaultForeColor, world.DefaultForeColor);
@@ -158,8 +174,8 @@ public partial class World2D
         world.ForegroundBackColors = PrecomputeLayerColors(world.ForegroundBack, world.Palette, emptyChar, null, world.DefaultBackColor);
         progress?.Report(3);
 
-        var objectsIniContent = await fileProvider.TryReadTextAsync($"{worldFolder}/{worldName}_objects.ini")
-            ?? throw new FileNotFoundException($"Missing required object placement definitions for world '{worldName}'.");
+        var objectsIniContent = await fileProvider.TryReadTextAsync($"{objectsPath}.ini")
+            ?? throw new FileNotFoundException($"Missing required object placement definitions for world '{displayName}'.");
         var objectsIni = IniDocument.Parse(objectsIniContent);
 
         var objectsGrid = AssetTextReader.ParseFixedSizeGrid(objectsContentForSizing, width, height, emptyChar);
@@ -170,7 +186,7 @@ public partial class World2D
         // progress through step 5 per asset, since this is where the HTTP fetches happen.
         var spriteLoader = new SpriteLoader(fileProvider);
         var spriteCache = new Dictionary<string, SpriteAsset>(StringComparer.OrdinalIgnoreCase);
-        var clipNamesByAsset = CollectClipNamesByAsset(objectsIni, worldName);
+        var clipNamesByAsset = CollectClipNamesByAsset(objectsIni, displayName);
         var assetsLoaded = 0;
         await Task.WhenAll(clipNamesByAsset.Select(async entry =>
         {
@@ -205,16 +221,16 @@ public partial class World2D
                     continue;
                 }
 
-                var section = new ObjectSection(objectsIni.Section(sectionName), sectionName, worldName);
+                var section = new ObjectSection(objectsIni.Section(sectionName), sectionName, displayName);
                 SpawnPlacement(world, section, new Vector2D(col, row), spriteCache, syntheticSpriteCache);
             }
         }
 
-        ResolveLinks(world, worldName);
+        ResolveLinks(world, displayName);
 
         if (world.Player.Sprite is null)
         {
-            throw new FormatException($"World '{worldName}' has no player placement; exactly one is required.");
+            throw new FormatException($"World '{displayName}' has no unnamed player placement; exactly one is required.");
         }
 
         // Player participates in the generic Objects list alongside every other body.
@@ -336,13 +352,39 @@ public partial class World2D
 
         if (kind == "Player")
         {
+            // A named placement is only an arrival point for portals; the one unnamed placement is the player itself.
+            if (section.Text("Entry") is { } entryName)
+            {
+                if (!world._entries.TryAdd(entryName, position))
+                {
+                    throw section.Error($"names the player entry '{entryName}' a second time; entry names are unique");
+                }
+
+                return;
+            }
+
             if (world.Player.Sprite is not null)
             {
-                throw section.Error("places the player a second time; a world has exactly one player placement");
+                throw section.Error("places the player a second time; a world has exactly one unnamed player placement (any other needs an 'Entry' name)");
             }
 
             SpawnPlayer(world, section, sprite, position, effects);
             return;
+        }
+
+        if (section.Text("Entry") is not null)
+        {
+            throw section.Error($"is a {kind} and cannot have 'Entry'; only a Player placement can be named");
+        }
+
+        if (kind == "Portal" && section.Text("Sound") is not null)
+        {
+            throw section.Error("is a Portal and cannot have 'Sound'; the player's 'PortalEnteredSound' is played instead");
+        }
+
+        if (kind != "Portal" && (section.Text("TargetWorld") is not null || section.Text("TargetEntry") is not null))
+        {
+            throw section.Error($"is a {kind} and cannot have 'TargetWorld' or 'TargetEntry'; only a Portal leads to another world");
         }
 
         var linkName = section.Text("Link");
@@ -455,6 +497,13 @@ public partial class World2D
                 body = staticHazard;
                 break;
 
+            case "Portal":
+                var targetWorld = section.NonNegativeInt("TargetWorld") ?? throw section.Error("is missing required key 'TargetWorld'");
+                var portal = new Portal2D();
+                portal.Spawn(sprite, clipName, frameIndex, position, targetWorld, section.Text("TargetEntry"), span);
+                body = portal;
+                break;
+
             case "Collectable":
                 // An absent or unrecognized Type leaves the collectable without an effect on
                 // pickup rather than silently falling back to some default variant.
@@ -476,11 +525,27 @@ public partial class World2D
         // switches and flow zones never block unless explicitly set to.
         if (body is not Gate2D)
         {
-            body.IsPassable = section.Flag("Passable", fallback: kind is "StaticHazard" or "KinematicHazard" or "Collectable" or "Switch" or "FlowZone");
+            body.IsPassable = section.Flag("Passable", fallback: kind is "StaticHazard" or "KinematicHazard" or "Collectable" or "Switch" or "FlowZone" or "Portal");
         }
 
         body.SoundName = section.Text("Sound");
         body.IsClimbable = section.Flag("Climbable");
+        var climbStyleText = section.Text("ClimbStyle");
+        if (climbStyleText is not null)
+        {
+            if (!body.IsClimbable)
+            {
+                throw section.Error("has 'ClimbStyle' but is not 'Climbable'");
+            }
+
+            if (!Enum.TryParse<ClimbStyle>(climbStyleText, ignoreCase: true, out var climbStyle) || !Enum.IsDefined(climbStyle))
+            {
+                throw section.Error($"has unknown ClimbStyle '{climbStyleText}' (expected Climb or Shimmy)");
+            }
+
+            body.ClimbStyle = climbStyle;
+        }
+
         body.IsHangable = section.Flag("Hangable");
         body.IsMediumCandidate = section.Flag("Medium");
         // A moving surface belongs to an object that stays in place (or follows a fixed path); a
@@ -541,11 +606,16 @@ public partial class World2D
         player.Spawn(sprite);
         player.Position = position;
         world.PlayerSpawnPosition = position;
+        world._defaultEntryPosition = position;
         player.HurtEffectClipName = effects.Hurt;
         player.CheckpointReachedEffectClipName = effects.CheckpointReached;
-        player.LevelEndReachedEffectClipName = effects.LevelEndReached;
+        player.WorldEndReachedEffectClipName = effects.WorldEndReached;
         player.DiedEffectClipName = effects.Died;
         player.HealedEffectClipName = effects.Healed;
+        player.PortalEnteredEffectClipName = effects.PortalEntered;
+        player.PortalEnteredSoundName = section.Text("PortalEnteredSound");
+        player.PortalArrivedEffectClipName = effects.PortalArrived;
+        player.PortalArrivedSoundName = section.Text("PortalArrivedSound");
         player.Lives = world.StartingLives;
         player.Health = GameDefaults.PlayerFullHealth;
         ApplyMaterial(world, player, section);
@@ -740,7 +810,7 @@ public partial class World2D
     /// once at load time, producing the fully-resolved color grid consumed directly by
     /// <see cref="Rendering.WorldRenderer"/> - see <see cref="BackgroundForeColors"/>.
     /// </summary>
-    private static string?[,] PrecomputeLayerColors(char[,] codes, ColorPalette palette, char emptyChar, string? hardcodedFallback, char? levelDefault)
+    private static string?[,] PrecomputeLayerColors(char[,] codes, ColorPalette palette, char emptyChar, string? hardcodedFallback, char? worldDefault)
     {
         var height = codes.GetLength(0);
         var width = codes.GetLength(1);
@@ -751,7 +821,7 @@ public partial class World2D
             for (var col = 0; col < width; col++)
             {
                 var code = GlyphBuilder.NullIfEmpty(codes[row, col], emptyChar);
-                resolved[row, col] = GlyphBuilder.ResolveColor(palette, hardcodedFallback, code, levelDefault);
+                resolved[row, col] = GlyphBuilder.ResolveColor(palette, hardcodedFallback, code, worldDefault);
             }
         }
 
@@ -762,19 +832,21 @@ public partial class World2D
     private readonly record struct PatrolRoute(double? MinX, double? MaxX, double? MinY, double? MaxY, bool? TowardMaxX, bool? TowardMaxY);
 
     /// <summary>The effect clips a placement names; all null for a materials-only object.</summary>
-    private sealed record EffectClips(string? Effect, string? Hurt, string? CheckpointReached, string? LevelEndReached, string? Died, string? Healed)
+    private sealed record EffectClips(string? Effect, string? Hurt, string? CheckpointReached, string? WorldEndReached, string? Died, string? Healed, string? PortalEntered, string? PortalArrived)
     {
-        public static readonly EffectClips None = new(null, null, null, null, null, null);
+        public static readonly EffectClips None = new(null, null, null, null, null, null, null, null);
 
         public static EffectClips Read(ObjectSection section) => new(
             section.Text("EffectClip"),
             section.Text("HurtEffectClip"),
             section.Text("CheckpointReachedEffectClip"),
-            section.Text("LevelEndReachedEffectClip"),
+            section.Text("WorldEndReachedEffectClip"),
             section.Text("DiedEffectClip"),
-            section.Text("HealedEffectClip"));
+            section.Text("HealedEffectClip"),
+            section.Text("PortalEnteredEffectClip"),
+            section.Text("PortalArrivedEffectClip"));
 
-        public IEnumerable<string> Names => new[] { Effect, Hurt, CheckpointReached, LevelEndReached, Died, Healed }.OfType<string>();
+        public IEnumerable<string> Names => new[] { Effect, Hurt, CheckpointReached, WorldEndReached, Died, Healed, PortalEntered, PortalArrived }.OfType<string>();
     }
 
     /// <summary>
@@ -836,6 +908,19 @@ public partial class World2D
             return IniValueParser.TryParseInt(text, out var value) && value >= 1
                 ? value
                 : throw Error($"has invalid '{key}' value '{text}' (expected a whole number, 1 or more)");
+        }
+
+        public int? NonNegativeInt(string key)
+        {
+            var text = Text(key);
+            if (text is null)
+            {
+                return null;
+            }
+
+            return IniValueParser.TryParseInt(text, out var value) && value >= 0
+                ? value
+                : throw Error($"has invalid '{key}' value '{text}' (expected a whole number, 0 or more)");
         }
 
         public Vector2D? Direction(string key)

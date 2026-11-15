@@ -34,7 +34,7 @@ public readonly record struct SoundDefinition(
 public class SoundLibrary
 {
     /// <summary>A library with no sounds at all.</summary>
-    public static SoundLibrary Empty { get; } = new(new Dictionary<string, SoundDefinition>());
+    public static SoundLibrary Empty { get; } = new([]);
 
     private readonly Dictionary<string, SoundDefinition> _sounds;
 

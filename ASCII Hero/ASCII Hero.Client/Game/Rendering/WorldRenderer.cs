@@ -9,7 +9,7 @@ namespace ASCII_Hero.Client.Game.Rendering;
 /// space, based on the camera's current view. The world itself is not restricted to a grid;
 /// this mapping is purely a visual concept applied at render time. Compare
 /// <see cref="WorldSelectRenderer"/>, which lays out glyphs directly in screen space with no
-/// camera, for the level-selection screen instead.
+/// camera, for the world-selection screen instead.
 /// </summary>
 public class WorldRenderer
 {

@@ -1,7 +1,7 @@
 ﻿namespace ASCII_Hero.Client.Game.Rendering;
 
 /// <summary>
-/// A gauge/progress bar (health, stamina, a level timer, ...) drawn directly in screen (viewport)
+/// A gauge/progress bar (health, stamina, a world timer, ...) drawn directly in screen (viewport)
 /// cell coordinates - unaffected by any camera. An independent UI primitive alongside
 /// <see cref="UIFrame"/>/<see cref="UILabel"/>. Values are an arbitrary <see cref="MinValue"/>..
 /// <see cref="MaxValue"/> range rather than a fixed 0-100%, so a caller never has to normalize

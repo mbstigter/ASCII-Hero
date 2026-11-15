@@ -6,7 +6,7 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// <summary>
 /// Gameplay consequences of hazard contacts and collectable overlaps detected by
 /// <see cref="CollisionSystem"/>: kills, damage, lives, score, rings, keys, checkpoints,
-/// level-end and death transitions, plus their sounds and effects. <see cref="CollisionSystem"/>
+/// world-end and death transitions, plus their sounds and effects. <see cref="CollisionSystem"/>
 /// keeps the detection (solver surface contacts for solid hazards, overlap for passable hazards
 /// and collectables) and the hazard-contact rising-edge history; this class decides only what
 /// each interaction does.
@@ -148,7 +148,7 @@ public static class InteractionHandler
         // configured), honoring EffectPersists the same way a killed hazard's
         // effect can persist as a husk in the hazard's place - so any collectable
         // variant can be turned into a permanent "used" marker via its placement's own
-        // EffectPersists key, not just Checkpoint/LevelEnd.
+        // EffectPersists key, not just Checkpoint/WorldEnd.
         switch (typedCollectable.Type)
         {
             case CollectableType.Diamond:
@@ -192,20 +192,20 @@ public static class InteractionHandler
                 }
                 break;
 
-            case CollectableType.LevelEnd:
-                // Same as Diamond/Ring, but starts a LevelEnd transition instead of
-                // adjusting a player stat: GameLoop lets the player's level-end effect and
-                // the sound play before completing the level.
+            case CollectableType.WorldEnd:
+                // Same as Diamond/Ring, but starts a WorldEnd transition instead of
+                // adjusting a player stat: GameLoop lets the player's world-end effect and
+                // the sound play before completing the world.
                 SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
                 world.QueueRemoval(collectable);
-                if (movingBody is Player2D levelEndPlayer)
+                if (movingBody is Player2D worldEndPlayer)
                 {
-                    if (levelEndPlayer.LevelEndReachedEffectClipName is { } levelEndReachedEffectClipName)
+                    if (worldEndPlayer.WorldEndReachedEffectClipName is { } worldEndReachedEffectClipName)
                     {
-                        SpawnEffect(levelEndPlayer, levelEndReachedEffectClipName, world);
+                        SpawnEffect(worldEndPlayer, worldEndReachedEffectClipName, world);
                     }
 
-                    world.PendingTransition = PendingTransition.LevelEnd;
+                    world.PendingTransition = PendingTransition.WorldEnd;
                 }
                 break;
 
@@ -247,9 +247,43 @@ public static class InteractionHandler
     }
 
     /// <summary>
+    /// A collector body has started overlapping a portal: plays the player's portal sound and effect (if
+    /// configured) and queues the move to the portal's target world. The portal itself stays where it is,
+    /// ready for the next use.
+    /// </summary>
+    public static void OnPortalEntered(World2D world, Portal2D portal, IPhysicsBody? collector = null)
+    {
+        if (collector is Player2D player)
+        {
+            world.PlaySound(player.PortalEnteredSoundName);
+            if (player.PortalEnteredEffectClipName is { } portalEnteredEffectClipName)
+            {
+                SpawnEffect(player, portalEnteredEffectClipName, world);
+            }
+        }
+
+        world.PendingPortal = portal;
+        world.PendingTransition = PendingTransition.EnterWorld;
+    }
+
+    /// <summary>
+    /// The player has arrived in a world through a portal: plays the player's arrival sound and effect, and
+    /// when there is an effect freezes play briefly (<see cref="PendingTransition.Arrive"/>) so it can show.
+    /// </summary>
+    public static void OnPortalArrived(World2D world, Player2D player)
+    {
+        world.PlaySound(player.PortalArrivedSoundName);
+        if (player.PortalArrivedEffectClipName is { } portalArrivedEffectClipName)
+        {
+            SpawnEffect(player, portalArrivedEffectClipName, world);
+            world.PendingTransition = PendingTransition.Arrive;
+        }
+    }
+
+    /// <summary>
     /// Spawns a cosmetic <see cref="EffectInstance2D"/> at <paramref name="body"/>'s current
     /// position if it implements <see cref="IEffectTrigger"/> with a non-null clip name
-    /// configured; no-ops otherwise. <paramref name="persists"/> controls whether the spawned
+    /// configured; no-ops otherwise.
     /// effect remains as a permanent decorative body after its clip finishes playing (used for a
     /// killed hazard's husk) instead of self-removing like an ordinary effect.
     /// </summary>

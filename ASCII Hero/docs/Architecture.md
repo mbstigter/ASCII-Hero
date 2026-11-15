@@ -86,12 +86,12 @@ core's own force/collision/medium math.
   are resolved once at spawn time from a named material (`Body2D.MaterialName`,
   derived from the sprite's `DefaultMaterial`) looked up in
   `World2D.Materials` (a `MaterialLibrary` that merges
-  `Global/MaterialLibrary.ini` with an optional level-local override,
-  mirroring `ColorPalette`'s Global+Level pattern); `Mass` is always
+  `Global/MaterialLibrary.ini` with an optional world-local override,
+  mirroring `ColorPalette`'s Global+World pattern); `Mass` is always
   computed once at spawn from the resolved `Density` and the body's spawn
   footprint (`Density * Size.X * Size.Y`) and stays fixed when the pose
   changes, rather than being independently overridable.
-  A level placement's ini section can override the resolved material name via
+  A world placement's ini section can override the resolved material name via
   `Material`, or just the resulting `Restitution` via `Restitution`, without
   needing a distinct sprite asset. `CollisionSystem` combines two contacting
   bodies' `Friction` as the geometric mean and `Restitution` as a
@@ -182,7 +182,7 @@ core's own force/collision/medium math.
   `World2D.QueueRemoval` and actually removed from `Objects` once per frame via
   `World2D.ApplyPendingRemovals` — removal is always deferred to end-of-frame
   so no system mutates `Objects` while iterating it.
-- Numeric values parsed from level/asset `.ini` files always use
+- Numeric values parsed from world/asset `.ini` files always use
   `CultureInfo.InvariantCulture`, never the current culture — otherwise a
   decimal point in a value like `1.0` can be silently misread as a thousands
   separator under some locales, corrupting the value.
@@ -190,14 +190,14 @@ core's own force/collision/medium math.
 ## Camera
 
 - The camera follows an explicit target (`World2D.CameraTarget`), not a
-  hardcoded reference to the player. A level's object placement data can
+  hardcoded reference to the player. A world's object placement data can
   designate a different body (e.g. a dynamic object) as the camera target;
   see [AssetFormat.md](AssetFormat.md).
 - Camera scrolling uses a "dead zone": the camera only moves once its target
   approaches within a margin of the current viewport's edge, rather than
   re-centering on every frame of target movement.
 - The camera's position is always clamped to the world's own bounds, so it
-  never reveals space beyond the level and a target near a world edge can
+  never reveals space beyond the world and a target near a world edge can
   reach the true edge of the screen instead of the camera trying (and
   failing) to keep it centered.
 

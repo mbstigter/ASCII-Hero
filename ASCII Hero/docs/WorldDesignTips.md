@@ -1,4 +1,4 @@
-# Level Design Tips
+# World Design Tips
 
 Practical rules of thumb for laying out worlds in the `*_objects.txt` grids. All distances are in
 grid cells. They assume the default player and the default gravity (`Gravity = 40`); a world that
@@ -38,7 +38,7 @@ changes gravity or the player's walk speed changes these numbers too.
 - Do not make the player fall far as part of the normal route. Use steps, ladders or ropes for
   bigger height differences, or make the long drop a deliberate risk.
 - **Place the player's start and every checkpoint on or just above the floor.** The player also
-  falls from there right after the level starts and after losing a life, and a long drop there
+  falls from there right after the world starts and after losing a life, and a long drop there
   would hurt every time.
 
 ## Climbing and hanging
@@ -96,6 +96,6 @@ plus one cell of a fourth.
 ## General
 
 - Place the player's start a few cells away from the world edge and from any hazard.
-- Put the level end where the player can see it, or leave a trail of diamonds toward it.
+- Put the world end where the player can see it, or leave a trail of diamonds toward it.
 - Give every hard jump a way back if the player misses it, unless the fall is meant to be the
   challenge.

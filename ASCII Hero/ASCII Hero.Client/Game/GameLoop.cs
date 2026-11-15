@@ -33,9 +33,9 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         Playing,
 
         /// <summary>Gameplay is frozen and a message is shown, then the game returns to <see cref="WorldSelecting"/>.</summary>
-        LevelComplete,
+        WorldComplete,
 
-        /// <summary>Same as <see cref="LevelComplete"/>, but shown when the player lost their last life.</summary>
+        /// <summary>Same as <see cref="WorldComplete"/>, but shown when the player lost their last life.</summary>
         GameOver,
 
         /// <summary>Gameplay is frozen and an "Exit Game?" message is shown; confirming returns to <see cref="WorldSelecting"/>, Escape resumes <see cref="Playing"/>.</summary>
@@ -62,6 +62,12 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private readonly AnimationSystem _animation = new();
 
     private World2D _world = null!;
+
+    /// <summary>
+    /// The worlds of the current play session by sub-world number (0 is the main world), kept so that
+    /// going back through a portal finds a world exactly as it was left: opened gates, collected items and all.
+    /// </summary>
+    private readonly Dictionary<int, World2D> _sessionWorlds = [];
     private WorldSelectScreen _worldSelect = null!;
 
     /// <summary>Unspent time carried between frames by the fixed-timestep physics loop (always less than one fixed step).</summary>
@@ -93,25 +99,28 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private Task? _loadWorldTask;
 
     // ---------------------------------------------------------------------------------------
-    // Pending transitions and end screens (level complete / game over)
+    // Pending transitions and end screens (world complete / game over)
     // ---------------------------------------------------------------------------------------
 
-    /// <summary>How long the player's level-end or death effect and sound play before the transition is carried out (see <see cref="World2D.PendingTransition"/>).</summary>
+    /// <summary>How long the player's world-end or death effect and sound play before the transition is carried out (see <see cref="World2D.PendingTransition"/>).</summary>
     private const double PendingTransitionSeconds = 2.0;
+
+    /// <summary>How long the player's portal effect and sound play before the move to the target world (see <see cref="PendingTransition.EnterWorld"/>).</summary>
+    private const double PortalTransitionSeconds = 0.6;
 
     private double _pendingTransitionElapsedSeconds;
 
     /// <summary>Set once no confirm key is held on an end screen, so a key still held from gameplay doesn't dismiss it instantly.</summary>
     private bool _endScreenKeysReleased;
 
-    /// <summary>Draws the active <see cref="GameMode.LevelComplete"/>/<see cref="GameMode.GameOver"/>/<see cref="GameMode.ConfirmExit"/> message box.</summary>
+    /// <summary>Draws the active <see cref="GameMode.WorldComplete"/>/<see cref="GameMode.GameOver"/>/<see cref="GameMode.ConfirmExit"/> message box.</summary>
     private readonly EndScreenRenderer _endScreenRenderer = new();
 
     /// <summary>Time since the end screen opened; drives the ripple animation.</summary>
     private double _endScreenElapsedSeconds;
 
     // Per-screen woosh sound (played as the ripple opens; see Global/SoundLibrary.ini).
-    private const string LevelCompleteWooshSoundName = "LevelCompleteWoosh";
+    private const string WorldCompleteWooshSoundName = "WorldCompleteWoosh";
     private const string GameOverWooshSoundName = "GameOverWoosh";
     private const string ConfirmExitWooshSoundName = "ConfirmExitWoosh";
 
@@ -321,7 +330,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
                 case GameMode.Playing:
                     await OnPlayingFrameAsync(deltaSeconds);
                     break;
-                case GameMode.LevelComplete:
+                case GameMode.WorldComplete:
                 case GameMode.GameOver:
                     await OnEndScreenFrameAsync(deltaSeconds);
                     break;
@@ -403,10 +412,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     {
         var progress = new Progress<double>(stepsCompleted =>
         {
-            if (_loadingBar is not null)
-            {
-                _loadingBar.CurrentValue = stepsCompleted;
-            }
+            _loadingBar?.CurrentValue = stepsCompleted;
         });
         var world = await World2D.LoadAsync(assetFileProvider, worldName, progress);
         if (_isStopped)
@@ -415,13 +421,23 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
 
         _world = world;
+        _sessionWorlds.Clear();
+        _sessionWorlds[0] = world;
         await soundPlayer.SetSoundsAsync(_world.Sounds);
         if (_isStopped)
         {
             return;
         }
 
-        // Time spent loading is not gameplay time.
+        ResetForNewActiveWorld();
+    }
+
+    /// <summary>
+    /// Clears everything the systems carry between frames, which belongs to the previous active world,
+    /// and snaps the camera to the new one. Time spent loading is not gameplay time.
+    /// </summary>
+    private void ResetForNewActiveWorld()
+    {
         _physicsAccumulatorSeconds = 0;
         _pendingTransitionElapsedSeconds = 0;
 
@@ -429,6 +445,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         // from the menu seed the edge history, so they do not count as fresh presses in the first frame.
         _physics.Reset(_input);
         _collision.Reset();
+        _collision.ArmPortals(_world);
         _animation.Reset();
         _wasActionKeyDown = _input.IsActionKeyDown;
 
@@ -439,6 +456,46 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             _world.HeightCells,
             _viewportWidthCells,
             _viewportHeightCells);
+    }
+
+    /// <summary>
+    /// Carries out <see cref="PendingTransition.EnterWorld"/>: moves the player, with the progress they carry,
+    /// to the entered portal's target world (loading it on first use). A target that fails to load is logged and
+    /// play simply continues in the current world.
+    /// </summary>
+    private async Task EnterPortalTargetAsync()
+    {
+        var source = _world;
+        var portal = source.PendingPortal!;
+        source.PendingTransition = PendingTransition.None;
+        source.PendingPortal = null;
+
+        try
+        {
+            if (!_sessionWorlds.TryGetValue(portal.TargetWorld, out var target))
+            {
+                target = await World2D.LoadAsync(assetFileProvider, source.WorldName, subWorld: portal.TargetWorld);
+                if (_isStopped)
+                {
+                    return;
+                }
+
+                _sessionWorlds[portal.TargetWorld] = target;
+            }
+
+            target.Player.CarryOverFrom(source.Player);
+            target.EnterAt(portal.TargetEntry);
+            target.Player.Wake();
+            InteractionHandler.OnPortalArrived(target, target.Player);
+            _world = target;
+        }
+        catch (Exception ex)
+        {
+            Console.Error.WriteLine($"Failed to enter world {portal.TargetWorld} of '{source.WorldName}': {ex}");
+            return;
+        }
+
+        ResetForNewActiveWorld();
     }
 
     /// <summary>Draws the selection screen with the loading bar, and switches to <see cref="GameMode.Playing"/> once the load completes.</summary>
@@ -502,7 +559,18 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
         PlayQueuedSounds();
 
-        if (_world.PendingTransition != PendingTransition.None && AdvancePendingTransition(deltaSeconds))
+        if (_world.PendingTransition == PendingTransition.EnterWorld)
+        {
+            // Physics stays frozen while the player's portal effect and the sound play; with no effect there is no wait.
+            _pendingTransitionElapsedSeconds += deltaSeconds;
+            if (_world.Player.PortalEnteredEffectClipName is null || _pendingTransitionElapsedSeconds >= PortalTransitionSeconds)
+            {
+                _pendingTransitionElapsedSeconds = 0;
+                await EnterPortalTargetAsync();
+                return;
+            }
+        }
+        else if (_world.PendingTransition != PendingTransition.None && AdvancePendingTransition(deltaSeconds))
         {
             return;
         }
@@ -528,13 +596,24 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// <summary>
     /// Counts down the pending transition set by <see cref="CollisionSystem"/> (physics is frozen
     /// meanwhile, effects keep animating). Once <see cref="PendingTransitionSeconds"/> have passed,
-    /// carries it out: a level end opens the level-complete screen, a death respawns the player or,
+    /// carries it out: a world end opens the world-complete screen, a death respawns the player or,
     /// with no lives left, opens the game-over screen. Returns whether the mode changed, so the
     /// caller skips the rest of this playing frame.
     /// </summary>
     private bool AdvancePendingTransition(double deltaSeconds)
     {
         _pendingTransitionElapsedSeconds += deltaSeconds;
+        if (_world.PendingTransition == PendingTransition.Arrive)
+        {
+            if (_pendingTransitionElapsedSeconds >= PortalTransitionSeconds)
+            {
+                _world.PendingTransition = PendingTransition.None;
+                _pendingTransitionElapsedSeconds = 0;
+            }
+
+            return false;
+        }
+
         if (_pendingTransitionElapsedSeconds < PendingTransitionSeconds)
         {
             return false;
@@ -550,10 +629,10 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             return false;
         }
 
-        _mode = transition == PendingTransition.LevelEnd ? GameMode.LevelComplete : GameMode.GameOver;
+        _mode = transition == PendingTransition.WorldEnd ? GameMode.WorldComplete : GameMode.GameOver;
         _endScreenKeysReleased = false;
         _endScreenElapsedSeconds = 0;
-        soundPlayer.Play(_mode == GameMode.LevelComplete ? LevelCompleteWooshSoundName : GameOverWooshSoundName);
+        soundPlayer.Play(_mode == GameMode.WorldComplete ? WorldCompleteWooshSoundName : GameOverWooshSoundName);
         return true;
     }
 
@@ -690,7 +769,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     }
 
     // ---------------------------------------------------------------------------------------
-    // End screen frame (level complete / game over)
+    // End screen frame (world complete / game over)
     // ---------------------------------------------------------------------------------------
 
     /// <summary>Shows the frozen last frame with a ripple-animated message box until a confirm key press, then returns to world selection.</summary>
@@ -756,10 +835,10 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// </summary>
     private void AddEndScreenMessage(List<Glyph> glyphs)
     {
-        var isLevelComplete = _mode == GameMode.LevelComplete;
+        var isWorldComplete = _mode == GameMode.WorldComplete;
         var isConfirmExit = _mode == GameMode.ConfirmExit;
-        var text = isConfirmExit ? "Exit Game?" : isLevelComplete ? "Level Complete!" : "Game Over!";
-        var tints = isConfirmExit ? _colors.Amber : isLevelComplete ? _colors.Green : _colors.Red;
+        var text = isConfirmExit ? "Exit Game?" : isWorldComplete ? "World Complete!" : "Game Over!";
+        var tints = isConfirmExit ? _colors.Amber : isWorldComplete ? _colors.Green : _colors.Red;
 
         _endScreenRenderer.AddMessage(
             glyphs, text, tints.Dark, tints.Normal, tints.Light, InterfaceBackdropColor, _endScreenElapsedSeconds,

@@ -19,7 +19,7 @@ not like a pixel-art game with ASCII characters placed on top.
   sequentially — only as many as are actually used need to be defined.
 - The visual grid is a rendering concept only — it does not restrict movement
   or physics (see [Architecture.md](Architecture.md#coordinate-system)).
-- Sprites and levels are authored as plain-text ASCII assets; see
+- Sprites and worlds are authored as plain-text ASCII assets; see
   [AssetFormat.md](AssetFormat.md) for the file format reference.
 - Idle characters/objects are not required to be perfectly static: a clip may
   define multiple frames purely for subtle animation (e.g. the player
@@ -36,7 +36,7 @@ not like a pixel-art game with ASCII characters placed on top.
 - Climbables and hangables can move (along a path), and can have a running
   surface (horizontal or vertical, like a conveyor). The player holds on by grip and is
   carried along. When a running surface carries the player past its end, the grip simply
-  ends and the player falls - there is no automatic dismount; levels place a
+  ends and the player falls - there is no automatic dismount; worlds place a
   floor or ledge at the end where a landing is intended.
 - Stacks of movable objects cost substantially less once they have come to rest. While the
   player (or anything else that keeps moving) stands on a stack, the whole stack
@@ -60,32 +60,11 @@ not like a pixel-art game with ASCII characters placed on top.
   through a jump onto a different climbable/hangable that is reached before the
   first one is cleared doesn't grab it. A per-surface block is still to be
   designed if that turns out to matter in play.
-- **Material-Based Collision Response.** A body's
-  `Density`/`Friction`/`Restitution` are resolved from a named
-  material (`MaterialLibrary.ini`, see [Decisions.md](Decisions.md)) rather
-  than ad-hoc per-body-type checks, and two contacting bodies' values
-  combine generically via `CollisionSystem.CombineFriction`/`CombineRestitution`. Still open: any
-  material-driven behavior beyond the physical constants themselves (e.g. a
-  distinct sound/visual cue per material on contact).
-- **`DynamicHazard` behavior.** Linear patrol (back-and-forth along the X axis,
-  under its own mass-scaled force - see
-  [Decisions.md](Decisions.md)) is implemented via `IPatrolBody`/`Patrol`
-  (see [AssetFormat.md §3.4](AssetFormat.md)), including per-placement
-  `PatrolMinX`/`PatrolMaxX` bounds (e.g. one grounded patroller confined to the
-  platform it starts on, while another still sweeps the full world).
-  Facing/animation while patrolling is also implemented -
-  `DynamicObject2D.UpdatePose()` (called each physics step) calls `SetPose` so a
-  patrolling creature visually turns to face (and animate through) its `move_left`/
-  `move_right` clips as it changes direction. Grounded and flying varieties
-  both already exist (a flying hazard gets vertical wing power from the
-  `PatrolMaxForceY` placement key, used together with `Patrol` and with gravity
-  still on). Chase behavior is not implemented - still to
-  design/implement:
-  - Chase-the-player movement.
-- **`KinematicObject` behavior.** Beyond acceleration-limited back-and-forth
-  patrol, still to design/implement:
-  - Sprites no different from `StaticObject`.
-  - Movement paths.
+- **Material-driven feedback.** Friction, restitution and density already come from
+  named materials (see [Decisions.md](Decisions.md)). Still open: a distinct
+  sound or visual cue per material on contact.
+- **Chase behavior for `DynamicHazard`.** Patrol (grounded and flying) is done; a
+  hazard that chases the player is still to design.
 - **Enhance sprites**, especially Crawl and Clamber, which currently feel
   underdeveloped compared to Walk/Hang - consider adding a third animation
   frame for these (and other) animated clips.
@@ -93,15 +72,5 @@ not like a pixel-art game with ASCII characters placed on top.
   (e.g. a `Link` with no matching switch) only reports the reason in the
   browser console and silently returns to world selection. Consider showing
   the message on screen, e.g. on the world selection screen.
-- **Losing a life is a short event, not an instant reset**: the player's
-  `died` effect and the hazard's sound play with physics frozen for about two
-  seconds, then
-  invulnerability window after respawning; revisit if respawning next to a
+- **Respawn has no invulnerability window.** Revisit if respawning next to a
   hazard feels unfair.
-- **Keys and gates are matched by a required `Lock` name** on both the key
-  (`CollectableType.Key`) and the gate (`Kind = Gate`). A key without
-  `Lock` is inert, like a collectable without `Type`. Gates can alternatively be
-  driven by a button or lever through a shared `Link` name. The HUD shows only a
-  single key icon (shown while at least one key is held) with a small
-  superscript count (`¹`-`⁹`, `ⁿ` for more than 9), not a list, since a world
-  may use many locks.

@@ -38,7 +38,7 @@ public sealed class DeviceConveyorTests
     [TestMethod]
     public async Task ShippedWorld_LinkedRopeRunsOnlyWhileItsLeverIsOn()
     {
-        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "AncientTestWorld");
+        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "AncientWorld");
         var rope = world.Objects.OfType<Device2D>().Single(device => device.LinkName == "AncientRope");
         var lever = world.Objects.OfType<Switch2D>().Single(switchObject => switchObject.LinkName == "AncientRope");
 

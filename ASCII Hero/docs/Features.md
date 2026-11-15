@@ -10,7 +10,7 @@ This page is a tour of what the engine lets you build. For exact syntax, see
 
 ## Why you might like it
 
-- **Everything is plain text.** Sprites, levels, colors, materials and sounds are `.txt`/`.ini`
+- **Everything is plain text.** Sprites, worlds, colors, materials and sounds are `.txt`/`.ini`
   files that you can edit in Notepad. There are no binary formats, no editor tools and no
   recompiling.
 - **Data-driven.** Most new content is a new file, not new code.
@@ -18,13 +18,13 @@ This page is a tour of what the engine lets you build. For exact syntax, see
   continuous coordinates.
 - **Runs anywhere a browser does.** It is published as a static site, with no server needed.
 
-## Level design
+## World design
 
 - **Freely sized worlds** with smooth horizontal and vertical camera scrolling.
-- **Layered level files.** A background layer is drawn in characters, foreground colors and
+- **Layered world files.** A background layer is drawn in characters, foreground colors and
   background colors. A separate object layer places things in the world.
 - **Simple placement codes.** Put a single-character code in the object grid, such as a digit
-  (`0`-`9`) or a letter (`A`-`Z`), and map each code to an object type in the level's
+  (`0`-`9`) or a letter (`A`-`Z`), and map each code to an object type in the world's
   `objects.ini`. A marker is needed only at an object's anchor cell, however large the object
   is.
 - **Reusable object types.** A world can define up to 36 object types (one per code), and each
@@ -73,7 +73,7 @@ This page is a tour of what the engine lets you build. For exact syntax, see
 - `Ring` counts a ring and adds 5 to the score; every 25 rings (per world) give an extra
   life. Does not heal.
 - `Checkpoint` sets the player's respawn point.
-- `LevelEnd` finishes the level.
+- `WorldEnd` finishes the world.
 - `Key` opens the gate with the same `Lock` (see below).
 - `HealthPack` restores health fully; it stays in place while health is already full.
 
@@ -127,7 +127,7 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
   A preview page is included.
 - **Layered defaults:** a per-cell code, then an asset default, then a world default, then the
   interface color. A sprite can therefore be one color with no color files at all.
-- **World palettes.** A world can add or recolor codes, for example icy blues for a winter level.
+- **World palettes.** A world can add or recolor codes, for example icy blues for a winter world.
 
 ## Materials and physics
 
@@ -183,7 +183,7 @@ Climbable and hangable surfaces are ordinary terrain objects marked with `Climba
   `Clamber`, `Swim`) to a sound played on each animation frame step. `JumpStart` and `Land`
   play when the player leaves and returns to the ground, and `HardLanding` when a fall hurts.
 - **Built-in sounds** in the global library include `DiamondPickup`, `RingPickup`,
-  `KeyPickup`, `GateUnlock`, `Checkpoint`, `LevelEnd`, `HazardKill`, `Jump`, `Land`, `Step`,
+  `KeyPickup`, `GateUnlock`, `Checkpoint`, `WorldEnd`, `HazardKill`, `Jump`, `Land`, `Step`,
   `SoftStep`, `Grab`, `Splash`, `MenuMove` and `MenuSelect` (subtle sounds for moving through
   the world selection menu and choosing a world).
 - **Per-world sound overrides.** A world can replace or add sounds with its own
@@ -196,7 +196,7 @@ Climbable and hangable surfaces are ordinary terrain objects marked with `Climba
 1. Draw the sprite in `{Asset}_{clip}_characters.txt`,
   plus optional color layers.
 2. Describe it in `{Asset}_settings.ini`.
-3. Give it a code in your level's `objects.ini`.
+3. Give it a code in your world's `objects.ini`.
 4. Type the code into `objects.txt`.
 5. Reload the browser.
 

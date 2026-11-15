@@ -116,13 +116,13 @@ public abstract class Body2D
     /// body (a platform, wall) still blocks by default via <see cref="Physics.CollisionSystem"/>'s
     /// <c>solids</c> filter, which only checks this flag directly - never a body's concrete type
     /// or category, so any static placement (a collectable, a hazard, a plain wall used as a
-    /// level-design "secret passage") can be made non-blocking per-instance without a new class.
+    /// world-design "secret passage") can be made non-blocking per-instance without a new class.
     /// Meaningless on a non-static body, which was never blocking to begin with.
     /// </summary>
     public bool IsPassable { get; set; }
 
     /// <summary>
-    /// Whether this static, passable body is a level-authored ambient-medium volume (water and the
+    /// Whether this static, passable body is a world-authored ambient-medium volume (water and the
     /// like) that <see cref="Physics.PhysicsSystem"/> may resolve into <see cref="CurrentMedium"/>.
     /// Opt-in per placement via the <c>Medium</c> key, so no other kind of passable body (hazard,
     /// collectable, open gate, switch, ladder) can accidentally act as a medium.
@@ -146,6 +146,12 @@ public abstract class Body2D
     /// <see cref="IsPassable"/> too if it shouldn't also block movement (the usual case).
     /// </summary>
     public bool IsClimbable { get; set; }
+
+    /// <summary>
+    /// Which climbing pose a climber shows while gripping this <see cref="IsClimbable"/> body
+    /// (visual only; physics is identical for every style). See <see cref="World.ClimbStyle"/>.
+    /// </summary>
+    public ClimbStyle ClimbStyle { get; set; } = ClimbStyle.Climb;
 
     /// <summary>
     /// Whether the player can hang and move laterally from this static body -
@@ -195,7 +201,7 @@ public abstract class Body2D
     /// <see cref="Assets.SpriteAsset.DefaultForeColor"/>/<see cref="Assets.SpriteAsset.DefaultBackColor"/>,
     /// set from this placement's <c>ForegroundColor</c>/<c>BackgroundColor</c> ini key (see
     /// <see cref="World.World2D.LoadAsync"/>). Null if the placement didn't specify one, in which
-    /// case the sprite/level/hardcoded fallback chain applies unchanged (see
+    /// case the sprite/world/hardcoded fallback chain applies unchanged (see
     /// <see cref="Rendering.WorldRenderer"/>). Mirrors <see cref="MaterialName"/>'s per-instance
     /// <c>Material</c> override - lets one sprite asset (e.g. the one shared <c>Ball</c>) be
     /// placed multiple times with a different color each time, without needing a separate asset
@@ -220,7 +226,7 @@ public abstract class Body2D
 
     /// <summary>
     /// Relative mass per world-cell "volume", resolved from <see cref="MaterialName"/> via
-    /// <see cref="World.World2D.Materials"/> once this body is placed into a level (see
+    /// <see cref="World.World2D.Materials"/> once this body is placed into a world (see
     /// <see cref="World.World2D.LoadAsync"/>). Defaults to 0 until resolved, but an object type's
     /// ini section may instead set an explicit <c>Density</c> override to depart from its resolved
     /// material's density outright (e.g. a body whose effective density changes per-instance or at
@@ -683,6 +689,10 @@ public abstract class Body2D
     /// <summary>The other bodies currently contacted on the given (single-flag) <paramref name="type"/> side.</summary>
     public IReadOnlyList<Body2D> GetContactingBodies(Physics.ContactType type) =>
         _contacts.TryGetValue(type, out var bodies) ? bodies : [];
+
+    /// <summary>The first body contacted on the given (single-flag) <paramref name="type"/> side, or null if there is none.</summary>
+    public Body2D? GetFirstContactingBody(Physics.ContactType type) =>
+        GetContactingBodies(type) is [var first, ..] ? first : null;
 
     /// <summary>
     /// Removes a recorded contact for the given (single-flag) <paramref name="type"/> - either

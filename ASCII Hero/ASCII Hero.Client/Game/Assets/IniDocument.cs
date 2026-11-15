@@ -56,7 +56,7 @@ public class IniDocument
 
     /// <summary>Every key/value pair defined under the given section, or empty if the section is absent.</summary>
     public IReadOnlyDictionary<string, string> Section(string sectionName) =>
-        _sections.TryGetValue(sectionName, out var section) ? section : new Dictionary<string, string>();
+        _sections.TryGetValue(sectionName, out var section) ? section : [];
 
     /// <summary>
     /// Every section name defined in this document (e.g. every material name in a

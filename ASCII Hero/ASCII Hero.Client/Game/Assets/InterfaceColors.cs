@@ -29,7 +29,7 @@ public class InterfaceColors
     /// <summary>The color behind everything (<c>[Defaults] Background</c>), unless a world has its own backdrop.</summary>
     public string Background { get; }
 
-    /// <summary>The Level Complete box.</summary>
+    /// <summary>The World Complete box.</summary>
     public ColorTints Green { get; }
 
     /// <summary>The exit confirmation box.</summary>

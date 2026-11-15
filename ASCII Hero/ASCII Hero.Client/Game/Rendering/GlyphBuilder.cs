@@ -27,7 +27,7 @@ public static class GlyphBuilder
     /// docs/AssetFormat.md §2.5/§4 for the format/precedence this implements for world rendering.
     /// For a game object, the precedence order is: per-cell code &gt; object override &gt;
     /// sprite default &gt; resolved material's default (see <see cref="Assets.Material"/>) &gt;
-    /// level default &gt; <paramref name="hardcodedFallback"/>.
+    /// world default &gt; <paramref name="hardcodedFallback"/>.
     /// A <see cref="IniValueParser.NoFillColorCode"/> (<c>BackgroundColor = None</c>) stops the
     /// chain there and returns null (no fill), skipping all lower tiers.
     /// </summary>

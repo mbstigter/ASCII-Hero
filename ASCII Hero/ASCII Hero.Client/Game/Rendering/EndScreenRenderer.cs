@@ -3,7 +3,7 @@ using ASCII_Hero.Client.Game.Menu;
 namespace ASCII_Hero.Client.Game.Rendering;
 
 /// <summary>
-/// Draws the modal end-screen message (level complete, game over, exit confirmation) in a
+/// Draws the modal end-screen message (world complete, game over, exit confirmation) in a
 /// centered box on top of the world: a short ripple of shrinking boxes onto the final box (just
 /// big enough for the message), which then glows while the message is shown inside it. Only
 /// builds glyphs; which screen is shown, its text/colors and its timing are decided by the caller.

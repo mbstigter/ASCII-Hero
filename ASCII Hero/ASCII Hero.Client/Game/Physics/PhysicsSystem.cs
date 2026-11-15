@@ -586,7 +586,7 @@ public class PhysicsSystem
     /// too, scaled by that volume's own overlapped share of the body.
     /// When no placed medium volume overlaps at all, the body is resolved as fully immersed
     /// (fraction 1.0) in the default "Air" fallback rather than fraction 0.0 - Air is the ambient
-    /// substance filling all otherwise-unoccupied space, not a bounded level-authored volume with
+    /// substance filling all otherwise-unoccupied space, not a bounded world-authored volume with
     /// edges a body can be only partially submerged past, so its own (low but nonzero) Viscosity
     /// drag keeps applying continuously everywhere outside a denser placed volume.
     /// </summary>
@@ -620,7 +620,7 @@ public class PhysicsSystem
         if (resolvedCandidate is null)
         {
             // No placed medium volume overlaps at all, so resolved is still the "Air" fallback
-            // assigned above - not a level-authored volume with edges a body can be partially
+            // assigned above - not a world-authored volume with edges a body can be partially
             // submerged past, but the ambient substance filling all otherwise-unoccupied space.
             // A body is therefore always fully immersed in it (fraction 1.0, not 0.0), so Air's
             // own Viscosity drag (see MaterialLibrary.ini) keeps applying continuously in open
@@ -633,7 +633,7 @@ public class PhysicsSystem
         // candidate resolving to that same material (not just the single one that happened to
         // win the tie-break above) and add up the area each overlaps the body's rects, so the
         // overlap fraction reflects the body's true total overlapped extent in both axes.
-        // Same-material volumes are assumed not to overlap each other (a level design rule), so
+        // Same-material volumes are assumed not to overlap each other (a world design rule), so
         // the sum is simply clamped to 1. The winning volume's own flow is scaled by its own
         // overlapped share of the body, so a body only partly inside a flowing zone is only
         // partly carried by it.
@@ -688,7 +688,7 @@ public class PhysicsSystem
         volume is FlowZone2D flowZone ? flowZone.Flow : new Vector2D(0, 0);
 
     /// <summary>
-    /// True if <paramref name="candidate"/> is a level-authored ambient-medium volume (e.g. a placed
+    /// True if <paramref name="candidate"/> is a world-authored ambient-medium volume (e.g. a placed
     /// Water/BodyOfWater section): passable, static-for-collision plain terrain. Hazards and
     /// collectables act through contact, <see cref="World.EffectInstance2D"/> is purely cosmetic,
     /// and climbable/hangable terrain is structure to grip - none is a substance to be immersed

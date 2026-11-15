@@ -27,7 +27,7 @@ public class Camera
 
     /// <summary>
     /// Immediately centers the camera on a target's bounding box (no smoothing), clamped to the
-    /// world's edges. Used once at level load so the game doesn't open mid-pan toward whatever
+    /// world's edges. Used once at world load so the game doesn't open mid-pan toward whatever
     /// the camera happens to be following.
     /// </summary>
     public void SnapTo(
@@ -38,15 +38,21 @@ public class Camera
         double viewportWidthCells,
         double viewportHeightCells)
     {
-        var maxX = Math.Max(0.0, worldWidthCells - viewportWidthCells);
-        var maxY = Math.Max(0.0, worldHeightCells - viewportHeightCells);
         var targetCenterX = targetPosition.X + targetSize.X / 2;
         var targetCenterY = targetPosition.Y + targetSize.Y / 2;
 
         Position = new Vector2D(
-            Math.Clamp(targetCenterX - viewportWidthCells / 2, 0, maxX),
-            Math.Clamp(targetCenterY - viewportHeightCells / 2, 0, maxY));
+            ClampAxis(targetCenterX - viewportWidthCells / 2, worldWidthCells, viewportWidthCells),
+            ClampAxis(targetCenterY - viewportHeightCells / 2, worldHeightCells, viewportHeightCells));
     }
+
+    /// <summary>
+    /// Keeps the view inside the world on one axis. A world smaller than the viewport on that axis
+    /// cannot scroll at all, so it is centered instead (a negative view origin, with empty space
+    /// on both sides).
+    /// </summary>
+    private static double ClampAxis(double value, double worldCells, double viewportCells) =>
+        worldCells <= viewportCells ? (worldCells - viewportCells) / 2 : Math.Clamp(value, 0, worldCells - viewportCells);
 
     public void Follow(
         Vector2D targetPosition,
@@ -57,12 +63,6 @@ public class Camera
         double viewportHeightCells,
         double deltaSeconds)
     {
-        // The furthest the camera is ever allowed to scroll on each axis - clamped at zero so a
-        // world narrower/shorter than the viewport just keeps the camera pinned at the origin
-        // rather than trying to scroll into negative territory.
-        var maxX = Math.Max(0.0, worldWidthCells - viewportWidthCells);
-        var maxY = Math.Max(0.0, worldHeightCells - viewportHeightCells);
-
         var targetLeft = targetPosition.X;
         var targetRight = targetPosition.X + targetSize.X;
         var targetTop = targetPosition.Y;
@@ -92,7 +92,9 @@ public class Camera
             desired = new Vector2D(desired.X, targetBottom - viewportHeightCells + EdgeMarginCells);
         }
 
-        desired = new Vector2D(Math.Clamp(desired.X, 0, maxX), Math.Clamp(desired.Y, 0, maxY));
+        desired = new Vector2D(
+            ClampAxis(desired.X, worldWidthCells, viewportWidthCells),
+            ClampAxis(desired.Y, worldHeightCells, viewportHeightCells));
 
         var t = Math.Clamp(FollowSpeed * deltaSeconds, 0, 1);
         Position = new Vector2D(

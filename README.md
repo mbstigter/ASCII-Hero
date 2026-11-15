@@ -14,9 +14,9 @@ Built with C# and .NET 10 (Blazor WebAssembly). It needs no server, plugins or i
   without snapping from cell to cell.
 - **Real physics.** Materials with friction, restitution and mass; pushable crates and
   rolling balls; water, wind and flowing rivers; fall damage and squashable enemies.
-- **Everything is plain text.** Sprites, levels, colors, materials and sounds are `.txt` and
+- **Everything is plain text.** Sprites, worlds, colors, materials and sounds are `.txt` and
   `.ini` files you can edit in Notepad. Most new content is a new file, not new code.
-- **Rich level parts.** Moving platforms, conveyors, ropes, vines and ladders, doors and
+- **Rich world parts.** Moving platforms, conveyors, ropes, vines and ladders, doors and
   hatches, keys, buttons and levers, fans, lasers, enemies and collectables.
 - **Synthesized sound.** Sound effects are generated from a text description, so there are no
   audio files.
@@ -47,13 +47,13 @@ Or open `ASCII Hero.slnx` in Visual Studio and press F5. To run the tests:
 dotnet test "ASCII Hero.slnx"
 ```
 
-## Making your own levels
+## Making your own worlds
 
-Levels are made of sprites, objects and settings in `ASCII Hero/ASCII Hero.Client/wwwroot/Assets`.
+Worlds are made of sprites, objects and settings in `ASCII Hero/ASCII Hero.Client/wwwroot/Assets`.
 Start with the docs:
 
 - [Features](ASCII%20Hero/docs/Features.md): a tour of what you can build
-- [Level design tips](ASCII%20Hero/docs/LevelDesignTips.md): sizes and distances that suit the hero
+- [World design tips](ASCII%20Hero/docs/WorldDesignTips.md): sizes and distances that suit the hero
 - [Asset format](ASCII%20Hero/docs/AssetFormat.md): the full file format reference
 
 ## For developers

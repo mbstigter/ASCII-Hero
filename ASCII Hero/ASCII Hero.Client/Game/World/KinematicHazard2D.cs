@@ -20,7 +20,7 @@ public class KinematicHazard2D : KinematicObject2D, IHazardBody, IEffectTrigger,
 
     /// <summary>
     /// Whether this instance can be "killed" (removed from the world) by a qualifying contact
-    /// (landed on top of). Defaults to false, so existing levels that don't opt in are unaffected.
+    /// (landed on top of). Defaults to false, so existing worlds that don't opt in are unaffected.
     /// </summary>
     public bool IsKillable { get; set; }
 

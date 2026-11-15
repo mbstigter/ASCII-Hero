@@ -3,7 +3,7 @@ using ASCII_Hero.Client.Game.World;
 namespace ASCII_Hero.Tests.World;
 
 /// <summary>
-/// Loads every shipped world exactly as the game does, so any change that makes a real level
+/// Loads every shipped world exactly as the game does, so any change that makes a real world
 /// fail to load (e.g. stricter asset validation) is caught here.
 /// </summary>
 [TestClass]

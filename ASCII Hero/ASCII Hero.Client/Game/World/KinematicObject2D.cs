@@ -99,7 +99,7 @@ public class KinematicObject2D : Body2D, IPhysicsBody, ILinkTarget
     /// immediately patrols across the full range instead of instantly hitting the near bound and
     /// turning back within the first frame or two. An explicit value (true = toward
     /// <see cref="PatrolMaxX"/>, false = toward <see cref="PatrolMinX"/>) overrides that inference -
-    /// e.g. so a level author can make two platforms that share the same range start in opposite
+    /// e.g. so a world author can make two platforms that share the same range start in opposite
     /// phase, or start moving away from the player instead of toward them - mirrors
     /// <see cref="DynamicHazard2D.SetPatrol"/>'s own <c>initialDirectionRight</c> parameter.
     /// </param>

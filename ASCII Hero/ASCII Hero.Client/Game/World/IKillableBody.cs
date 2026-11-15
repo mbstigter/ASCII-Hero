@@ -5,7 +5,7 @@ namespace ASCII_Hero.Client.Game.World;
 /// contact by an <see cref="IKillerBody"/>, e.g. the player landing on top of it. Unlike a pure
 /// capability marker such as <see cref="ICollectableBody"/>, whether an instance is killable is
 /// per-instance state: implementing it unconditionally with <see cref="IsKillable"/> always true would
-/// make every instance of the implementing class killable in every level with no way to opt out, so
+/// make every instance of the implementing class killable in every world with no way to opt out, so
 /// <see cref="Physics.CollisionSystem"/> must check <c>body is IKillableBody { IsKillable: true }</c>,
 /// not just interface presence.
 /// </summary>

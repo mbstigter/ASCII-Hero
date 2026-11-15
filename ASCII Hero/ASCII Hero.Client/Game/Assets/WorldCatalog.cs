@@ -142,11 +142,11 @@ public static class WorldCatalog
     {
         var content = await fileProvider.TryReadTextAsync($"{AssetPathResolver.GlobalRoot}/Worlds.ini");
         var ini = IniDocument.Parse(content ?? string.Empty);
-        var worldNames = (ini.TryGetValue("Levels", "Order") ?? string.Empty)
+        var worldNames = (ini.TryGetValue("Worlds", "Order") ?? string.Empty)
             .Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
         if (worldNames.Length == 0)
         {
-            throw new InvalidOperationException("Global/Worlds.ini is missing a required [Levels] Order value listing at least one world.");
+            throw new InvalidOperationException("Global/Worlds.ini is missing a required [Worlds] Order value listing at least one world.");
         }
 
         return worldNames;

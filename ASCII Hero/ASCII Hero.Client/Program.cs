@@ -14,7 +14,7 @@ builder.RootComponents.Add<Routes>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 #endif
 
-// Used to fetch asset files (sprites, levels) served as static web content under wwwroot/Assets;
+// Used to fetch asset files (sprites, worlds) served as static web content under wwwroot/Assets;
 // Blazor WebAssembly has no direct filesystem access, so asset loading goes over HTTP.
 builder.Services.AddScoped(_ => new HttpClient
 {

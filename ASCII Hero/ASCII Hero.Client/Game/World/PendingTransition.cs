@@ -11,9 +11,21 @@ public enum PendingTransition
     /// <summary>Nothing pending; normal play.</summary>
     None,
 
-    /// <summary>The player reached a <see cref="CollectableType.LevelEnd"/>; the level-complete screen follows.</summary>
-    LevelEnd,
+    /// <summary>The player reached a <see cref="CollectableType.WorldEnd"/>; the world-complete screen follows.</summary>
+    WorldEnd,
 
     /// <summary>The player lost a life; a respawn follows, or the game-over screen when no lives are left.</summary>
     Death,
+
+    /// <summary>
+    /// The player entered a <see cref="Portal2D"/> (see <see cref="World2D.PendingPortal"/>); play moves to
+    /// its target world, waiting for the player's portal effect first when it has one.
+    /// </summary>
+    EnterWorld,
+
+    /// <summary>
+    /// The player has just arrived through a portal; play stays frozen briefly while the player's arrival
+    /// effect and sound play, then continues in the same world.
+    /// </summary>
+    Arrive,
 }
