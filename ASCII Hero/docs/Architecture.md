@@ -39,7 +39,8 @@ into C# once per frame.
 - The renderer converts game state into ASCII glyphs and draws them on
   Canvas at pixel positions derived from the camera transform, so glyphs can
   move smoothly even though the visual language is grid-based.
-- The game renders using a single bundled bitmap CP437 font, scaled to a
+- The game renders using a single bundled bitmap font (WebPlus IBM VGA 8x16,
+  a CP437 superset with extra Unicode glyphs), scaled to a
   fixed pixel cell size configured in `Global/Settings.ini` (`[Render]
   FontWidthPixels`/`FontHeightPixels`) and confirmed back to C# as
   `CellMetrics`, so the world grid stays consistent.

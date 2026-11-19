@@ -54,6 +54,33 @@ public sealed class EffectInstance2DTests
     }
 
     [TestMethod]
+    public async Task GlowOnlyClip_LoadsWithoutDrawingFiles()
+    {
+        var sprite = await new SpriteLoader(new MemoryAssetFileProvider(new Dictionary<string, string>
+        {
+            [$"{Folder}/Thing_settings.ini"] = "[Animation.glow]\nEffectDurationSeconds = 0.6\nTintColor = L\nTintAlternateColor = M\nTintBlinkSeconds = 0.1",
+            [$"{Folder}/Thing_idle_characters.txt"] = "#",
+        })).LoadAsync("Thing", ["idle", "glow"], worldName: null);
+        var effect = new EffectInstance2D();
+        effect.Spawn(sprite, "glow", new Vector2D(0, 0));
+
+        Assert.AreEqual('L', effect.CurrentTintColor);
+        Assert.HasCount(1, sprite.Clips["glow"].Frames);
+    }
+
+    [TestMethod]
+    public async Task ClipWithoutDrawingFilesOrTint_FailsToLoad()
+    {
+        var loader = new SpriteLoader(new MemoryAssetFileProvider(new Dictionary<string, string>
+        {
+            [$"{Folder}/Thing_settings.ini"] = "[Animation.fx]\nEffectDurationSeconds = 0.6",
+            [$"{Folder}/Thing_idle_characters.txt"] = "#",
+        }));
+
+        await Assert.ThrowsExactlyAsync<FileNotFoundException>(() => loader.LoadAsync("Thing", ["idle", "fx"], worldName: null));
+    }
+
+    [TestMethod]
     public async Task NoTint_IsNull()
     {
         var sprite = await LoadAsync("[Animation.fx]\nEffectDurationSeconds = 1.0");

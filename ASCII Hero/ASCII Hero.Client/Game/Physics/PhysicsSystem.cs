@@ -785,7 +785,8 @@ public class PhysicsSystem
         // ground motor. Vertical strength is left untouched: it already targets the player's own
         // current Velocity.Y while airborne (see the call site in Step), so it contributes ~0
         // regardless and gravity/jump impulses remain entirely in charge of vertical motion.
-        var horizontalMultiplier = player.IsGrounded ? player.MotorForceMultiplier : player.MotorForceMultiplier * GameDefaults.AirControlMultiplier;
+        // A player tipping off a ledge has lost its footing, so it only has air control too.
+        var horizontalMultiplier = player.IsGrounded && !player.IsTipping ? player.MotorForceMultiplier : player.MotorForceMultiplier * GameDefaults.AirControlMultiplier;
         // Not scaled by the medium: a viscous medium resists motion only through the passive
         // drag in StepMovingBodyWithForces, which already grows with speed.
         var forceX = (targetVelocityX - player.Velocity.X) * mass * horizontalMultiplier;
@@ -889,6 +890,12 @@ public class PhysicsSystem
         if (body is IMotorBody motorBody)
         {
             netForce += motorBody.MotorForce;
+        }
+
+        // A body overhanging a ledge is pulled off it sideways - see TipSystem.
+        if (body is Body2D tippingBody)
+        {
+            netForce.X += mass * tippingBody.TipAccelerationX;
         }
 
         if (mediumBody is not null && body is IMediumAffected { MediumAffected: true })

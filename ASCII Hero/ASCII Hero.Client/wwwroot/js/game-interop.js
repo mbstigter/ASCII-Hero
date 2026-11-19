@@ -30,7 +30,13 @@ export async function initialize(canvasElementId, dotNetObjectRef, fontFamily, v
 
     dotNetRef = dotNetObjectRef;
 
-    keydownHandler = (e) => dotNetRef.invokeMethodAsync('OnKeyDown', e.code);
+    // Tab opens the gear ring in game, so the browser must not also move focus away from the canvas.
+    keydownHandler = (e) => {
+        if (e.code === 'Tab') {
+            e.preventDefault();
+        }
+        dotNetRef.invokeMethodAsync('OnKeyDown', e.code);
+    };
     keyupHandler = (e) => dotNetRef.invokeMethodAsync('OnKeyUp', e.code);
     window.addEventListener('keydown', keydownHandler);
     window.addEventListener('keyup', keyupHandler);

@@ -57,6 +57,7 @@ This page is a tour of what the engine lets you build. For exact syntax, see
 | `Player` | Spawn point and hero sprite |
 | `StaticObject` | Immovable terrain such as platforms and walls |
 | `DynamicObject` | Moves under gravity or its own velocity, for example a bouncing ball |
+| `ThrowableObject` | A loose object (for example a stone) the player picks up and throws at enemies |
 | `KinematicObject` | Moves on a predefined path, never affected by gravity, so it suits moving platforms; riders are carried along |
 | `StaticHazard` | Non-moving danger such as spikes or toxic plants |
 | `DynamicHazard` | A hazard that moves like a `DynamicObject`, such as a patrolling creature or a flying insect |
@@ -82,8 +83,8 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
 
 ### Gates, keys and switches
 
-- **Locked gates.** A gate with a `Lock` name opens when the player brings a key with the same
-  `Lock` and presses the action key next to it.
+- **Locked gates.** A gate with a `Lock` name opens when the player carries a key with the same
+  `Lock`, has the Key gear selected and presses the action key next to it.
 - **Switches.** A switch drives every gate, device, flow zone or kinematic object with the same
   `Link` name. Switches can toggle or latch on.
 
@@ -102,6 +103,25 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
   enough (`KillImpactSpeed`); a gentler landing, or running into its side however fast,
   hurts instead. It can play a `KillSound` when squashed. Its `Sound` plays instead when
   it hurts the player, so a single contact plays only one of the two.
+- **Enemy health.** A killable hazard has `Health` (default 1), just like the player. A
+  squash or a thrown object takes some of it; a hit it survives plays its `HurtEffectClip`
+  and `HurtSound` and gives it a short safe moment, and a squashed survivor bounces the
+  player off. When its health runs out it is defeated for good.
+
+### Throwing and gear
+
+- **Throwable objects.** Walk into a `ThrowableObject` to pick it up; the action key throws
+  it (when no switch is in reach) in the direction the player last faced, at its own
+  speed and angle. It bounces and settles by its material, and hurts an enemy it hits fast
+  enough. Once it lies loose, enemies walk through it instead of pushing it along.
+- **Reusable or single-use.** A reusable object (a stone) can be picked up again after it
+  lands; a single-use one is gone after its first hit or landing.
+- **Gear.** Carried items are kept as gear, listed game-wide in `Global/Settings.ini`
+  `[Gear]`. A gear box next to the HUD always shows the selected gear's icon and count
+  (e.g. `x3`).
+- **Gear ring.** Hold `Tab` to pause the game and open a ring of all gear out of the gear
+  box, empty gear greyed out. Left/Right picks a gear, the chosen box glowing; release `Tab`
+  to take it or press `Esc` to cancel.
 
 ## Sprites and animation
 
@@ -143,6 +163,9 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
 - **Riding and pushing.** Friction drags whatever stands on a moving body, including walking
   creatures such as a friendly turtle. Walking and jumping push back on a movable support.
 - **Stacking.** Dynamic bodies such as crates can be stacked into towers and pyramids.
+  A body only stays put while its center of mass is over what it stands on; one hanging
+  too far over an edge slides off and falls. The player keeps its footing a little
+  further out, with about half a foot on the edge.
 - **Fluids and media.** Bodies in `Water`-like materials get buoyancy and quadratic drag.
   Swimming through a viscous medium is harder than walking on land.
 - **Flowing media.** A `FlowZone` makes a medium move, such as a river or a wind tunnel.

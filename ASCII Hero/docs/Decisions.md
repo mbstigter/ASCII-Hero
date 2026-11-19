@@ -78,6 +78,20 @@ capture the "why" behind a decision without needing a lengthy narrative.
   shape. Any gate or switch state change wakes every sleeper: such changes are
   rare, and waking all is simpler and safer than finding exactly which bodies
   an opened gate or a switched flow affects.
+- **Overhanging bodies tip off ledges (`TipSystem`).** Support depends on balance,
+  not on any overlap, so a body cannot rest on a sliver of an edge. Bodies never
+  rotate, so tipping is a sideways pull instead:
+  grounded body whose center of mass (mean of its visible cells) lies outside
+  the span it stands on (union of its bottom overlaps with everything below it,
+  so bridging two supports is balanced) gets `Body2D.TipAccelerationX` toward the
+  open side, scaled by how far past the edge (`GameDefaults.MinTipFraction` of
+  gravity up to full gravity at half its width). While tipping its ground
+  contact applies no friction, the player's motor drops to air control, and the
+  body never sleeps. Center of mass rather than a fixed minimum overlap, so it
+  fits every body size. The player alone gets
+  `GameDefaults.PlayerLedgeToleranceCells` (via `Body2D.LedgeToleranceCells`) for
+  platformer-style footing on an edge. Visible air between bodies whose glyph is
+  smaller than its cell is separate (collision is per cell) and not addressed.
 - **The narrow phase does not allocate per pair.** A pair whose Position/Size
   boxes don't overlap is rejected before any rectangle work; world-space
   collision rectangles are cached per body until its position or shape changes;
@@ -470,7 +484,70 @@ capture the "why" behind a decision without needing a lengthy narrative.
   measured before the response and stored per contact side, so a hard side hit
   is never mistaken for a landing) reaches its `KillImpactSpeed` (placement key,
   default `GameDefaults.DefaultKillImpactSpeed`); anything else is an ordinary
-  hit. Any bounce off a squash is just the normal restitution response.
+  hit. Any bounce off a squash is just the normal restitution response, except
+  that a squashed hazard that survives bounces the squasher up
+  (`GameDefaults.StompBounceSpeed`).
+- **Killable hazards have health that mirrors the player's.** `Health` (default 1),
+  a post-hit safe window (`GameDefaults.HazardRecoverySeconds`) with a following
+  `HurtEffectClip` and `HurtSound`, and death at 0. There is no stun: a hurt hazard
+  keeps moving and can still hurt the player. Death is permanent (removed; the
+  `EffectPersists` husk stays). A squash takes the killer's `StompDamage` (default 1),
+  so the defaults keep the one-squash kill.
+- **Throwables are ordinary dynamic objects** (`ThrowableObject2D : DynamicObject2D`).
+  They bounce and settle by material; there is no faked rolling. A thrown one hurts
+  a killable hazard once per fresh contact at or above its `HitSpeed` (solid hazard:
+  the highest surface impact speed; passable: relative speed) and is never hurt
+  itself. It lands when asleep or grounded and slower than
+  `GameDefaults.ThrowableRestSpeed`. A `Reusable = false` object is used up on its
+  first hazard hit or on landing.
+- **A loose throwable and a moving hazard ignore each other physically**
+  (`CollisionSystem.IgnoresMoverCollision`, checked in the mover-pair loop before any
+  push or wake), so a patrolling hazard never shoves a lying stone along. A thrown one
+  stays solid against hazards so its hits still collide. This is a fixed rule for all
+  throwables, not an ini setting; hazards still push ordinary dynamic objects.
+- **Gear slots are game-wide, listed in `Global/Settings.ini` `[Gear]`**
+  (`Name = Icon`), not per world. A `Gear2D` is an inventory slot, not a body; it
+  keeps the picked-up bodies themselves so a throw puts the same object (with its
+  tuning) back. A throwable whose gear isn't listed cannot be picked up. Every
+  listed slot is always shown (gear ring), empty ones greyed out; there is no
+  "discovered" state. `Player2D.SelectedGear` is the slot chosen in the gear ring,
+  or the first slot until one is chosen; it does not jump to another slot when it
+  runs empty (the action key then does nothing with it).
+- **Keys are gear like any other**, carried in the `Key` slot (`Key2D.GearName`;
+  not listed = keys can't be picked up), not in a separate key list or the HUD.
+  The key slot must be selected to unlock a gate; the gate then still checks that
+  the slot holds a key for its lock. This keeps "the action key uses the selected
+  gear" true for every gear. `[Gear]` also lists placeholder gear that no
+  throwable uses, so the ring has six slots to try.
+- **Gear is shown in its own gear box, chosen in the gear ring.** The HUD box
+  itself never shows gear; a fixed gear box right of it (`GameLoop._hudGearBox`)
+  always shows the selected gear's icon (dimmed while empty) and dimmed count as
+  `x3` (the same `x` form as the ring). Holding
+  `Tab` (`InputState.IsGearRingKeyDown`, browser focus move suppressed in
+  game-interop.js) opens the gear ring (`GameMode.GearRing`, game paused like the
+  exit prompt): one small dark box per slot around a circle, snapped to whole
+  cells, in `[Gear]` order clockwise from the top, with the highlighted one's name
+  (normal interface color) and `x` count (dark) in the middle, like the gear box. It grows out of the gear box and shrinks back into it
+  (`GearRingScreen.OpenSeconds`/`CloseSeconds`). Left/Right moves the highlight
+  (wrapping); releasing `Tab` takes the highlighted gear and `Esc` cancels - the
+  action key does nothing in the ring. Keys still held when it closes are not read
+  as fresh presses in play, so a cancelling `Esc` does not open the exit prompt.
+  Grid-snapped boxes were chosen over a drawn circle because the font has no
+  glyphs for smooth curves.
+- **Every selection box looks the same** (`UIRenderer.SelectionColor`): lit the
+  moment it moves, then glowing light -> normal -> dark -> normal while it stands
+  still (`UIRenderer.GlowColor`, also the end screens' settled glow). Used by the
+  world-select thumbnail box (`WorldSelectScreen.TitleScrollSeconds`) and the gear
+  ring's highlighted slot (`GearRingScreen.StillSeconds`, counting only once the
+  ring is fully open, so it stays lit while the ring moves). The difference is
+  only that world select draws no box around unselected worlds, while the ring
+  draws every slot in a dark box.
+- **The action key does one thing per press, in priority order:** operate a switch
+  in reach, else unlock a key gate in reach with the selected gear (the Key slot),
+  else throw from the selected gear (`World2D.TryThrow`; nothing for a key).
+  A thrown item appears just in front of the player, on the side it last faced, at
+  head height, flying off at the object's `ThrowSpeed`/`ThrowAngle` plus the player's
+  velocity, and is refused (keeping the item) when that spot is blocked.
 - **Gravity is a non-negative magnitude that always pulls down.** Inverted
   gravity is not a concept; negative or non-finite values are rejected at load.
   Zero means weightless; weight-scaled patrol caps then give no force, except
@@ -504,12 +581,11 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `Player2D.Score` (and `Rings` for `Ring`);
   `HealthPack` restores `Player2D.Health` fully and is removed, but is left in
   place untouched while health is already full, so it isn't wasted;
-  `Key` is removed on pickup and adds its required `Lock` name to
-  `Player2D.Keys` (inert without one; the lock name lives on `Key2D`, not on
+  `Key` is removed on pickup and goes into the `Key` gear slot (inert without a
+  `Lock` name or that slot; the lock name lives on `Key2D`, not on
   `Body2D`); a `Gate2D` with a matching `Lock` is opened by the action key
-  (`E`/`Enter`) when the player is within one cell of it, consuming one key, and
-  then stays open. The HUD shows a single key icon (while at least one key is held) with a
-  superscript count (a superscript n above 9), not a list, since a world may use many locks.
+  (`E`/`Enter`) when the player is within one cell of it with the Key gear selected,
+  using up one matching key, and then stays open.
   `Checkpoint`/`WorldEnd` are also removed on
   pickup like every other collectable; a collectable's own
   `Collectable2D.EffectPersists` (mirroring `IKillableBody.EffectPersists`
@@ -524,8 +600,12 @@ capture the "why" behind a decision without needing a lengthy narrative.
   attached to the player at its clip's `OffsetX`/`OffsetY`, and may tint the
   player via `TintColor`/`TintAlternateColor`/`TintBlinkSeconds` in the same
   `[Animation.{clip}]` section (no separate tint structure). The tint is
-  temporary and wins over the normal foreground color chain. Non-player
-  effects stay where they were spawned. While a world end or death is pending,
+  temporary and wins over the normal foreground color chain. A hazard's hurt
+  effect follows (and may tint) the hazard the same way; other non-player
+  effects stay where they were spawned. A clip with a tint and no drawing files
+  is a glow-only effect (one blank cell); every enemy's `hurt` clip is one, the
+  same short red/orange blink (`L`/`M`) the player glows when hurt, without the
+  player's sparks. While a world end or death is pending,
   the player is shown standing still in its default pose's idle clip (solved in
   code, not a setting, since physics is frozen then too).
 - **World end and death share
@@ -652,6 +732,11 @@ capture the "why" behind a decision without needing a lengthy narrative.
   zoom level never requires touching game code - just updating the ini
   values. The size is not auto-detected because `measureText` does not
   reliably report a bitmap font's real native size.
+- **The bundled font is WebPlus IBM VGA 8x16, shown at 2x (16x32 px cells).**
+  Cells are therefore exactly twice as tall as wide, which sprites are drawn
+  for (e.g. a round ball is twice as many columns as rows, counting a
+  half-block as half a row). Glyphs outside the font silently fall back to
+  another font, so assets stick to characters the font contains.
 - **`WorldRenderer` only builds glyphs for what's inside the camera's current
   viewport** - physics, collision, and animation are unaffected and keep
   simulating every body regardless of visibility.

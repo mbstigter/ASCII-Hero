@@ -22,9 +22,6 @@ public class EndScreenRenderer
     /// <summary>Per step, the box shrinks by this many cells on each axis (1 per side).</summary>
     private const int StepCells = 2;
 
-    /// <summary>Once the ripple settles, how long the box shows each tint of its glow cycle.</summary>
-    private const double GlowStepSeconds = 0.2;
-
     /// <summary>One text row (with a space either side) inside the final ripple box, on a solid background so it stays readable over the world.</summary>
     private readonly UILabel _label = new(col: 0, row: 0, width: 20, height: 1);
 
@@ -49,7 +46,7 @@ public class EndScreenRenderer
             // While rippling, the leading box is bright and the trail behind it dim; once settled, the box glows dark -> normal -> light -> normal.
             _frame.ForeColor = level > 0
                 ? (frameLevel == level ? lightColor : darkColor)
-                : ((int)(elapsedSeconds / GlowStepSeconds) % 4) switch { 0 => darkColor, 2 => lightColor, _ => color };
+                : UIRenderer.GlowColor(elapsedSeconds, darkColor, color, lightColor);
             _frame.BackColor = frameLevel == 0 ? backColor : null;
             _frame.Width = finalWidth + StepCells * frameLevel;
             _frame.Height = finalHeight + StepCells * frameLevel;

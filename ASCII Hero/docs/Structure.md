@@ -114,6 +114,8 @@ palettes, materials) from disk/HTTP into in-memory game objects.
   lets a busy multi-stance asset (e.g. `Player`) group its clips' files into
   per-stance subfolders instead of one flat folder - purely a file-layout
   convenience, invisible to every other caller/consumer of a loaded clip.
+  A clip with a `TintColor` but no `_characters.txt` loads as one blank cell
+  (a glow-only effect, e.g. an enemy's `hurt`); any other clip without one fails to load.
 - **`SpriteAsset` / `SpriteClip` / `SpriteFrame`** - the in-memory result of
   loading, and the game's one representation of "what a game object looks
   like": a `SpriteAsset` is one named asset (e.g. `Player`, `Ball`) holding
@@ -309,12 +311,27 @@ The live game state and the entity types that make it up.
 	`EffectPersists` can leave its pickup effect behind as a permanent marker
 	(used by `Checkpoint`/`WorldEnd` in practice).
   - `ICollectorBody` - can pick up collectables on contact (e.g. the player).
-  - `IKillerBody` - can "kill" a killable hazard by landing on top of it
-	(e.g. the player); kept independent of `ICollectorBody` since the two
+  - `IKillerBody` - can hurt a killable hazard by landing on top of it
+	(e.g. the player), taking its `StompDamage`; kept independent of `ICollectorBody` since the two
 	capabilities are conceptually unrelated even though the player has both.
-  - `IKillableBody` - can be killed by a qualifying contact; carries real
+  - `IKillableBody` - can be hurt and killed by a qualifying contact; carries real
 	state (`IsKillable`, `EffectPersists`, `KillImpactSpeed`) since not every instance of an
-	otherwise-killable type should be killable in every placement.
+	otherwise-killable type should be killable in every placement, plus health mirroring the
+	player's: `Health`, a post-hit safe window (`RecoveryRemainingSeconds`/`IsRecovering`,
+	`GameDefaults.HazardRecoverySeconds`, ticked down by `CollisionSystem`) and its hurt
+	feedback (`HurtEffectClipName`, which follows the hazard, and `HurtSoundName`). Damage is
+	applied by `InteractionHandler.DamageHazard`; at 0 health it is removed for good.
+  - `ThrowableObject2D` - a `DynamicObject2D` the player picks up into a `Gear2D` slot
+	(by `GearName`) and throws with `World2D.TryThrow`; while `IsThrown` it hurts a killable
+	hazard it hits at `HitSpeed` or more by its `Damage`, and when it comes to rest it lies loose
+	again (`Reusable`) or is used up. A loose one and a moving hazard skip mover-pair collision
+	entirely (`CollisionSystem.IgnoresMoverCollision`), so hazards walk through it.
+  - `Gear2D` - not a body: one game-wide inventory slot (`Name`, `Icon`, `Count`) on
+	`Player2D.Gear`, created from `Global/Settings.ini` `[Gear]` by
+	`World2D.ParseGearSlots` and carried over between worlds. It holds the picked-up
+	`ThrowableObject2D` instances (or, in the `Key` slot, `Key2D` keys) themselves, and is always
+	shown in the gear ring. `Player2D.SelectedGear` is the slot chosen in the gear ring, or the first
+	slot until one is chosen.
   - `IEffectTrigger` - can optionally name a cosmetic effect clip
 	(`EffectClipName`) to play on contact, reusing a clip already defined on
 	that same body's own sprite asset. `CollisionSystem`'s private
@@ -325,7 +342,8 @@ The live game state and the entity types that make it up.
 	`Player2D` is deliberately not an `IEffectTrigger`) as
 	independent, possibly-overlapping `EffectInstance2D`s, rather than being
 	limited to one fixed clip per body. The player's effects follow the
-	player; all other effects stay where they were spawned.
+	player, and a hazard's hurt effect follows the hazard; all other effects stay where they
+	were spawned.
   - `IClimberBody` - can climb an `IsClimbable` surface;
 	carries `IsTouchingClimbable` (mere overlap, recomputed every frame) and
 	`IsClimbing` (actually engaged, driven by input). Independent of
@@ -448,7 +466,12 @@ The live game state and the entity types that make it up.
   static one that is not passable - is touched only through a solver
   surface contact; a passable hazard or collectable by overlap; climb/hang
   grip contacts never count; squash = the impact speed recorded for the
-  body's bottom contact with the hazard reaching its `KillImpactSpeed`,
+  body's bottom contact with the hazard reaching its `KillImpactSpeed`, which
+  takes the killer's `StompDamage` off the hazard's health (a survivor bounces
+  the killer off); a thrown `ThrowableObject2D` is never hurt by a hazard but
+  hurts a killable one on a fresh contact at its `HitSpeed`, and a loose one is
+  picked up by a collector touching it; thrown objects coming to rest land or
+  are used up first;
   impact speeds being stored per contact side so a side hit never reads as
   a landing; detection
   history only; fall damage = the player's highest non-hazard bottom-contact
@@ -596,6 +619,13 @@ The live game state and the entity types that make it up.
   `World2D.TryOpenGate`/`TryOperateSwitch` wake all sleepers after a state
   change (an opened gate or switched flow), and `Body2D` wakes itself when an
   animation frame changes its collision shape.
+- **`TipSystem`** - run by `CollisionSystem` at the end of each step, just
+  before `SleepSystem`: sets each moving body's `Body2D.TipAccelerationX` from
+  that step's bottom contacts - non-zero when its center of mass lies past the
+  edge of what it stands on (beyond `Body2D.LedgeToleranceCells`). On the next
+  step `PhysicsSystem` adds it as a sideways force (and gives a tipping player
+  only air control), `CollisionSystem` applies no friction to a tipping body's
+  ground contact, and `SleepSystem` keeps its island awake.
 
 
 
@@ -686,8 +716,8 @@ The live game state and the entity types that make it up.
   forth (equal pause at each end) driven by `WorldSelectScreen.TitleScrollSeconds`.
   The logo is drawn per glyph with a vertical gradient of the interface tints (light top two
   rows, normal middle two, dark bottom row), and the scroll chevrons likewise
-  (light top row, normal middle, dark bottom row). The selector box is drawn
-  in the interface Dark tint for a moment after the selection moves, so it appears to fade in.
+  (light top row, normal middle, dark bottom row). The selector box is lit right after the
+  selection moves and then glows (`UIRenderer.SelectionColor`, shared with the gear ring).
   While `WorldSelectScreen.IsIntroComplete` is false only the logo is drawn,
   with "ASCII" sliding in from the left and "Hero" from the right
   (`WorldSelectScreen.IntroSeconds`; menu input is ignored until it finishes).
@@ -760,6 +790,15 @@ The live game state and the entity types that make it up.
   once the action key is pressed. Also keeps `TitleScrollSeconds`, the time
   since the current selection was made (reset on every selection change).
 
+- **`GearRingScreen`** - state and input for the gear ring (`GameMode.GearRing`): the
+  gear slots on the ring, the highlighted `SelectedIndex` and how long it has stood still
+  (`StillSeconds`), and the open/close animation
+  (`Openness`, `IsFullyOpen`, `IsClosing`, `IsClosed`). Edge-triggers Left/Right (wrapping)
+  and cancel (Escape), and confirms when the gear ring key is released, ignoring keys already held when
+  it opened. Drawn by `GearRingRenderer` (Rendering), which places one `UIFrame` box per slot
+  on a circle snapped to whole cells, growing out of the HUD's gear box; the highlighted box
+  is lit with `UIRenderer.SelectionColor` (see the world-select selector).
+
 ### Game Loop
 
 - **`GameLoop`** - ties every subsystem above together and drives them once
@@ -771,7 +810,7 @@ The live game state and the entity types that make it up.
   - Internally a strict `GameMode` state machine (`WorldSelecting` ->
     `LoadingWorld` -> `Playing` -> `WorldComplete` or `GameOver` -> back to
     `WorldSelecting`, plus `ConfirmExit` while the "Exit Game?" prompt is
-    open during play) - never more than one is active, and
+    open during play and `GearRing` while the gear ring is open) - never more than one is active, and
     `OnFrame` switches on it to decide whether to drive
     `WorldSelectScreen`/`WorldSelectRenderer`, redraw the frozen selection
     layout plus a filling "Loading..." `UIBar` (a world's `World2D.LoadAsync`
@@ -866,8 +905,9 @@ large jumps after e.g. a tab switch):
    integrates every moving body's position from its accumulated forces) and
    then `CollisionSystem.Resolve` (resolves overlaps: moving bodies against
    solid terrain and world bounds, moving bodies against each other,
-   hazard/collectable contact - including collector pickups and
-   killer/killable kill contacts, each of which may spawn a cosmetic
+   hazard/collectable contact - including collector pickups (collectables and
+   loose throwables), killer/killable stomp contacts and thrown-object hits on
+   killable hazards (both through `InteractionHandler.DamageHazard`), each of which may spawn a cosmetic
    `EffectInstance2D` - and any `IClimberBody`/`IHangerBody`'s
    `IsTouchingClimbable`/`IsTouchingHangable` overlap against
    `IsClimbable`/`IsHangable` terrain, both speed-gated, with hanging
@@ -917,9 +957,14 @@ large jumps after e.g. a tab switch):
    of pre-rendered images, one per character/color combination, cleared when the font or
    cell size changes). `_hudText` is refreshed every `Playing` frame from
    `World2D.Player.Lives`/`.Rings`/`.Score` on its first row; its second row is a
-   "Health:" caption followed by the `_hudBar` gauge (`Player2D.Health`), and a key icon
-   followed by a superscript count (`¹`-`⁹`, `ⁿ` for more than 9) appears while a key is
-   held. A dev/testing FPS overlay (`InputState.IsFpsToggleKeyDown`, bound to `F`) can be
+   "Health:" caption followed by the `_hudBar` gauge (`Player2D.Health`). A separate gear
+   box (`_hudGearBox`/`_hudGearLabel`) right of the HUD box always shows
+   `Player2D.SelectedGear`'s icon (dimmed while empty) and dimmed `x` count; keys are gear too.
+   Pressing `Tab` during play switches to `GameMode.GearRing`: like `ConfirmExit`, the frozen
+   world frame is redrawn, with the HUD and `GearRingRenderer.AddRing` on top, while
+   `GearRingScreen.Update` handles the keys; releasing `Tab` sets `Player2D.SelectedGear` as the
+   ring starts closing, and once it has closed the action, Escape and gear ring key edges
+   are re-seeded from the held keys and `Playing` resumes. A dev/testing FPS overlay (`InputState.IsFpsToggleKeyDown`, bound to `F`) can be
    toggled on top of the HUD, showing a smoothed frames-per-second reading computed each
    frame from that frame's own raw, unclamped elapsed time (not the fixed
    Physics/Collision step size), right-aligned using the rendered text's own length

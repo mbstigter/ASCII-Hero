@@ -15,7 +15,7 @@ public static class RenderConstants
     /// available to the browser (e.g. via an <c>@font-face</c> declaration in app.css/standalone.css,
     /// or a system font) - selecting a font here does not itself load any new font asset.
     /// </summary>
-    public const string DefaultFontFamily = "\"Web437IbmVga8x14\", monospace";
+    public const string DefaultFontFamily = "\"WebPlusIbmVga8x16\", monospace";
 
     /// <summary>
     /// Default width of the viewport, in whole character columns - the canvas/viewport pixel
@@ -38,8 +38,8 @@ public static class RenderConstants
     // browser's text-measuring API cannot reliably report a true bitmap font's native pixel size,
     // so rather than an unreliable auto-detect, the font's documented native size must always be
     // supplied explicitly. They are also the final on-screen cell size (no separate scale factor) -
-    // e.g. the bundled 8x14 font at 2x zoom is configured as 16/28 - so a deliberately non-uniform
-    // pair (e.g. 15/28) can squeeze/stretch the font in one direction if ever desired.
+    // e.g. the bundled 8x16 font at 2x zoom is configured as 16/32 - so a deliberately non-uniform
+    // pair (e.g. 15/32) can squeeze/stretch the font in one direction if ever desired.
 
     /// <summary>
     /// Fallback width (in pixels) of one world cell: used before the configured cell size is
@@ -53,7 +53,7 @@ public static class RenderConstants
     /// applied (see <see cref="Browser.CanvasBridge.CellMetrics"/>) and if the cell size the browser
     /// echoes back is ever invalid. Not overridable via any ini file.
     /// </summary>
-    public const double DefaultCellHeightPixels = 28.0;
+    public const double DefaultCellHeightPixels = 32.0;
 
     /// <summary>
     /// One of the application's only two hardcoded colors: the foreground used when

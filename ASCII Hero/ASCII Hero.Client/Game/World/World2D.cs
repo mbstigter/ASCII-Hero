@@ -38,6 +38,9 @@ public partial class World2D
         _pendingRemovals.Add(body);
     }
 
+    /// <summary>Whether <paramref name="body"/> is queued via <see cref="QueueRemoval"/> and leaves the world at the next <see cref="ApplyPendingRemovals"/>.</summary>
+    public bool IsQueuedForRemoval(Body2D body) => _pendingRemovals.Contains(body);
+
     /// <summary>
     /// Removes every body queued via <see cref="QueueRemoval"/> since the last call, e.g. a
     /// collectable picked up this frame. Called by the game loop after each physics substep
@@ -309,14 +312,15 @@ public partial class World2D
         .Select(rect => new Physics.Rect(rect.X - 1, rect.Y - 1, rect.Width + 2, rect.Height + 2))];
 
     /// <summary>
-    /// Opens one closed key-operated gate next to the player, if the player holds a key with the
-    /// gate's <see cref="Gate2D.LockName"/>: the gate opens (and stays open), that key is consumed
-    /// and the gate's <c>Sound</c> plays. "Next to" means within one cell of the player's collision
-    /// shape. Returns whether a gate was opened. Called by <see cref="GameLoop"/> on an action key press.
+    /// Opens one closed key-operated gate next to the player, if the player's
+    /// <see cref="Player2D.SelectedGear"/> holds a <see cref="Key2D"/> with the gate's
+    /// <see cref="Gate2D.LockName"/>: the gate opens (and stays open), that key is used up and the
+    /// gate's <c>Sound</c> plays. "Next to" means within one cell of the player's collision shape.
+    /// Returns whether a gate was opened. Called by <see cref="GameLoop"/> on an action key press.
     /// </summary>
     public bool TryOpenGate()
     {
-        if (Player.Keys.Count == 0)
+        if (Player.SelectedGear is not { Count: > 0 } gear)
         {
             return false;
         }
@@ -325,18 +329,13 @@ public partial class World2D
 
         foreach (var gate in Objects.OfType<Gate2D>())
         {
-            if (gate.IsOn || gate.LockName is null)
+            if (gate.IsOn || gate.LockName is not { } lockName
+                || !gate.CollisionRects.Any(gateRect => reach.Any(gateRect.Overlaps))
+                || !gear.TryTake(item => item is Key2D key && string.Equals(key.LockName, lockName, StringComparison.OrdinalIgnoreCase), out _))
             {
                 continue;
             }
 
-            var keyIndex = Player.Keys.FindIndex(key => string.Equals(key, gate.LockName, StringComparison.OrdinalIgnoreCase));
-            if (keyIndex < 0 || !gate.CollisionRects.Any(gateRect => reach.Any(gateRect.Overlaps)))
-            {
-                continue;
-            }
-
-            Player.Keys.RemoveAt(keyIndex);
             gate.SetState(true);
             WakeAllSleepingBodies();
             PlaySound(gate.SoundName);
@@ -346,10 +345,56 @@ public partial class World2D
         return false;
     }
 
+    /// <summary>Sound played when the player throws an object.</summary>
+    public const string ThrowSoundName = "Throw";
+
+    /// <summary>
+    /// Throws one object from the player's <see cref="Player2D.SelectedGear"/>: it reappears just in
+    /// front of the player (on the side it last faced, at head height) and flies off at its
+    /// <see cref="ThrowableObject2D.ThrowSpeed"/> and <see cref="ThrowableObject2D.ThrowAngleDegrees"/>,
+    /// plus the player's own velocity. Nothing is thrown (and nothing is used) when there is no room
+    /// for it there, or when the selected gear holds something that can't be thrown (a key). Returns
+    /// whether something was thrown. Called by <see cref="GameLoop"/> on an
+    /// action key press that neither operated a switch nor opened a gate.
+    /// </summary>
+    public bool TryThrow()
+    {
+        if (Player.SelectedGear is not { } gear || !gear.TryPeek(out var top) || top is not ThrowableObject2D item)
+        {
+            return false;
+        }
+
+        var direction = Player.LastFacingX;
+        var position = new Vector2D(
+            direction > 0 ? Player.Right : Player.Left - item.Size.X,
+            Player.Top);
+        var spawnRects = item.LocalCollisionRects.Select(rect => rect.Translate(position)).ToList();
+        var blocked = Objects.Any(body =>
+            !ReferenceEquals(body, Player)
+            && body is not EffectInstance2D
+            && !body.IsPassable
+            && body.CollisionRects.Any(rect => spawnRects.Any(rect.Overlaps)));
+        if (blocked)
+        {
+            return false;
+        }
+
+        gear.TryTake(out _);
+        var angle = item.ThrowAngleDegrees * Math.PI / 180.0;
+        item.Launch(
+            position,
+            new Vector2D(
+                (direction * Math.Cos(angle) * item.ThrowSpeed) + Player.Velocity.X,
+                (-Math.Sin(angle) * item.ThrowSpeed) + Player.Velocity.Y));
+        Objects.Add(item);
+        PlaySound(ThrowSoundName);
+        return true;
+    }
+
     /// <summary>
     /// Operates one switch next to the player (see <see cref="Switch2D.Operate"/>) and plays its
     /// <c>Sound</c>. A switch whose state doesn't change (an already-pressed button) does nothing.
-    /// Returns whether a switch was operated. Called by <see cref="GameLoop"/> on an action key press.
+    /// Returns whether a switch was operated.
     /// </summary>
     public bool TryOperateSwitch()
     {

@@ -48,6 +48,11 @@ public class InputState
     /// is in works.</summary>
     public bool IsConfirmKeyDown => IsActionKeyDown || IsJumpKeyDown;
 
+    /// <summary>Opens the gear ring while playing (pausing the game) and closes it again with the
+    /// highlighted gear selected. <c>Tab</c>, whose browser default (moving focus) is suppressed in
+    /// game-interop.js. See docs/Decisions.md.</summary>
+    public bool IsGearRingKeyDown => IsKeyDown("Tab");
+
     /// <summary>Dev/testing shortcut - toggles the FPS debug overlay (see
     /// <see cref="GameLoop.OnFrame"/>). "F" is otherwise unused by any gameplay input.</summary>
     public bool IsFpsToggleKeyDown => IsKeyDown("KeyF");

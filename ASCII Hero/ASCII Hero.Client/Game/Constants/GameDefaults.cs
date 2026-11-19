@@ -288,6 +288,61 @@ public static class GameDefaults
     public const double HazardRecoverySeconds = 1.0;
 
     /// <summary>
+    /// How far (cells) the player's center of mass may lie past the edge of what it stands on
+    /// before it tips off (see <see cref="Physics.TipSystem"/>): one cell, so the player keeps its
+    /// footing with about half of its outer foot on the edge. Other bodies use strict balance (0).
+    /// </summary>
+    public const double PlayerLedgeToleranceCells = 1.0;
+
+    /// <summary>
+    /// The smallest sideways pull of a tipping body, as a fraction of gravity (see
+    /// <see cref="Physics.TipSystem"/>). The pull grows with how far the center of mass is past
+    /// the edge, up to full gravity at half the body's width; this floor makes a body that only
+    /// just overhangs still slide off promptly.
+    /// </summary>
+    public const double MinTipFraction = 0.2;
+
+    /// <summary>
+    /// Full health of a killable hazard (see <see cref="World.IKillableBody.Health"/>), on the same
+    /// 0-1 scale as the player's bar. Overridable per-placement via the <c>Health</c> ini key.
+    /// </summary>
+    public const double DefaultHazardHealth = 1.0;
+
+    /// <summary>
+    /// Default health a stomp (landing on a killable hazard hard enough) removes from that hazard
+    /// (see <see cref="World.IKillerBody.StompDamage"/>): a full bar, so a stomp kills a hazard with
+    /// default health in one go. Overridable via the player's <c>StompDamage</c> ini key.
+    /// </summary>
+    public const double DefaultStompDamage = 1.0;
+
+    /// <summary>
+    /// Upward speed (cells/second) the player bounces off with after stomping a hazard that
+    /// survives the stomp, so it does not stay standing on it. Not overridable via any ini file.
+    /// </summary>
+    public const double StompBounceSpeed = 14.0;
+
+    /// <summary>Default health a thrown object removes from a hazard it hits (the <c>Damage</c> ini key of a throwable).</summary>
+    public const double DefaultThrowableDamage = 0.5;
+
+    /// <summary>
+    /// Default minimum impact speed (cells/second) at which a thrown object hurts a hazard (the
+    /// <c>HitSpeed</c> ini key of a throwable); a slower touch, e.g. a rolling stop against it, does not.
+    /// </summary>
+    public const double DefaultThrowableHitSpeed = 5.0;
+
+    /// <summary>Default launch speed (cells/second) of a throw, before the player's own velocity is added (the <c>ThrowSpeed</c> ini key).</summary>
+    public const double DefaultThrowSpeed = 20.0;
+
+    /// <summary>Default launch angle of a throw, in degrees above horizontal (the <c>ThrowAngle</c> ini key).</summary>
+    public const double DefaultThrowAngleDegrees = 30.0;
+
+    /// <summary>
+    /// Speed (cells/second) below which a grounded thrown object counts as having come to rest: it
+    /// can be picked up again, or is used up if it is single-use. Not overridable via any ini file.
+    /// </summary>
+    public const double ThrowableRestSpeed = 1.0;
+
+    /// <summary>
     /// The highest drop, in cells at <see cref="PhysicsConstants.DefaultGravity"/>, the player can
     /// land from without being hurt; it defines <see cref="DefaultFallDamageImpactSpeed"/>.
     /// </summary>

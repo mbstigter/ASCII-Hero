@@ -127,6 +127,9 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// </summary>
     public bool IsDrivingOnGround => IsGrounded && UsesFeetLocomotion;
 
+    /// <summary>The player keeps its footing a little further past an edge than strict balance allows.</summary>
+    public override double LedgeToleranceCells => GameDefaults.PlayerLedgeToleranceCells;
+
     /// <summary>
     /// True when the player moves by pushing with the feet (walking/crawling), i.e. not climbing,
     /// hanging or swimming. Unlike <see cref="IsDrivingOnGround"/> this does not depend on this
@@ -171,11 +174,45 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     public int Score { get; set; }
 
     /// <summary>
-    /// Lock names of the keys currently held (one entry per key; duplicates allowed). Filled by
-    /// picking up a <see cref="CollectableType.Key"/>, consumed one at a time by
-    /// <see cref="World2D.TryOpenGate"/>. Kept across respawns.
+    /// The gear slots the player carries, in <c>Global/Settings.ini</c> <c>[Gear]</c> order - always
+    /// all of them, empty until something is picked up (see <see cref="Gear2D"/>); keys are carried
+    /// here too, in the <see cref="Key2D.GearName"/> slot. Kept across respawns.
     /// </summary>
-    public List<string> Keys { get; } = [];
+    public List<Gear2D> Gear { get; } = [];
+
+    /// <summary>The <see cref="Gear"/> slot named <paramref name="name"/> (case-insensitive), or null when it isn't listed.</summary>
+    public Gear2D? FindGear(string name) =>
+        Gear.Find(gear => string.Equals(gear.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    private Gear2D? _selectedGear;
+
+    /// <summary>
+    /// The gear slot the action key uses (a throw, or a key for a gate), shown in the HUD's gear box:
+    /// the one picked in the gear ring or, until one is picked, the first slot; null only without any
+    /// <see cref="Gear"/>. It stays selected when it runs empty. Kept across respawns.
+    /// </summary>
+    public Gear2D? SelectedGear
+    {
+        get => _selectedGear ?? Gear.FirstOrDefault();
+        set
+        {
+            if (value is not null && !Gear.Contains(value))
+            {
+                throw new ArgumentException("The selected gear must be one of the player's own gear slots.", nameof(value));
+            }
+
+            _selectedGear = value;
+        }
+    }
+
+    /// <summary>
+    /// The horizontal direction the player last moved or faced: -1 (left) or +1 (right). Throws go this
+    /// way, also while standing still facing the screen.
+    /// </summary>
+    public double LastFacingX { get; private set; } = 1.0;
+
+    /// <inheritdoc />
+    public double StompDamage { get; set; } = GameDefaults.DefaultStompDamage;
 
     /// <summary>
     /// Health of the current life, from 0 to <see cref="GameDefaults.PlayerFullHealth"/> (shown as
@@ -217,7 +254,7 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
 
     /// <summary>
     /// Takes over the progress a player carries from one world to another through a portal: score,
-    /// lives, rings, health and held keys. Position and everything about the body stay as they are.
+    /// lives, rings, health, gear (keys included) and the selected gear. Position and everything about the body stay as they are.
     /// </summary>
     public void CarryOverFrom(Player2D other)
     {
@@ -225,9 +262,17 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
         Lives = other.Lives;
         Rings = other.Rings;
         Health = other.Health;
-        Keys.Clear();
-        Keys.AddRange(other.Keys);
+        foreach (var gear in Gear)
+        {
+            if (other.FindGear(gear.Name) is { } otherGear)
+            {
+                gear.TakeOverFrom(otherGear);
+            }
+        }
+
+        _selectedGear = other._selectedGear is { } otherSelected ? FindGear(otherSelected.Name) : null;
     }
+
     public Player2D()
     {
         IsStatic = false;
@@ -304,6 +349,11 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
                 ? ResolveHorizontalFacing(Velocity.X)
                 : ResolveVerticalFacing())
             : ResolveHorizontalFacing();
+        if (MoveIntentX != 0)
+        {
+            LastFacingX = Math.Sign(MoveIntentX);
+        }
+
         SetPose(Sprite, resolvedPose, facing);
         ResolvedPose = resolvedPose;
     }

@@ -85,6 +85,14 @@ public class CollisionSystem
     {
         _stepSeconds = stepSeconds;
         world.Player.RecoveryRemainingSeconds = Math.Max(0, world.Player.RecoveryRemainingSeconds - stepSeconds);
+        foreach (var body in world.Objects)
+        {
+            if (body is IKillableBody { RecoveryRemainingSeconds: > 0 } recovering)
+            {
+                recovering.RecoveryRemainingSeconds = Math.Max(0, recovering.RecoveryRemainingSeconds - stepSeconds);
+            }
+        }
+
         _movingBodies.Clear();
         _movingBodyIndices.Clear();
 
@@ -149,7 +157,8 @@ public class CollisionSystem
             // and the bouncing ball) - checked once per unordered pair, gathered from the same
             // spatial grid so this scales with nearby movers only, not every mover in the world.
             // Two sleeping bodies are at rest against each other by definition and are skipped; an
-            // awake body pairs with every sleeping neighbour, waking it on overlap.
+            // awake body pairs with every sleeping neighbour, waking it on overlap. A pair that
+            // ignores each other entirely (see IgnoresMoverCollision) is skipped before either.
             for (var i = 0; i < _movingBodies.Count; i++)
             {
                 var body = _movingBodies[i];
@@ -161,6 +170,11 @@ public class CollisionSystem
                 foreach (var other in _movingBodiesGrid.GetCandidates(body.Position, body.Size))
                 {
                     var otherBody = (Body2D)other;
+                    if (IgnoresMoverCollision((Body2D)body, otherBody))
+                    {
+                        continue;
+                    }
+
                     if (otherBody.IsSleeping)
                     {
                         if (!BoundsOverlap((Body2D)body, otherBody))
@@ -201,6 +215,7 @@ public class CollisionSystem
             }
         }
 
+        TipSystem.Update(_movingBodies, world.Gravity);
         _sleep.Update(_movingBodies, stepSeconds);
 
         ResolveHazardsAndCollectables(world);
@@ -417,16 +432,27 @@ public class CollisionSystem
     /// Any <see cref="IPhysicsBody"/> touching any <see cref="IHazardBody"/> (see
     /// <see cref="IsTouchingHazard"/>) is a hazard hit.
     /// Collectable pickup requires the moving side to implement <see cref="ICollectorBody"/>, so
-    /// non-player bodies (e.g. the bouncing ball, hazards) never consume collectables. Killing a
+    /// non-player bodies (e.g. the bouncing ball, hazards) never consume collectables. Stomping a
     /// hazard requires the moving side to implement <see cref="IKillerBody"/>; a non-killer moving
-    /// body can still register an ordinary hazard contact/effect, but never the kill/removal path.
+    /// body can still register an ordinary hazard contact/effect, but never a stomp. A thrown
+    /// <see cref="ThrowableObject2D"/> hurts a killable hazard instead of being hurt, and a loose one is
+    /// picked up by a collector touching it.
     /// </summary>
     private void ResolveHazardsAndCollectables(World2D world)
     {
         var hazards = world.Objects.OfType<IHazardBody>().Cast<Body2D>().ToList();
         var collectables = world.Objects.OfType<ICollectableBody>().Cast<Body2D>().ToList();
+        var throwables = world.Objects.OfType<ThrowableObject2D>().ToList();
 
-        if (hazards.Count == 0 && collectables.Count == 0)
+        foreach (var thrown in throwables)
+        {
+            if (thrown.IsThrown && thrown.HasComeToRest)
+            {
+                InteractionHandler.OnThrowableCameToRest(world, thrown);
+            }
+        }
+
+        if (hazards.Count == 0 && collectables.Count == 0 && throwables.Count == 0)
         {
             _activeHazardContacts.Clear();
             return;
@@ -451,17 +477,35 @@ public class CollisionSystem
                 }
 
                 // A killable hazard landed on hard enough (closing speed at or above its
-                // KillImpactSpeed) is a kill: it is queued for removal and its own effect (if
-                // configured) persists as a permanent husk when EffectPersists is set. Any other
-                // contact direction, a gentler landing, or a non-killable hazard falls through to
-                // the ordinary hazard-contact handling below. A hazard's own effect and the moving
-                // body's own effect are mutually exclusive with kill-vs-ordinary-hit: a hazard's
-                // EffectClipName is reserved for its kill reaction, while a moving body's
-                // EffectClipName (e.g. a player's hurt spark) is reserved for ordinary, non-fatal
-                // hazard contact.
-                if (movingBody is IKillerBody && hazard is IKillableBody { IsKillable: true } killable && IsKillingImpact(movingBody, hazard, killable))
+                // KillImpactSpeed) is a stomp: it loses the stomper's StompDamage, and dies when
+                // that empties its health (its own effect, if configured, persisting as a husk when
+                // EffectPersists is set). The contact is recorded, so a stomper resting on a hazard
+                // that survived is not hurt by it on the next frame. Any other contact direction, a
+                // gentler landing, or a non-killable hazard falls through to the ordinary
+                // hazard-contact handling below. A hazard's own effect is reserved for its death,
+                // while a moving body's EffectClipName (e.g. a player's hurt spark) is reserved for
+                // ordinary, non-fatal hazard contact.
+                if (movingBody is IKillerBody killer && hazard is IKillableBody { IsKillable: true } killable && IsKillingImpact(movingBody, hazard, killable))
                 {
-                    InteractionHandler.OnHazardKilled(world, hazard, killable);
+                    currentHazardContacts.Add((hazard, movingBody));
+                    InteractionHandler.OnHazardStomped(world, killer, hazard, killable);
+                    continue;
+                }
+
+                // A thrown object is never hurt by a hazard; it hurts a killable one it hits hard
+                // enough, once per fresh contact. A loose (landed) one is just an ordinary object.
+                if (body is ThrowableObject2D throwable)
+                {
+                    var throwableContact = (hazard, movingBody);
+                    currentHazardContacts.Add(throwableContact);
+                    if (throwable.IsThrown
+                        && !_activeHazardContacts.Contains(throwableContact)
+                        && hazard is IKillableBody { IsKillable: true } struck
+                        && GetHitSpeed(throwable, hazard) >= throwable.HitSpeed)
+                    {
+                        InteractionHandler.OnHazardStruck(world, throwable, hazard, struck);
+                    }
+
                     continue;
                 }
 
@@ -491,9 +535,44 @@ public class CollisionSystem
 
                 InteractionHandler.OnCollected(world, movingBody, collectable);
             }
+
+            if (movingBody is ICollectorBody)
+            {
+                foreach (var throwable in throwables)
+                {
+                    // A solid throwable is pushed apart rather than overlapped, so touching means a
+                    // resolved surface contact; a passable one is touched by overlap. One used up
+                    // this pass (a single-use one that just came to rest) is already gone.
+                    if (!throwable.IsThrown
+                        && !world.IsQueuedForRemoval(throwable)
+                        && (movingBody.HasSurfaceContactWith(throwable) || Overlaps(movingBody, throwable)))
+                    {
+                        InteractionHandler.OnThrowableTouched(world, movingBody, throwable);
+                    }
+                }
+            }
         }
 
         _activeHazardContacts = currentHazardContacts;
+    }
+
+    /// <summary>
+    /// How hard <paramref name="thrown"/> hit <paramref name="hazard"/>: for a solid hazard the
+    /// highest closing speed the solver recorded on any side of their contact this step; for a
+    /// passable one the speed of the object relative to the hazard.
+    /// </summary>
+    private static double GetHitSpeed(ThrowableObject2D thrown, Body2D hazard)
+    {
+        if (IsSolidHazard(hazard))
+        {
+            return Math.Max(
+                Math.Max(thrown.GetContactImpactSpeed(ContactType.SurfaceTop, hazard), thrown.GetContactImpactSpeed(ContactType.SurfaceBottom, hazard)),
+                Math.Max(thrown.GetContactImpactSpeed(ContactType.SurfaceLeft, hazard), thrown.GetContactImpactSpeed(ContactType.SurfaceRight, hazard)));
+        }
+
+        var hazardVelocity = hazard is IPhysicsBody movingHazard ? movingHazard.Velocity : Vector2D.Zero;
+        var relative = thrown.Velocity - hazardVelocity;
+        return Math.Sqrt((relative.X * relative.X) + (relative.Y * relative.Y));
     }
 
     /// <summary>
@@ -979,7 +1058,12 @@ public class CollisionSystem
         var frictionRelativeVelocity = bodyTangentSource - otherTangentSource;
         var tangentialRelativeSpeed = frictionRelativeVelocity.X * tangent.X + frictionRelativeVelocity.Y * tangent.Y;
         var normalImpulseMagnitudePerMass = Math.Abs(normalImpulse * bodyInverseMass);
-        var newTangentialRelativeSpeed = playerWalksOnContact
+        // A body tipping off a ledge pivots on the edge rather than gripping it (see TipSystem).
+        var tipsOnContact =
+            (contact.Normal.Y < 0 && ((Body2D)body).IsTipping) ||
+            (contact.Normal.Y > 0 && other is Body2D { IsTipping: true });
+
+        var newTangentialRelativeSpeed = playerWalksOnContact || tipsOnContact
             ? tangentialRelativeSpeed
             : ApplyCoulombFriction(tangentialRelativeSpeed, normalImpulseMagnitudePerMass, friction);
         var tangentialDelta = tangentialRelativeSpeed - newTangentialRelativeSpeed;
@@ -1294,6 +1378,18 @@ public class CollisionSystem
     /// </summary>
     private void ResolveAgainstMover(IPhysicsBody a, IPhysicsBody b) =>
         ResolveAgainstOtherBody(a, (Body2D)b, b, b.Velocity, GetInverseMass(b.Mass));
+
+    /// <summary>
+    /// Whether two moving bodies skip collision response with each other entirely (no push, no
+    /// wake). A <see cref="ThrowableObject2D"/> that is not in flight and a moving hazard pass
+    /// through each other, so a patrolling hazard never shoves a loose throwable along; a thrown
+    /// one stays solid against hazards, so it still hits and bounces off them.
+    /// </summary>
+    private static bool IgnoresMoverCollision(Body2D a, Body2D b) =>
+        IsLooseThrowableAgainstHazard(a, b) || IsLooseThrowableAgainstHazard(b, a);
+
+    private static bool IsLooseThrowableAgainstHazard(Body2D throwable, Body2D hazard) =>
+        throwable is ThrowableObject2D { IsThrown: false } && hazard is IHazardBody;
 }
 
 

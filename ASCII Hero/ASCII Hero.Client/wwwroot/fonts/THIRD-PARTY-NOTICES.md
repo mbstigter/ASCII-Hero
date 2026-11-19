@@ -3,7 +3,7 @@
 This folder bundles a font that is not original to the ASCII Hero project and is
 used here under the terms of its own license, summarized below.
 
-## Web437 IBM VGA 8x14 (`Web437_IBM_VGA_8x14.woff`)
+## WebPlus IBM VGA 8x16 (`WebPlus_IBM_VGA_8x16.woff`)
 
 - **Source pack:** The Ultimate Oldschool PC Font Pack, v2.2 (2020-11-21)
 - **Author:** VileR

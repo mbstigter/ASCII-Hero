@@ -1,17 +1,17 @@
                 
-  U  YY        A
+  U  Y         A
 222VV229922222 A
                A
           9 V  A
           9 V  A
-   U  YY  9 V  A
+   U  Y   9 V  A
 2222222222222222
 //end
                 
-  U  ZZ        A
+  U  Z         A
 222VV229922222 A
                A
           9 V  A
           9 V  A
-   U  ZZ  9 V  A
+   U  Z   9 V  A
 2222222222222222

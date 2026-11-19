@@ -27,9 +27,6 @@ public static class WorldSelectRenderer
     private const double TitleScrollCharsPerSecond = 4.0;
     private const double TitleScrollPauseSeconds = 1.0;
 
-    // After the selection moves, the selector box is drawn dim for this long before turning normal.
-    private const double SelectionFadeInSeconds = 0.12;
-
     // ---------------------------------------------------------------------------------------
     // Logo and controls hint
     // ---------------------------------------------------------------------------------------
@@ -296,15 +293,15 @@ public static class WorldSelectRenderer
     }
 
     /// <summary>
-    /// Adds the selector box around a slot's thumbnail. Right after the selection moves it is drawn
-    /// dim for a moment, so it appears to fade in.
+    /// Adds the selector box around a slot's thumbnail, lit right after the selection moves and then
+    /// glowing (<see cref="UIRenderer.SelectionColor"/>, the same as the gear ring's selection).
     /// </summary>
     private static void AddSelectionBox(
         List<Glyph> glyphs, InterfaceColors colors, double selectedSeconds, double slotOriginCol, double thumbRow,
         double cellWidthPixels, double cellHeightPixels)
     {
         var top = thumbRow - SlotVerticalPadding;
-        var color = selectedSeconds < SelectionFadeInSeconds ? colors.Interface.Dark : colors.Interface.Normal;
+        var color = UIRenderer.SelectionColor(selectedSeconds, colors.Interface.Dark, colors.Interface.Normal, colors.Interface.Light);
         var frame = new UIFrame(slotOriginCol, top, SlotPitch, WorldCatalog.ThumbnailHeight + SlotVerticalPadding + 1, foreColor: color);
         UIRenderer.AddFrame(glyphs, frame, cellWidthPixels, cellHeightPixels);
     }

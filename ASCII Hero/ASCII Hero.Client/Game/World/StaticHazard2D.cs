@@ -33,4 +33,16 @@ public class StaticHazard2D : StaticObject2D, IHazardBody, IEffectTrigger, IKill
 
     /// <inheritdoc />
     public double KillImpactSpeed { get; set; } = GameDefaults.DefaultKillImpactSpeed;
+
+    /// <inheritdoc />
+    public double Health { get; set; } = GameDefaults.DefaultHazardHealth;
+
+    /// <inheritdoc />
+    public double RecoveryRemainingSeconds { get; set; }
+
+    /// <inheritdoc />
+    public string? HurtEffectClipName { get; set; }
+
+    /// <inheritdoc />
+    public string? HurtSoundName { get; set; }
 }

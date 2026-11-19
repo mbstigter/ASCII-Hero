@@ -17,8 +17,8 @@ public static class InteractionHandler
     public const string HardLandingSoundKey = "HardLanding";
 
     /// <summary>
-    /// A killer body landed on a killable hazard: the hazard is queued for removal and its own
-    /// effect (if configured) persists as a permanent husk when EffectPersists is set.
+    /// A killable hazard's health ran out: it is queued for removal and its own effect (if
+    /// configured) persists as a permanent husk when EffectPersists is set.
     /// </summary>
     public static void OnHazardKilled(World2D world, Body2D hazard, IKillableBody killable)
     {
@@ -28,11 +28,108 @@ public static class InteractionHandler
     }
 
     /// <summary>
+    /// A killer body landed on a killable hazard hard enough: the hazard loses the killer's
+    /// <see cref="IKillerBody.StompDamage"/> (see <see cref="DamageHazard"/>). When the hazard
+    /// survives, the killer bounces off it (<see cref="GameDefaults.StompBounceSpeed"/>) instead of
+    /// staying on top of it.
+    /// </summary>
+    public static void OnHazardStomped(World2D world, IKillerBody killer, Body2D hazard, IKillableBody killable)
+    {
+        if (!DamageHazard(world, hazard, killable, killer.StompDamage))
+        {
+            killer.Velocity = new Vector2D(killer.Velocity.X, Math.Min(killer.Velocity.Y, -GameDefaults.StompBounceSpeed));
+        }
+    }
+
+    /// <summary>
+    /// A thrown object hit a killable hazard hard enough: its <c>Sound</c> plays, the hazard loses
+    /// the object's <see cref="ThrowableObject2D.Damage"/> (see <see cref="DamageHazard"/>), and a
+    /// single-use object is used up. A reusable one keeps bouncing.
+    /// </summary>
+    public static void OnHazardStruck(World2D world, ThrowableObject2D thrown, Body2D hazard, IKillableBody killable)
+    {
+        world.PlaySound(thrown.SoundName);
+        DamageHazard(world, hazard, killable, thrown.Damage);
+        if (!thrown.Reusable)
+        {
+            UseUp(world, thrown);
+        }
+    }
+
+    /// <summary>
+    /// Hurts a killable hazard the same way a hazard hurts the player (see <see cref="OnHazardHit"/>):
+    /// nothing happens during its safe window; otherwise it loses <paramref name="damage"/>. If that
+    /// empties its health it is killed (<see cref="OnHazardKilled"/>, permanently); if it survives, its
+    /// hurt sound and effect play and its own safe window
+    /// (<see cref="GameDefaults.HazardRecoverySeconds"/>) starts. Returns whether it was killed.
+    /// </summary>
+    public static bool DamageHazard(World2D world, Body2D hazard, IKillableBody killable, double damage)
+    {
+        if (killable.IsRecovering || killable.Health <= 0)
+        {
+            return false;
+        }
+
+        killable.Health = Math.Max(0, killable.Health - damage);
+        if (killable.Health <= 0)
+        {
+            OnHazardKilled(world, hazard, killable);
+            return true;
+        }
+
+        killable.RecoveryRemainingSeconds = GameDefaults.HazardRecoverySeconds;
+        world.PlaySound(killable.HurtSoundName);
+        if (killable.HurtEffectClipName is { } hurtClipName)
+        {
+            SpawnEffect(hazard, hurtClipName, world, follow: true);
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// A thrown object came to rest: a reusable one now lies loose, ready to be picked up again;
+    /// a single-use one is used up.
+    /// </summary>
+    public static void OnThrowableCameToRest(World2D world, ThrowableObject2D thrown)
+    {
+        thrown.Land();
+        if (!thrown.Reusable)
+        {
+            UseUp(world, thrown);
+        }
+    }
+
+    /// <summary>
+    /// A collector touched a loose throwable. The player takes it into the gear slot matching its
+    /// <see cref="ThrowableObject2D.GearName"/>, playing its pickup sound; without such a slot (or for
+    /// any other collector) it stays where it is, an ordinary loose object.
+    /// </summary>
+    public static void OnThrowableTouched(World2D world, IPhysicsBody collector, ThrowableObject2D throwable)
+    {
+        if (collector is not Player2D player || player.FindGear(throwable.GearName) is not { } gear)
+        {
+            return;
+        }
+
+        gear.Add(throwable);
+        world.PlaySound(throwable.PickupSoundName);
+        world.QueueRemoval(throwable);
+    }
+
+    /// <summary>A single-use throwable is used up: its effect (e.g. a splat) plays where it is and it leaves the world.</summary>
+    private static void UseUp(World2D world, ThrowableObject2D thrown)
+    {
+        SpawnEffectIfConfigured(thrown, world);
+        world.QueueRemoval(thrown);
+    }
+
+    /// <summary>
     /// First frame of a fresh, ordinary (non-killing) hazard contact: if the moving body is the
     /// player, the hazard's damage is deducted first, and the player's hurt effect only plays if it
     /// survived - a fatal hit shows just the died effect. A survived hit also starts a short safe
     /// window (<see cref="GameDefaults.HazardRecoverySeconds"/>) in which hazards can't hurt it again.
-    /// a hazard during the death delay) gets no sound or effect. If the deduction brings health to
+    /// A player already out of health (e.g. touching a hazard during the death delay) gets no sound or effect. If the deduction brings health to
     /// exactly 0, a Death transition starts: it costs a life, and GameLoop respawns (or ends the
     /// game) once the death effect has played. Any other moving body just plays its own effect.
     /// </summary>
@@ -210,14 +307,16 @@ public static class InteractionHandler
                 break;
 
             case CollectableType.Key:
-                // Only the player can carry a key, and a key needs its Lock name (see
-                // Key2D.LockName) - without either it is left in place, inert.
-                if (collectable is not Key2D { LockName: { Length: > 0 } keyLockName } || movingBody is not Player2D keyPlayer)
+                // Only the player can carry a key, in its Key gear slot, and a key needs its Lock
+                // name (see Key2D.LockName) - without any of these it is left in place, inert.
+                if (collectable is not Key2D { LockName: { Length: > 0 } } key
+                    || movingBody is not Player2D keyPlayer
+                    || keyPlayer.FindGear(Key2D.GearName) is not { } keyGear)
                 {
                     break;
                 }
 
-                keyPlayer.Keys.Add(keyLockName);
+                keyGear.Add(key);
                 SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
                 world.QueueRemoval(collectable);
                 break;
@@ -302,12 +401,13 @@ public static class InteractionHandler
     /// configured <see cref="IEffectTrigger.EffectClipName"/>. Lets one body (e.g. the player)
     /// play different effects for different situations as independent, possibly-overlapping
     /// <see cref="EffectInstance2D"/> instances. A player's effects follow the player (at the
-    /// clip's offset, applying its tint); every other effect stays where it was spawned.
+    /// clip's offset, applying its tint); so does any effect spawned with <paramref name="follow"/>
+    /// (a hazard's hurt effect); every other effect stays where it was spawned.
     /// </summary>
-    private static void SpawnEffect(Body2D body, string clipName, World2D world, bool persists = false)
+    private static void SpawnEffect(Body2D body, string clipName, World2D world, bool persists = false, bool follow = false)
     {
         var effect = new EffectInstance2D();
-        effect.Spawn(body.Sprite, clipName, body.Position, persists, followTarget: body as Player2D);
+        effect.Spawn(body.Sprite, clipName, body.Position, persists, followTarget: follow ? body : body as Player2D);
         world.Objects.Add(effect);
     }
 }

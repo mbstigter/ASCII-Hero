@@ -123,6 +123,8 @@ public partial class World2D
 
             world.Gravity = gravity;
         }
+
+        world.Player.Gear.AddRange(ParseGearSlots(globalSettings));
         progress?.Report(1);
 
         world.Palette = await ColorPalette.LoadAsync(fileProvider, worldName);
@@ -398,6 +400,13 @@ public partial class World2D
         var killSoundName = section.Text("KillSound");
         var killImpactSpeed = section.FiniteNonNegativeNumber("KillImpactSpeed") ?? GameDefaults.DefaultKillImpactSpeed;
         var damage = section.Number("Damage") is { } parsedDamage && parsedDamage >= 0 ? parsedDamage : GameDefaults.DefaultHazardDamage;
+        var hazardHealth = section.FiniteNonNegativeNumber("Health") ?? GameDefaults.DefaultHazardHealth;
+        if (hazardHealth <= 0)
+        {
+            throw section.Error("has 'Health = 0'; a hazard's health must be more than 0");
+        }
+
+        var hurtSoundName = section.Text("HurtSound");
 
         T SpawnTwoState<T>(T body) where T : TwoStateObject2D
         {
@@ -446,6 +455,22 @@ public partial class World2D
                 body = dynamicObject;
                 break;
 
+            case "ThrowableObject":
+                var throwable = new ThrowableObject2D
+                {
+                    GearName = section.Required("Gear"),
+                    Damage = section.FiniteNonNegativeNumber("Damage") ?? GameDefaults.DefaultThrowableDamage,
+                    HitSpeed = section.FiniteNonNegativeNumber("HitSpeed") ?? GameDefaults.DefaultThrowableHitSpeed,
+                    Reusable = section.Flag("Reusable", fallback: true),
+                    ThrowSpeed = section.FiniteNonNegativeNumber("ThrowSpeed") ?? GameDefaults.DefaultThrowSpeed,
+                    ThrowAngleDegrees = section.Number("ThrowAngle") ?? GameDefaults.DefaultThrowAngleDegrees,
+                    PickupSoundName = section.Text("PickupSound"),
+                    EffectClipName = effects.Effect,
+                };
+                throwable.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, span);
+                body = throwable;
+                break;
+
             case "DynamicHazard":
                 var dynamicHazard = new DynamicHazard2D
                 {
@@ -455,6 +480,9 @@ public partial class World2D
                     KillSoundName = killSoundName,
                     KillImpactSpeed = killImpactSpeed,
                     Damage = damage,
+                    Health = hazardHealth,
+                    HurtEffectClipName = effects.Hurt,
+                    HurtSoundName = hurtSoundName,
                 };
                 dynamicHazard.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, span);
                 ConfigureDynamicPatrol(world, dynamicHazard, section);
@@ -477,6 +505,9 @@ public partial class World2D
                     KillSoundName = killSoundName,
                     KillImpactSpeed = killImpactSpeed,
                     Damage = damage,
+                    Health = hazardHealth,
+                    HurtEffectClipName = effects.Hurt,
+                    HurtSoundName = hurtSoundName,
                 };
                 kinematicHazard.Spawn(sprite, clipName, frameIndex, position, initialVelocity, span);
                 ConfigureKinematicPatrol(world, kinematicHazard, section);
@@ -492,6 +523,9 @@ public partial class World2D
                     KillSoundName = killSoundName,
                     KillImpactSpeed = killImpactSpeed,
                     Damage = damage,
+                    Health = hazardHealth,
+                    HurtEffectClipName = effects.Hurt,
+                    HurtSoundName = hurtSoundName,
                 };
                 staticHazard.Spawn(sprite, clipName, frameIndex, position, span);
                 body = staticHazard;
@@ -597,6 +631,28 @@ public partial class World2D
     }
 
     /// <summary>
+    /// Reads the game's gear slots from <c>Global/Settings.ini</c> <c>[Gear]</c>: one line per slot,
+    /// <c>Name = Icon</c>, in the order listed; the icon is the value's first character. A slot that
+    /// is not listed (or commented out) does not exist, so throwables for it cannot be picked up.
+    /// </summary>
+    internal static List<Gear2D> ParseGearSlots(IniDocument globalSettings)
+    {
+        var slots = new List<Gear2D>();
+        foreach (var (name, value) in globalSettings.Section("Gear"))
+        {
+            var icon = value.Trim();
+            if (icon.Length == 0)
+            {
+                throw new FormatException($"Global settings [Gear] '{name}' needs an icon character.");
+            }
+
+            slots.Add(new Gear2D(name.Trim(), icon[0]));
+        }
+
+        return slots;
+    }
+
+    /// <summary>
     /// Configures <see cref="Player"/> from its placement: spawn position, effect clips, lives,
     /// health, material and the player-only movement overrides.
     /// </summary>
@@ -624,6 +680,7 @@ public partial class World2D
         player.CrawlSpeed = section.Number("CrawlSpeed") ?? player.CrawlSpeed;
         player.FallDamage = section.FiniteNonNegativeNumber("FallDamage") ?? GameDefaults.DefaultFallDamage;
         player.FallDamageImpactSpeed = section.NonNegativeNumber("FallDamageImpactSpeed") ?? GameDefaults.DefaultFallDamageImpactSpeed;
+        player.StompDamage = section.FiniteNonNegativeNumber("StompDamage") ?? GameDefaults.DefaultStompDamage;
 
         if (section.Flag("CameraTarget"))
         {

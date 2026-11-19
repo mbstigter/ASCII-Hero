@@ -35,4 +35,16 @@ public class DynamicHazard2D : DynamicObject2D, IHazardBody, IEffectTrigger, IKi
 
     /// <inheritdoc />
     public double KillImpactSpeed { get; set; } = GameDefaults.DefaultKillImpactSpeed;
+
+    /// <inheritdoc />
+    public double Health { get; set; } = GameDefaults.DefaultHazardHealth;
+
+    /// <inheritdoc />
+    public double RecoveryRemainingSeconds { get; set; }
+
+    /// <inheritdoc />
+    public string? HurtEffectClipName { get; set; }
+
+    /// <inheritdoc />
+    public string? HurtSoundName { get; set; }
 }

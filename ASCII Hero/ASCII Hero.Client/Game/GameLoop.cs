@@ -40,6 +40,9 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
 
         /// <summary>Gameplay is frozen and an "Exit Game?" message is shown; confirming returns to <see cref="WorldSelecting"/>, Escape resumes <see cref="Playing"/>.</summary>
         ConfirmExit,
+
+        /// <summary>Gameplay is frozen and the gear ring (<see cref="GearRingScreen"/>) is shown; once it has closed again, <see cref="Playing"/> resumes.</summary>
+        GearRing,
     }
 
     private GameMode _mode = GameMode.WorldSelecting;
@@ -128,7 +131,18 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private InterfaceColors _colors = InterfaceColors.Fallback;
 
     // ---------------------------------------------------------------------------------------
-    // HUD (top-left): frame, text row, health bar and key icon
+    // Gear ring
+    // ---------------------------------------------------------------------------------------
+
+    private readonly GearRingScreen _gearRing = new();
+    private readonly GearRingRenderer _gearRingRenderer = new();
+
+    // Woosh sounds as the gear ring opens and closes (see Global/SoundLibrary.ini).
+    private const string GearRingOpenSoundName = "GearRingOpenWoosh";
+    private const string GearRingCloseSoundName = "GearRingCloseWoosh";
+
+    // ---------------------------------------------------------------------------------------
+    // HUD (top-left): frame, text row and health bar, with the gear box to its right
     // ---------------------------------------------------------------------------------------
 
     private readonly UIFrame _hudBox = new(col: 1, row: 1, width: 36, height: 4);
@@ -139,8 +153,11 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// <summary>Health gauge (0-1) right of the "Health:" caption.</summary>
     private readonly UIBar _hudBar = new(col: 11, row: 3, width: 20, height: 1, minValue: 0, maxValue: GameDefaults.PlayerFullHealth) { CurrentValue = GameDefaults.PlayerFullHealth };
 
-    /// <summary>Key icon right of the health bar; shown while the player holds at least one key.</summary>
-    private readonly UILabel _hudKeyLabel = new(col: 33, row: 3, width: 3, height: 1);
+    /// <summary>Gear box right of the HUD box: the selected gear's icon and count. The gear ring opens out of it.</summary>
+    private readonly UIFrame _hudGearBox = new(col: 38, row: 1, width: 7, height: 4);
+
+    /// <summary>The selected gear's icon (first line, dimmed while empty) and dimmed count as "x3" (second line), centered inside <see cref="_hudGearBox"/>.</summary>
+    private readonly UILabel _hudGearLabel = new(col: 39, row: 2, width: 5, height: 2);
 
     // ---------------------------------------------------------------------------------------
     // Debug overlays (top-right) and debug keys
@@ -168,6 +185,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private bool _wasObjectCounterToggleKeyDown;
     private bool _wasActionKeyDown;
     private bool _wasEscapeKeyDown;
+    private bool _wasGearRingKeyDown;
 
     // ---------------------------------------------------------------------------------------
     // Startup
@@ -246,8 +264,9 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         _hudText.ForeColor = colors.Interface.Normal;
         _hudText.HighlightColor = colors.Interface.Dark;
         _hudBar.ForeColor = colors.Interface.Normal;
-        _hudKeyLabel.ForeColor = colors.Interface.Normal;
-        _hudKeyLabel.HighlightColor = colors.Interface.Dark;
+        _hudGearBox.ForeColor = colors.Interface.Normal;
+        _hudGearLabel.ForeColor = colors.Interface.Normal;
+        _hudGearLabel.HighlightColor = colors.Interface.Dark;
         _fpsLabel.ForeColor = colors.Interface.Normal;
         _objectCounterLabel.ForeColor = colors.Interface.Normal;
     }
@@ -336,6 +355,9 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
                     break;
                 case GameMode.ConfirmExit:
                     await OnConfirmExitFrameAsync(deltaSeconds);
+                    break;
+                case GameMode.GearRing:
+                    await OnGearRingFrameAsync(deltaSeconds);
                     break;
             }
         }
@@ -552,6 +574,20 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
         _wasEscapeKeyDown = escapeDown;
 
+        // Holding the gear ring key pauses play and opens the gear ring; releasing it picks the highlighted gear.
+        var gearRingKeyDown = _input.IsGearRingKeyDown;
+        if (gearRingKeyDown && !_wasGearRingKeyDown
+            && _world.PendingTransition == PendingTransition.None
+            && _world.Player.Gear.Count > 0)
+        {
+            _wasGearRingKeyDown = true;
+            _gearRing.Open(_world.Player.Gear, _world.Player.SelectedGear, _input);
+            _mode = GameMode.GearRing;
+            soundPlayer.Play(GearRingOpenSoundName);
+            return;
+        }
+        _wasGearRingKeyDown = gearRingKeyDown;
+
         HandleActionKeys();
         if (_world.PendingTransition == PendingTransition.None)
         {
@@ -636,11 +672,14 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         return true;
     }
 
-    /// <summary>Handles the once-per-press action key (operates switches, opens key gates).</summary>
+    /// <summary>
+    /// Handles the once-per-press action key: operates a switch next to the player, otherwise opens
+    /// a key gate next to it, otherwise throws the selected gear.
+    /// </summary>
     private void HandleActionKeys()
     {
         var actionKeyDown = _input.IsActionKeyDown;
-        if (actionKeyDown && !_wasActionKeyDown && (_world.TryOperateSwitch() || _world.TryOpenGate()))
+        if (actionKeyDown && !_wasActionKeyDown && (_world.TryOperateSwitch() || _world.TryOpenGate() || _world.TryThrow()))
         {
             _world.ApplyPendingRemovals();
         }
@@ -703,7 +742,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         }
     }
 
-    /// <summary>Adds the HUD: lives, rings, score, health bar and key icon.</summary>
+    /// <summary>Adds the HUD: lives, rings, score and health bar, plus the gear box with the selected gear.</summary>
     private void AddHud(List<Glyph> glyphs)
     {
         var cellWidth = _renderer.CellWidthPixels;
@@ -713,18 +752,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         _hudBox.BackColor = panelColor;
         _hudText.BackColor = panelColor;
         _hudBar.BackColor = panelColor;
-        _hudKeyLabel.BackColor = panelColor;
-        if (panelColor is not null)
-        {
-            for (var row = 0; row < _hudBox.Height; row++)
-            {
-                for (var col = 0; col < _hudBox.Width; col++)
-                {
-                    glyphs.Add(GlyphBuilder.BuildGlyph((_hudBox.Col + col) * cellWidth, (_hudBox.Row + row) * cellHeight, ' ', null, panelColor));
-                }
-            }
-        }
-
+        AddPanel(glyphs, _hudBox, panelColor);
         UIRenderer.AddFrame(glyphs, _hudBox, cellWidth, cellHeight);
 
         _hudText.Lines.Clear();
@@ -735,16 +763,40 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
         _hudBar.CurrentValue = _world.Player.Health;
         UIRenderer.AddBar(glyphs, _hudBar, cellWidth, cellHeight);
 
-        if (_world.Player.Keys.Count > 0)
+        if (_world.Player.SelectedGear is { } selectedGear)
         {
-            _hudKeyLabel.Lines.Clear();
-            _hudKeyLabel.Lines.Add("o╤{" + ToSuperscriptDigit(_world.Player.Keys.Count) + "}");
-            UIRenderer.AddLabel(glyphs, _hudKeyLabel, cellWidth, cellHeight);
+            _hudGearBox.BackColor = panelColor;
+            _hudGearLabel.BackColor = panelColor;
+            AddPanel(glyphs, _hudGearBox, panelColor);
+            UIRenderer.AddFrame(glyphs, _hudGearBox, cellWidth, cellHeight);
+
+            var icon = CenterIn(selectedGear.Icon.ToString(), _hudGearLabel.Width);
+            _hudGearLabel.Lines.Clear();
+            _hudGearLabel.Lines.Add(selectedGear.Count > 0 ? icon : "{" + icon + "}");
+            _hudGearLabel.Lines.Add("{" + CenterIn("x" + selectedGear.Count, _hudGearLabel.Width) + "}");
+            UIRenderer.AddLabel(glyphs, _hudGearLabel, cellWidth, cellHeight);
         }
     }
 
-    /// <summary>Superscript for 1-9 held keys; 'ⁿ' for more than 9.</summary>
-    private static char ToSuperscriptDigit(int count) => count is >= 1 and <= 9 ? "¹²³⁴⁵⁶⁷⁸⁹"[count - 1] : 'ⁿ';
+    /// <summary>Fills <paramref name="frame"/>'s whole area with <paramref name="panelColor"/>, so it reads as a solid panel over the world; nothing when null.</summary>
+    private void AddPanel(List<Glyph> glyphs, UIFrame frame, string? panelColor)
+    {
+        if (panelColor is null)
+        {
+            return;
+        }
+
+        for (var row = 0; row < frame.Height; row++)
+        {
+            for (var col = 0; col < frame.Width; col++)
+            {
+                glyphs.Add(GlyphBuilder.BuildGlyph((frame.Col + col) * _renderer.CellWidthPixels, (frame.Row + row) * _renderer.CellHeightPixels, ' ', null, panelColor));
+            }
+        }
+    }
+
+    /// <summary>Pads <paramref name="text"/> on both sides to <paramref name="width"/>, centered (an odd spare cell goes right).</summary>
+    private static string CenterIn(string text, int width) => text.PadLeft((width + text.Length) / 2).PadRight(width);
 
     /// <summary>Adds the FPS and object-count overlays, right-aligned to the top-right corner.</summary>
     private void AddDebugOverlays(List<Glyph> glyphs)
@@ -830,7 +882,54 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     }
 
     /// <summary>
-    /// Picks the end screen's message and tint (green, red or amber from <see cref="InterfaceColors"/>)
+    /// Draws the frozen frame with the gear ring on top. Releasing the gear ring key selects the
+    /// highlighted gear as the ring starts closing (so the gear box already shows it as the ring
+    /// shrinks back into it); once closed, play resumes. Keys still held from the ring don't act
+    /// again in play: a cancelling Escape doesn't ask to exit, and a held action key doesn't throw.
+    /// </summary>
+    private async Task OnGearRingFrameAsync(double deltaSeconds)
+    {
+        var previousIndex = _gearRing.SelectedIndex;
+        var wasClosing = _gearRing.IsClosing;
+        _gearRing.Update(_input, deltaSeconds);
+
+        if (_gearRing.SelectedIndex != previousIndex)
+        {
+            soundPlayer.Play(MenuMoveSoundName);
+        }
+
+        if (_gearRing.IsClosing && !wasClosing)
+        {
+            if (_gearRing.Confirmed)
+            {
+                _world.Player.SelectedGear = _gearRing.SelectedSlot;
+            }
+
+            soundPlayer.Play(GearRingCloseSoundName);
+        }
+
+        if (_gearRing.IsClosed)
+        {
+            _wasActionKeyDown = _input.IsActionKeyDown;
+            _wasEscapeKeyDown = _input.IsEscapeKeyDown;
+            _wasGearRingKeyDown = _input.IsGearRingKeyDown;
+            _mode = GameMode.Playing;
+            return;
+        }
+
+        var glyphs = _renderer.BuildFrame(_world, _camera, _viewportWidthCells, _viewportHeightCells);
+        AddHud(glyphs);
+        _gearRingRenderer.AddRing(
+            glyphs, _gearRing,
+            originCol: _hudGearBox.Col + (_hudGearBox.Width / 2),
+            originRow: _hudGearBox.Row + (_hudGearBox.Height / 2),
+            _colors.Interface.Dark, _colors.Interface.Normal, _colors.Interface.Light, InterfaceBackdropColor,
+            _viewportWidthCells, _viewportHeightCells, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
+        await DrawWorldAsync(glyphs);
+    }
+
+    /// <summary>
+    /// Picks the end screen's message and tint
     /// for the current mode and draws it via <see cref="EndScreenRenderer"/> on top of the world.
     /// </summary>
     private void AddEndScreenMessage(List<Glyph> glyphs)

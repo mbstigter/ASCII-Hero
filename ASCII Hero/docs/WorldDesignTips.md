@@ -28,6 +28,17 @@ changes gravity or the player's walk speed changes these numbers too.
   must be. Do not combine a 12-cell gap with a 5-row climb.
 - There is no grace time for jumping just after running off a ledge, so jumps right at the edge
   of a platform need a precise press.
+- The player keeps its footing on an edge while **at least half of one foot** (half a cell) is
+  still on it; with less, it slides off.
+
+## Stacking and edges
+
+- Anything that falls - crates, stones, enemies and the player - stays on what it stands on only
+  while **its middle is above it**. Something hanging more than halfway over an edge slides off.
+- Stack crates and stones so each one's middle is over the one below. A body resting across two
+  supports (a crate bridging a gap) is fine.
+- Keep an enemy's patrol range at least half its width inside the platform's edges, or it will
+  slide off at the end of its patrol.
 
 ## Falling
 

@@ -65,6 +65,6 @@ Start with the docs:
 
 ## Credits
 
-The game uses the Web437 IBM VGA 8x14 bitmap font from The Ultimate Oldschool PC Font Pack
+The game uses the WebPlus IBM VGA 8x16 bitmap font from The Ultimate Oldschool PC Font Pack
 (CC BY-SA 4.0). See
 [THIRD-PARTY-NOTICES.md](ASCII%20Hero/ASCII%20Hero.Client/wwwroot/fonts/THIRD-PARTY-NOTICES.md).

@@ -1,17 +1,17 @@
 /*
-    Bundled retro terminal font ("Web437 IBM VGA 8x14" from The Ultimate
+    Bundled retro terminal font ("WebPlus IBM VGA 8x16" from The Ultimate
     Oldschool PC Font Pack, CC BY-SA 4.0 - see wwwroot/fonts/THIRD-PARTY-NOTICES.md
     for full attribution).
 
-    This font is a true bitmap font natively sized at 8x14 pixels per
+    This font is a true bitmap font natively sized at 8x16 pixels per
     character. To keep every glyph crisp (not blurred by browser resizing),
     the game canvas must render text at an exact integer multiple of that
     native size (see game-interop.js and CanvasBridge for where this size is
     used).
 */
 @font-face {
-    font-family: 'Web437IbmVga8x14';
-    src: url('fonts/Web437_IBM_VGA_8x14.woff') format('woff');
+    font-family: 'WebPlusIbmVga8x16';
+    src: url('fonts/WebPlus_IBM_VGA_8x16.woff') format('woff');
     font-display: swap;
 }
 
@@ -27,7 +27,7 @@ html, body {
 /*
     Loading message shown by index.html until the game starts, in the same green on black as
     RenderConstants.DefaultForegroundColor/DefaultBackgroundColor - keep them in step.
-    28px is twice the font's native 14px height, so the text stays crisp.
+    32px is twice the font's native 16px height, so the text stays crisp.
 */
 .loading {
     display: flex;
@@ -37,8 +37,8 @@ html, body {
     inset: 0;
     background: #000000;
     color: #00ff00;
-    font-family: 'Web437IbmVga8x14', monospace;
-    font-size: 28px;
+    font-family: 'WebPlusIbmVga8x16', monospace;
+    font-size: 32px;
 }
 
 /* Fixed width of three characters, so "Loading" doesn't shift as the dots appear. */

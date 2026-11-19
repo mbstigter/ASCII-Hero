@@ -35,4 +35,16 @@ public class KinematicHazard2D : KinematicObject2D, IHazardBody, IEffectTrigger,
 
     /// <inheritdoc />
     public double KillImpactSpeed { get; set; } = GameDefaults.DefaultKillImpactSpeed;
+
+    /// <inheritdoc />
+    public double Health { get; set; } = GameDefaults.DefaultHazardHealth;
+
+    /// <inheritdoc />
+    public double RecoveryRemainingSeconds { get; set; }
+
+    /// <inheritdoc />
+    public string? HurtEffectClipName { get; set; }
+
+    /// <inheritdoc />
+    public string? HurtSoundName { get; set; }
 }

@@ -12,4 +12,11 @@ namespace ASCII_Hero.Client.Game.World;
 /// generically, the same way <see cref="IHazardBody"/>/<see cref="ICollectableBody"/> overlap
 /// detection does.
 /// </summary>
-public interface IKillerBody : IPhysicsBody;
+public interface IKillerBody : IPhysicsBody
+{
+    /// <summary>
+    /// Health a stomp removes from the <see cref="IKillableBody"/> landed on (default
+    /// <see cref="Constants.GameDefaults.DefaultStompDamage"/>, a full bar).
+    /// </summary>
+    double StompDamage { get; }
+}

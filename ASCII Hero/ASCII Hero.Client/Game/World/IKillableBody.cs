@@ -35,4 +35,30 @@ public interface IKillableBody
     /// an ordinary hazard hit.
     /// </summary>
     double KillImpactSpeed { get; }
+
+    /// <summary>
+    /// Remaining health, from 0 to the placement's <c>Health</c> key (default
+    /// <see cref="Constants.GameDefaults.DefaultHazardHealth"/>), mirroring <see cref="Player2D.Health"/>.
+    /// Stomps and thrown objects remove health; reaching 0 kills the hazard.
+    /// </summary>
+    double Health { get; set; }
+
+    /// <summary>
+    /// Seconds left of the safe window after surviving a hit (see
+    /// <see cref="Constants.GameDefaults.HazardRecoverySeconds"/>), during which it cannot be hurt again;
+    /// 0 when not recovering. Mirrors <see cref="Player2D.RecoveryRemainingSeconds"/>.
+    /// </summary>
+    double RecoveryRemainingSeconds { get; set; }
+
+    /// <summary>Whether this hazard is inside its post-hit safe window and cannot be hurt.</summary>
+    bool IsRecovering => RecoveryRemainingSeconds > 0;
+
+    /// <summary>
+    /// Optional clip (on this hazard's own sprite) played on it, following it, when it is hurt but
+    /// survives - from the placement's <c>HurtEffectClip</c> key. Null means no effect.
+    /// </summary>
+    string? HurtEffectClipName { get; }
+
+    /// <summary>Optional sound played when this hazard is hurt but survives - from the placement's <c>HurtSound</c> key.</summary>
+    string? HurtSoundName { get; }
 }

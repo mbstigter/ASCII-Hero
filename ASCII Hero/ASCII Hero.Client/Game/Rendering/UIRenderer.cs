@@ -15,6 +15,24 @@ public static class UIRenderer
     /// <summary>Character used for a <see cref="UIBar"/>'s empty cells.</summary>
     private const char EmptyChar = '░';
 
+    /// <summary>How long a glowing border (<see cref="GlowColor"/>) shows each tint of its cycle.</summary>
+    public const double GlowStepSeconds = 0.2;
+
+    /// <summary>
+    /// The tint of a glowing border <paramref name="elapsedSeconds"/> into its glow, cycling
+    /// dark -> normal -> light -> normal every <see cref="GlowStepSeconds"/>.
+    /// </summary>
+    public static string GlowColor(double elapsedSeconds, string darkColor, string color, string lightColor) =>
+        ((int)(elapsedSeconds / GlowStepSeconds) % 4) switch { 0 => darkColor, 2 => lightColor, _ => color };
+
+    /// <summary>
+    /// The border tint of a selected item (world-select thumbnail, gear ring slot)
+    /// <paramref name="selectedSeconds"/> after it was selected: light at first, then glowing from
+    /// light down and back up, so a selection that has just moved is always bright.
+    /// </summary>
+    public static string SelectionColor(double selectedSeconds, string darkColor, string color, string lightColor) =>
+        GlowColor(selectedSeconds + (2 * GlowStepSeconds), darkColor, color, lightColor);
+
     public static void AddFrame(List<Glyph> glyphs, UIFrame frame, double cellWidthPixels, double cellHeightPixels)
     {
         GlyphBuilder.AddBox(

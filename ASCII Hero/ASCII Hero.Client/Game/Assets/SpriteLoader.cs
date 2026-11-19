@@ -126,12 +126,15 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         var backTask = fileProvider.TryReadTextAsync($"{baseName}_backgroundcolors.txt");
         await Task.WhenAll(charsTask, foreTask, backTask);
 
-        var charsContent = charsTask.Result
-            ?? throw new FileNotFoundException($"Missing required characters layer for {assetName}/{clipName}.");
         var foreContent = foreTask.Result;
         var backContent = backTask.Result;
 
-        var charFrames = AssetTextReader.ParseCharsLayer(charsContent, emptyChar);
+        // A glow-only effect (a tint with nothing drawn) needs no drawing: it gets one blank cell.
+        IReadOnlyList<char[,]> charFrames = charsTask.Result is { } charsContent
+            ? AssetTextReader.ParseCharsLayer(charsContent, emptyChar)
+            : effectSettings.TintColor is not null
+                ? [new char[,] { { emptyChar } }]
+                : throw new FileNotFoundException($"Missing required characters layer for {assetName}/{clipName}.");
         var foreFrames = AssetTextReader.ParseSecondaryLayer(foreContent, charFrames, emptyChar);
         var backFrames = AssetTextReader.ParseSecondaryLayer(backContent, charFrames, emptyChar);
 

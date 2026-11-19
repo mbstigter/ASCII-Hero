@@ -869,6 +869,23 @@ public abstract class Body2D
     /// </summary>
     public bool IsGrounded => HasContact(Physics.ContactType.SurfaceBottom);
 
+    /// <summary>
+    /// Sideways acceleration (cells/second², signed) pulling this body off a ledge it overhangs:
+    /// non-zero while its center of mass lies outside the span it stands on (see
+    /// <see cref="Physics.TipSystem"/>). Set at the end of each collision pass and applied by
+    /// <see cref="Physics.PhysicsSystem"/> on the next step.
+    /// </summary>
+    public double TipAccelerationX { get; set; }
+
+    /// <summary>Whether this body is tipping off a ledge: its ground contact applies no friction and it never sleeps.</summary>
+    public bool IsTipping => TipAccelerationX != 0.0;
+
+    /// <summary>
+    /// How far (cells) this body's center of mass may lie past the edge of what it stands on
+    /// before it tips (see <see cref="Physics.TipSystem"/>). 0 by default: strict balance.
+    /// </summary>
+    public virtual double LedgeToleranceCells => 0.0;
+
     private static IEnumerable<Physics.ContactType> EnumerateFlags(Physics.ContactType type)
     {
         foreach (Physics.ContactType flag in Enum.GetValues<Physics.ContactType>())

@@ -9,7 +9,8 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// connected through surface contacts; static terrain does not connect islands, so two separate
 /// stacks on the same floor sleep and wake independently. An island only sleeps as a whole, so a
 /// body is never frozen while something it touches is still moving, and it only sleeps if every
-/// member is passive (<see cref="Body2D.CanSleep"/>) and none rests on a moving surface.
+/// member is passive (<see cref="Body2D.CanSleep"/>), none is tipping off a ledge (see
+/// <see cref="TipSystem"/>) and none rests on a moving surface.
 /// </summary>
 /// <remarks>
 /// Run once per physics step, at the end of <see cref="CollisionSystem.Resolve"/>, so it sees the
@@ -122,11 +123,11 @@ public class SleepSystem
 
     /// <summary>
     /// Whether this one body would allow its island to sleep: it is asleep already, or passive and
-    /// at rest long enough, and in both cases not touching a moving surface.
+    /// at rest long enough, and in both cases neither tipping off a ledge nor touching a moving surface.
     /// </summary>
     private static bool IsReadyToSleep(Body2D body)
     {
-        if (!body.CanSleep)
+        if (!body.CanSleep || body.IsTipping)
         {
             return false;
         }

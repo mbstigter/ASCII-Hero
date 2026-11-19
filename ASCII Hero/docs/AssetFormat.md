@@ -118,7 +118,7 @@ plus one `{AssetName}_settings.ini` per asset folder.
 
 | File suffix                | Contents                                                            |
 |------------------------------|----------------------------------------------------------------------|
-| `_characters.txt`           | The visible glyph for each cell. Required.                          |
+| `_characters.txt`           | The visible glyph for each cell. Required, except for a glow-only effect clip (see `TintColor`). |
 | `_foregroundcolors.txt`     | Foreground color code per cell (see `Global/ColorPalette.ini`). Optional.  |
 | `_backgroundcolors.txt`     | Background color code per cell (see `Global/ColorPalette.ini`). Optional.  |
 
@@ -302,10 +302,21 @@ multiple frames. If omitted, multi-frame clips remain static at frame `DefaultFr
   like a crumbled husk) from persisting.
 - `OffsetX` / `OffsetY` (optional, per-clip only, default `0`) — effect clips
   only: shift in cells of the effect relative to the body it plays for
-  (negative `OffsetY` = higher). Player effects follow the player while they
-  play; other effects stay where they were spawned.
+  (negative `OffsetY` = higher). Player effects, and a hazard's hurt effect,
+  follow their body while they play; other effects stay where they were spawned.
 - `TintColor` (optional, per-clip only) — effect clips that follow a body only:
   palette code that recolors the followed body's foreground while the effect plays.
+  A clip with a `TintColor` and no drawing files is a glow-only effect: nothing
+  is drawn, the body just glows. Enemies' `hurt` clips are glow-only, a short
+  red/orange blink:
+
+  ```ini
+  [Animation.hurt]
+  EffectDurationSeconds = 0.6
+  TintColor = L
+  TintAlternateColor = M
+  TintBlinkSeconds = 0.1
+  ```
 - `TintAlternateColor` (optional) — color the tint blinks against; when absent
   it blinks against the body's normal colors.
 - `TintBlinkSeconds` (optional) — length of each blink phase; when absent the
@@ -911,6 +922,8 @@ discoverable directly from the codebase rather than needing to be memorized sepa
 Valid values: `Player` (the player's spawn point and sprite - exactly one placement per
 world should use this), `StaticObject` (immovable terrain, e.g. a platform),
 `DynamicObject` (moves under its own velocity/gravity, e.g. a bouncing ball),
+`ThrowableObject` (a `DynamicObject` the player can pick up and throw, see
+"Throwable objects" below),
 `KinematicObject` (moves at a prescribed velocity, easing to rest at route ends - never
 affected by gravity, restitution, or `GravityAffected`/`Restitution` keys),
 `DynamicHazard` (a hazard that moves like a `DynamicObject`, e.g. a toxic leaf or a
@@ -1317,6 +1330,64 @@ it (default 5). A gentler touch from above - stepping or resting onto it - is
 an ordinary hit instead. For example `KillImpactSpeed = 0` makes any touch
 from above a squash, even standing on it; a high value requires a long fall.
 
+**`Health`, `HurtEffectClip` and `HurtSound` on killable hazards.** Optional,
+on any `*Hazard` placement with `Killable = true`. A killable hazard has
+health, just like the player: `Health` (more than 0, default 1) is how much hurt
+it takes before it is defeated. Each squash takes the player's `StompDamage`
+(default 1) and each thrown object hit takes that object's `Damage`. A hit it
+survives plays `HurtEffectClip` (a clip on the hazard's own sprite, following
+it) and `HurtSound`, and gives it a short safe moment in which it cannot be hurt
+again - it keeps moving and can still hurt the player meanwhile. When its health
+runs out it is defeated for good: `KillSound` plays and its `EffectClip` stays
+behind when `EffectPersists = true`. A squashed hazard that survives bounces the
+player off. With the defaults one squash defeats it.
+
+```ini
+[ToughSnake]
+Asset = Snake
+Kind = DynamicHazard
+Killable = true
+Health = 2              ; Two squashes, or four thrown stones of Damage 0.5
+HurtEffectClip = hurt   ; Glows over it when it is hurt but survives
+HurtSound = HazardHurt
+KillSound = HazardKill
+```
+
+**Throwable objects (`Kind = ThrowableObject`).** A loose object the player can
+pick up and throw. It behaves like a `DynamicObject` (falls, bounces by its
+material, settles) and is solid by default. Walking into it picks it up into
+the gear named by its required `Gear` key - but only when that gear is listed
+in `Global/Settings.ini` `[Gear]` (see §4.4); otherwise it is just a loose
+object. The action key throws the carried item (when no switch or gate is next
+to the player) from the side the player last faced. In flight it hurts a
+killable hazard it hits fast enough and cannot be picked up; once it settles it
+can be picked up again, unless it is single-use. While it lies loose, moving
+hazards pass through it without pushing it.
+
+| Key | Meaning |
+|---|---|
+| `Gear` | Required. The gear it is carried as |
+| `Damage` | How much of a hazard's `Health` one hit takes (default 0.5) |
+| `HitSpeed` | Minimum impact speed, cells/second, at which a hit counts (default 5) |
+| `Reusable` | `true` (default): can be picked up again after landing. `false`: used up on its first hazard hit or when it lands |
+| `ThrowSpeed` | Throw speed in cells/second, before the player's own speed is added (default 20) |
+| `ThrowAngle` | Throw angle in degrees above horizontal (default 30) |
+| `Sound` | Played when it hits a hazard |
+| `PickupSound` | Played when it is picked up |
+| `EffectClip` | Played where a single-use object is used up (e.g. a splat) |
+
+```ini
+[Stone]
+Asset = Stone
+Clip = small
+Kind = ThrowableObject
+Gear = Stone
+Damage = 0.5
+Restitution = 0.4      ; A few small hops before it settles
+Sound = ThrowableHit
+PickupSound = ThrowablePickup
+```
+
 The `Player` section may additionally override its own "muscle power" and
 target speeds, the same "force gain converging toward a target speed" concept
 that `DynamicHazard`'s `PatrolForceMultiplierX`/`PatrolCruiseSpeedX` expose
@@ -1359,6 +1430,9 @@ Kind = Player
 FallDamage = 0.25
 FallDamageImpactSpeed = 30
 ```
+
+**Squash strength.** `StompDamage` (default `1`) is how much of a killable
+hazard's `Health` one squash takes.
 
 The `Player` section
 asset) for specific situations: `HurtEffectClip` plays when the player
@@ -1695,21 +1769,24 @@ game (see `game-interop.js`'s `initialize`):
 
 ```ini
 [Render]
-FontFamily = "Web437IbmVga8x14", monospace
+FontFamily = "WebPlusIbmVga8x16", monospace
 ViewportColumns = 80
 ViewportRows = 25
 FontWidthPixels = 16
-FontHeightPixels = 28
+FontHeightPixels = 32
 ```
 
 - **`FontFamily`** — the CSS font family used to render the ASCII grid. Must
   already be available to the browser (e.g. via an `@font-face` declaration
   in app.css/standalone.css, or an installed system font) — naming a font
-  here does not itself load any new font asset.
+  here does not itself load any new font asset. Any character the font
+  lacks is silently drawn from a fallback font instead (different weight
+  and proportions, and it varies per machine), so sprites and worlds should
+  only use glyphs the bundled font actually contains.
 - **`FontWidthPixels`/`FontHeightPixels`** — mandatory; the final on-screen
   cell size (in pixels) used to render one character, normally an integer
   multiple of the font's own documented native size (e.g. the bundled font is
-  natively 8x14, so 16/28 here gives a 2x zoomed-in look) — a deliberately
+  natively 8x16, so 16/32 here gives a 2x zoomed-in look) — a deliberately
   non-uniform pair can squeeze/stretch the font in one direction if ever
   desired. There is no separate scale key: a browser's text-measuring API
   cannot reliably report a true bitmap font's real native pixel size (a
@@ -1722,6 +1799,23 @@ FontHeightPixels = 28
   `columns * cellWidthPixels` by `rows * cellHeightPixels` — never a fixed
   pixel constant — so it adapts automatically to whichever font size is
   configured.
+
+The `[Gear]` section lists the kinds of gear the player can carry, one per
+line as `Name = Icon`; the icon is the first character of the value. The list
+is game-wide: every world starts with all of them, empty. A `ThrowableObject`
+names its gear with its `Gear` key and can only be picked up when that gear is
+listed here, so commenting a line out switches that gear off everywhere. Keys
+are carried as the gear named `Key`, so a `Key` line is needed for keys to be
+picked up. The selected gear's icon and count are shown in the gear box next to
+the HUD; the action key throws it or, with `Key` selected, unlocks a matching
+gate. Holding `Tab` opens the gear ring with every listed gear in the order
+listed here; the first is selected at the start of a game.
+
+```ini
+[Gear]
+Stone = ●
+Key = ♀
+```
 
 ### 4.5 `Global/SoundLibrary.ini`
 

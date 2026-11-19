@@ -57,4 +57,14 @@ public sealed class InputStateTests
             Assert.IsTrue(input.IsConfirmKeyDown, code);
         }
     }
+
+    [TestMethod]
+    public void IsGearRingKeyDown_Tab()
+    {
+        var input = new InputState();
+        input.KeyDown("Tab");
+
+        Assert.IsTrue(input.IsGearRingKeyDown);
+        Assert.IsFalse(input.IsConfirmKeyDown);
+    }
 }

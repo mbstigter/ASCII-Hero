@@ -37,9 +37,9 @@ public enum CollectableType
     WorldEnd,
 
     /// <summary>
-    /// Removed on pickup like <see cref="Diamond"/>/<see cref="Ring"/>, and adds its required
-    /// <see cref="Key2D.LockName"/> to <see cref="Player2D.Keys"/>. A key without a <c>Lock</c>
-    /// name is inert. Opens a gate with the same lock name, see <see cref="World2D.TryOpenGate"/>.
+    /// Removed on pickup like <see cref="Diamond"/>/<see cref="Ring"/>, and carried in the player's
+    /// <see cref="Key2D.GearName"/> gear slot. A key without a <c>Lock</c> name (or without that slot
+    /// listed) is inert. Opens a gate with the same lock name, see <see cref="World2D.TryOpenGate"/>.
     /// </summary>
     Key,
 
