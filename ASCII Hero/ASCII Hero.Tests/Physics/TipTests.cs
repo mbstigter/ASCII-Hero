@@ -16,6 +16,7 @@ public sealed class TipTests
     private static async Task<(World2D World, ThrowableObject2D Below, ThrowableObject2D Above)> LoadAsync()
     {
         var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "Throwables");
+        Run(world, 4.0);
         var stones = world.Objects.OfType<ThrowableObject2D>().OrderBy(stone => stone.Position.X).ToList();
         return (world, stones[0], stones[1]);
     }

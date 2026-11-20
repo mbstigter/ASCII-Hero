@@ -18,11 +18,21 @@ public static class InteractionHandler
 
     /// <summary>
     /// A killable hazard's health ran out: it is queued for removal and its own effect (if
-    /// configured) persists as a permanent husk when EffectPersists is set.
+    /// configured) persists as a permanent husk when EffectPersists is set. A moving
+    /// <see cref="DynamicHazard2D"/> leaves that husk as a <see cref="CorpseObject2D"/> that falls to
+    /// the floor; any other hazard leaves a persistent <see cref="EffectInstance2D"/> where it was.
     /// </summary>
     public static void OnHazardKilled(World2D world, Body2D hazard, IKillableBody killable)
     {
-        SpawnEffectIfConfigured(hazard, world, killable.EffectPersists);
+        if (killable.EffectPersists && hazard is DynamicHazard2D { EffectClipName: { } corpseClipName } dynamicHazard)
+        {
+            SpawnCorpse(world, dynamicHazard, corpseClipName);
+        }
+        else
+        {
+            SpawnEffectIfConfigured(hazard, world, killable.EffectPersists);
+        }
+
         world.PlaySound(killable.KillSoundName);
         world.QueueRemoval(hazard);
     }
@@ -61,11 +71,11 @@ public static class InteractionHandler
     /// nothing happens during its safe window; otherwise it loses <paramref name="damage"/>. If that
     /// empties its health it is killed (<see cref="OnHazardKilled"/>, permanently); if it survives, its
     /// hurt sound and effect play and its own safe window
-    /// (<see cref="GameDefaults.HazardRecoverySeconds"/>) starts. Returns whether it was killed.
+    /// (<see cref="IHurtableBody.Recovery"/>) starts. Returns whether it was killed.
     /// </summary>
     public static bool DamageHazard(World2D world, Body2D hazard, IKillableBody killable, double damage)
     {
-        if (killable.IsRecovering || killable.Health <= 0)
+        if (killable.Recovery.IsActive || killable.Health <= 0)
         {
             return false;
         }
@@ -77,7 +87,7 @@ public static class InteractionHandler
             return true;
         }
 
-        killable.RecoveryRemainingSeconds = GameDefaults.HazardRecoverySeconds;
+        killable.Recovery.Start();
         world.PlaySound(killable.HurtSoundName);
         if (killable.HurtEffectClipName is { } hurtClipName)
         {
@@ -128,7 +138,7 @@ public static class InteractionHandler
     /// First frame of a fresh, ordinary (non-killing) hazard contact: if the moving body is the
     /// player, the hazard's damage is deducted first, and the player's hurt effect only plays if it
     /// survived - a fatal hit shows just the died effect. A survived hit also starts a short safe
-    /// window (<see cref="GameDefaults.HazardRecoverySeconds"/>) in which hazards can't hurt it again.
+    /// window (<see cref="Player2D.Recovery"/>) in which hazards can't hurt it again.
     /// A player already out of health (e.g. touching a hazard during the death delay) gets no sound or effect. If the deduction brings health to
     /// exactly 0, a Death transition starts: it costs a life, and GameLoop respawns (or ends the
     /// game) once the death effect has played. Any other moving body just plays its own effect.
@@ -149,7 +159,7 @@ public static class InteractionHandler
         world.PlaySound(hazard.SoundName);
         if (!DamagePlayer(world, player, ((IHazardBody)hazard).Damage))
         {
-            player.RecoveryRemainingSeconds = GameDefaults.HazardRecoverySeconds;
+            player.Recovery.Start();
             if (player.HurtEffectClipName is { } hurtClipName)
             {
                 SpawnEffect(player, hurtClipName, world);
@@ -377,6 +387,25 @@ public static class InteractionHandler
             SpawnEffect(player, portalArrivedEffectClipName, world);
             world.PendingTransition = PendingTransition.Arrive;
         }
+    }
+
+    /// <summary>
+    /// Leaves a <see cref="CorpseObject2D"/> playing <paramref name="clipName"/> where
+    /// <paramref name="hazard"/> was. It keeps the hazard's vertical speed (so one killed in mid-air
+    /// keeps falling) but not its sideways motion, and the hazard's material, so it lands and rests
+    /// like it would.
+    /// </summary>
+    private static void SpawnCorpse(World2D world, DynamicHazard2D hazard, string clipName)
+    {
+        var corpse = new CorpseObject2D();
+        corpse.Spawn(hazard.Sprite, clipName, frameIndex: 0, hazard.Position, new Vector2D(0, hazard.Velocity.Y), gravityAffected: true);
+        corpse.MaterialName = hazard.MaterialName;
+        corpse.Density = hazard.Density;
+        corpse.Friction = hazard.Friction;
+        corpse.Restitution = hazard.Restitution;
+        corpse.Hardness = hazard.Hardness;
+        corpse.Viscosity = hazard.Viscosity;
+        world.Objects.Add(corpse);
     }
 
     /// <summary>

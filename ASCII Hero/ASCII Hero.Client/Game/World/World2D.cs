@@ -302,7 +302,7 @@ public partial class World2D
         PlayerSpawnPosition = position;
         Player.Position = position;
         Player.Velocity = Vector2D.Zero;
-        Player.RecoveryRemainingSeconds = 0;
+        Player.Recovery.Clear();
         PendingTransition = World.PendingTransition.None;
         PendingPortal = null;
     }
@@ -372,6 +372,7 @@ public partial class World2D
         var blocked = Objects.Any(body =>
             !ReferenceEquals(body, Player)
             && body is not EffectInstance2D
+            && body is not CorpseObject2D
             && !body.IsPassable
             && body.CollisionRects.Any(rect => spawnRects.Any(rect.Overlaps)));
         if (blocked)
@@ -431,7 +432,7 @@ public partial class World2D
         Player.Position = RespawnPoint ?? PlayerSpawnPosition;
         Player.Velocity = Vector2D.Zero;
         Player.Health = GameDefaults.PlayerFullHealth;
-        Player.RecoveryRemainingSeconds = 0;
+        Player.Recovery.Clear();
     }
 
 }

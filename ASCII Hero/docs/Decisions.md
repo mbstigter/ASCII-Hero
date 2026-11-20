@@ -463,11 +463,11 @@ capture the "why" behind a decision without needing a lengthy narrative.
   checkpoints near the floor instead. World edges record no
   contacts and so never cause fall damage.
 - **A survived hazard hit starts a safe window.** For
-  `GameDefaults.HazardRecoverySeconds` (1 second, a code constant, not a world
-  setting) after a non-fatal hazard hit, hazards can't hurt the player; hazard
-  contacts are not recorded during it, so one still touching when it ends hurts
-  immediately. It is a timer on the player (ticked per physics step), not a
-  per-hazard cooldown, so several hazards cannot stack hits either. Hard
+  `GameDefaults.DefaultPlayerRecoverySeconds` (1 second; the player's
+  `RecoverySeconds` key overrides it) after a non-fatal hazard hit, hazards can't
+  hurt the player; hazard contacts are not recorded during it, so one still touching
+  when it ends hurts immediately. It is a timer on the player (ticked per physics
+  step), not a per-hazard cooldown, so several hazards cannot stack hits either. Hard
   landings neither start nor respect it: a hard fall always hurts. Respawn
   clears it.
 - **Hurt and died effects are mutually exclusive.** Damage is applied before
@@ -488,10 +488,10 @@ capture the "why" behind a decision without needing a lengthy narrative.
   that a squashed hazard that survives bounces the squasher up
   (`GameDefaults.StompBounceSpeed`).
 - **Killable hazards have health that mirrors the player's.** `Health` (default 1),
-  a post-hit safe window (`GameDefaults.HazardRecoverySeconds`) with a following
+  a post-hit safe window (`GameDefaults.DefaultHazardRecoverySeconds`, 0.5 s) with a following
   `HurtEffectClip` and `HurtSound`, and death at 0. There is no stun: a hurt hazard
-  keeps moving and can still hurt the player. Death is permanent (removed; the
-  `EffectPersists` husk stays). A squash takes the killer's `StompDamage` (default 1),
+  keeps moving and can still hurt the player, unless its `Damage` is 0: then it is harmless to touch (no sound, no effect) yet still killable. Death is permanent (removed; the
+  `EffectPersists` husk stays; a moving `DynamicHazard2D` leaves it as a decorative `CorpseObject2D` physics body that falls and rests on the floor and that all other bodies pass through, other hazards a static `EffectInstance2D`). A squash takes the killer's `StompDamage` (default 1),
   so the defaults keep the one-squash kill.
 - **Throwables are ordinary dynamic objects** (`ThrowableObject2D : DynamicObject2D`).
   They bounce and settle by material; there is no faked rolling. A thrown one hurts

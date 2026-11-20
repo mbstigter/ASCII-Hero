@@ -40,7 +40,7 @@ public class KinematicHazard2D : KinematicObject2D, IHazardBody, IEffectTrigger,
     public double Health { get; set; } = GameDefaults.DefaultHazardHealth;
 
     /// <inheritdoc />
-    public double RecoveryRemainingSeconds { get; set; }
+    public HitRecovery Recovery { get; } = new(GameDefaults.DefaultHazardRecoverySeconds);
 
     /// <inheritdoc />
     public string? HurtEffectClipName { get; set; }

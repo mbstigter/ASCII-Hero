@@ -458,7 +458,7 @@ public class DynamicObject2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAf
     /// flip facing to match whichever direction a fast-moving platform happens to be carrying this
     /// body, even while its own patrol intent hasn't changed.
     /// </summary>
-    public void UpdatePose()
+    public virtual void UpdatePose()
     {
         SetPose(Sprite, Pose, ResolveHorizontalFacing());
     }

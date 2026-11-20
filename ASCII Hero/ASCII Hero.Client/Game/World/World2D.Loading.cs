@@ -407,6 +407,7 @@ public partial class World2D
         }
 
         var hurtSoundName = section.Text("HurtSound");
+        var hazardRecoverySeconds = section.FiniteNonNegativeNumber("RecoverySeconds") ?? GameDefaults.DefaultHazardRecoverySeconds;
 
         T SpawnTwoState<T>(T body) where T : TwoStateObject2D
         {
@@ -481,6 +482,7 @@ public partial class World2D
                     KillImpactSpeed = killImpactSpeed,
                     Damage = damage,
                     Health = hazardHealth,
+                    Recovery = { DurationSeconds = hazardRecoverySeconds },
                     HurtEffectClipName = effects.Hurt,
                     HurtSoundName = hurtSoundName,
                 };
@@ -506,6 +508,7 @@ public partial class World2D
                     KillImpactSpeed = killImpactSpeed,
                     Damage = damage,
                     Health = hazardHealth,
+                    Recovery = { DurationSeconds = hazardRecoverySeconds },
                     HurtEffectClipName = effects.Hurt,
                     HurtSoundName = hurtSoundName,
                 };
@@ -524,6 +527,7 @@ public partial class World2D
                     KillImpactSpeed = killImpactSpeed,
                     Damage = damage,
                     Health = hazardHealth,
+                    Recovery = { DurationSeconds = hazardRecoverySeconds },
                     HurtEffectClipName = effects.Hurt,
                     HurtSoundName = hurtSoundName,
                 };
@@ -674,6 +678,7 @@ public partial class World2D
         player.PortalArrivedSoundName = section.Text("PortalArrivedSound");
         player.Lives = world.StartingLives;
         player.Health = GameDefaults.PlayerFullHealth;
+        player.Recovery.DurationSeconds = section.FiniteNonNegativeNumber("RecoverySeconds") ?? GameDefaults.DefaultPlayerRecoverySeconds;
         ApplyMaterial(world, player, section);
         player.MotorForceMultiplier = section.Number("MotorForceMultiplier") ?? player.MotorForceMultiplier;
         player.WalkSpeed = section.Number("WalkSpeed") ?? player.WalkSpeed;

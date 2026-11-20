@@ -281,11 +281,18 @@ public static class GameDefaults
     public const double DefaultFallDamage = 0.2;
 
     /// <summary>
-    /// Length, in seconds, of the safe window after the player survives a hazard hit during which
-    /// hazards cannot hurt it again (see <see cref="World.Player2D.RecoveryRemainingSeconds"/>).
-    /// Hard landings are not affected.
+    /// Default length, in seconds, of the safe window after the player survives a hazard hit during
+    /// which hazards cannot hurt it again (see <see cref="World.Player2D.Recovery"/>). Hard landings
+    /// are not affected. Overridable via the player's <c>RecoverySeconds</c> ini key.
     /// </summary>
-    public const double HazardRecoverySeconds = 1.0;
+    public const double DefaultPlayerRecoverySeconds = 1.0;
+
+    /// <summary>
+    /// Default length, in seconds, of the safe window after a killable hazard survives a hit (see
+    /// <see cref="World.IHurtableBody.Recovery"/>); shorter than the player's so a hazard can be
+    /// hit in quick succession. Overridable per placement via the <c>RecoverySeconds</c> ini key.
+    /// </summary>
+    public const double DefaultHazardRecoverySeconds = 0.5;
 
     /// <summary>
     /// How far (cells) the player's center of mass may lie past the edge of what it stands on

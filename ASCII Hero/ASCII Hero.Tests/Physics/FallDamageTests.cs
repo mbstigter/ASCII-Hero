@@ -135,7 +135,7 @@ public sealed class FallDamageTests
     {
         var world = await LoadGroundedPlayerAsync();
         var player = world.Player;
-        player.RecoveryRemainingSeconds = GameDefaults.HazardRecoverySeconds;
+        player.Recovery.Start();
 
         LandAt(world, player.FallDamageImpactSpeed * 1.2);
 

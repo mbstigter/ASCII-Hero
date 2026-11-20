@@ -32,6 +32,7 @@ public sealed class HazardInteractionTests
     public async Task HardLandingOnSolidHazard_KillsIt()
     {
         var (world, snake) = await LoadSnakeAsync();
+        snake.Health = 1;
         var player = world.Player;
         player.Position = new Vector2D(snake.Position.X, snake.Position.Y - player.Size.Y + Penetration);
         player.Velocity = new Vector2D(0, snake.KillImpactSpeed * 2);
@@ -41,12 +42,75 @@ public sealed class HazardInteractionTests
 
         Assert.DoesNotContain(snake, world.Objects);
         Assert.AreEqual(health, player.Health);
+        Assert.IsTrue(world.Objects.OfType<CorpseObject2D>().Any(), "A defeated snake should leave its body behind.");
+    }
+
+    [TestMethod]
+    public async Task Corpse_IsPassableToThePlayerAndKeepsFallingUnderGravity()
+    {
+        var (world, snake) = await LoadSnakeAsync();
+        snake.Health = 1;
+        var player = world.Player;
+        player.Position = new Vector2D(snake.Position.X, snake.Position.Y - player.Size.Y + Penetration);
+        player.Velocity = new Vector2D(0, snake.KillImpactSpeed * 2);
+        Resolve(world);
+        var corpse = world.Objects.OfType<CorpseObject2D>().Single();
+        var corpseHeight = corpse.Position.Y;
+
+        player.Position = corpse.Position;
+        player.Velocity = new Vector2D(0, 0);
+        var health = player.Health;
+        Resolve(world);
+
+        Assert.AreEqual(health, player.Health, "A corpse is not a hazard.");
+        Assert.IsTrue(corpse.GravityAffected);
+        Assert.IsFalse(corpse is IHazardBody);
+        Assert.AreEqual(corpseHeight, corpse.Position.Y, 1e-9);
+    }
+
+    [TestMethod]
+    public async Task CorpseDroppedInMidAir_FallsToTheFloorAndStaysThere()
+    {
+        var (world, snake) = await LoadSnakeAsync();
+        snake.Health = 1;
+        var player = world.Player;
+        player.Position = new Vector2D(snake.Position.X, snake.Position.Y - player.Size.Y + Penetration);
+        player.Velocity = new Vector2D(0, snake.KillImpactSpeed * 2);
+        Resolve(world);
+        var corpse = world.Objects.OfType<CorpseObject2D>().Single();
+        var floorY = corpse.Position.Y;
+        corpse.Position = new Vector2D(corpse.Position.X, floorY - 3);
+        corpse.Velocity = new Vector2D(0, 0);
+
+        var input = new InputState();
+        var physics = new PhysicsSystem();
+        var collision = new CollisionSystem();
+        physics.Reset(input);
+        for (var i = 0; i < 300; i++)
+        {
+            physics.Step(world, input, PhysicsConstants.FixedPhysicsStepSeconds);
+            collision.Resolve(world, PhysicsConstants.FixedPhysicsStepSeconds);
+            world.ApplyPendingRemovals();
+        }
+
+        var restingY = corpse.Position.Y;
+        Assert.IsGreaterThan(floorY - 3 + 1, restingY, "The corpse should have fallen.");
+
+        for (var i = 0; i < 60; i++)
+        {
+            physics.Step(world, input, PhysicsConstants.FixedPhysicsStepSeconds);
+            collision.Resolve(world, PhysicsConstants.FixedPhysicsStepSeconds);
+        }
+
+        Assert.AreEqual(restingY, corpse.Position.Y, 0.05, "The corpse should rest on the floor.");
+        Assert.Contains(corpse, world.Objects);
     }
 
     [TestMethod]
     public async Task FallDamageSpeedLandingOnSolidHazard_KillsWithoutFallDamage()
     {
         var (world, snake) = await LoadSnakeAsync();
+        snake.Health = 1;
         var player = world.Player;
         player.Position = new Vector2D(snake.Position.X, snake.Position.Y - player.Size.Y + Penetration);
         player.Velocity = new Vector2D(0, player.FallDamageImpactSpeed * 1.5);
@@ -95,7 +159,7 @@ public sealed class HazardInteractionTests
             snake.Position = snakePosition;
             snake.Velocity = new Vector2D(0, 0);
             player.Health = health;
-            player.RecoveryRemainingSeconds = 0;
+            player.Recovery.Clear();
             player.Position = new Vector2D(x: snakeRects.Min(rect => rect.Left) - playerRightOffset + Penetration, y: y);
             player.Velocity = new Vector2D(snake.KillImpactSpeed * 4, 0);
 
@@ -122,7 +186,7 @@ public sealed class HazardInteractionTests
 
         Resolve(world);
 
-        Assert.AreEqual(GameDefaults.HazardRecoverySeconds, player.RecoveryRemainingSeconds, 1e-9);
+        Assert.AreEqual(GameDefaults.DefaultPlayerRecoverySeconds, player.Recovery.RemainingSeconds, 1e-9);
     }
 
     [TestMethod]
@@ -131,7 +195,7 @@ public sealed class HazardInteractionTests
         var (world, snake) = await LoadSnakeAsync();
         snake.Damage = 0.1;
         var player = world.Player;
-        player.RecoveryRemainingSeconds = GameDefaults.HazardRecoverySeconds;
+        player.Recovery.Start();
         player.Position = new Vector2D(snake.Position.X, snake.Position.Y - player.Size.Y + Penetration);
         player.Velocity = new Vector2D(0, snake.KillImpactSpeed / 2);
         var health = player.Health;

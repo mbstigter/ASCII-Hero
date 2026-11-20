@@ -4,6 +4,17 @@ Practical rules of thumb for laying out worlds in the `*_objects.txt` grids. All
 grid cells. They assume the default player and the default gravity (`Gravity = 40`); a world that
 changes gravity or the player's walk speed changes these numbers too.
 
+## Placing objects
+
+- **The cell you mark in the objects grid is the object's top-left corner.** Everything the
+  object covers extends to the right and down from that cell, so mark the top-left cell of
+  where you want it, not its middle or bottom.
+- This holds for every object and every frame. A sprite that changes size while it plays
+  keeps its top-left corner fixed and grows or shrinks from there, to the right and down only.
+- So design animated objects with that corner in mind. An object that should grow **left or
+  up** cannot move its corner: author every frame at full size and leave the not-yet-extended
+  cells empty. Then mark the top-left cell of the full-size sprite.
+
 ## The player
 
 - The player is **3 cells wide and 3 cells tall**.

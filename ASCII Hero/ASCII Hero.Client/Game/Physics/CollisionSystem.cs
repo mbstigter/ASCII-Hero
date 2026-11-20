@@ -84,12 +84,12 @@ public class CollisionSystem
     public void Resolve(World2D world, double stepSeconds)
     {
         _stepSeconds = stepSeconds;
-        world.Player.RecoveryRemainingSeconds = Math.Max(0, world.Player.RecoveryRemainingSeconds - stepSeconds);
+        world.Player.Recovery.Tick(stepSeconds);
         foreach (var body in world.Objects)
         {
-            if (body is IKillableBody { RecoveryRemainingSeconds: > 0 } recovering)
+            if (body is IHurtableBody hurtable)
             {
-                recovering.RecoveryRemainingSeconds = Math.Max(0, recovering.RecoveryRemainingSeconds - stepSeconds);
+                hurtable.Recovery.Tick(stepSeconds);
             }
         }
 
@@ -464,7 +464,7 @@ public class CollisionSystem
         // to world.Objects, and hazards can be queued for removal mid-loop.
         foreach (var body in world.Objects.ToList())
         {
-            if (body is not IPhysicsBody movingBody)
+            if (body is not IPhysicsBody movingBody || body is CorpseObject2D)
             {
                 continue;
             }
@@ -513,7 +513,14 @@ public class CollisionSystem
                 // frame of a fresh contact so a sustained contact doesn't repeat every frame.
                 // During the player's post-hazard-hit safe window the contact is not recorded at all,
                 // so a hazard still touching the player when the window ends hurts it then.
-                if (body is Player2D { IsRecovering: true })
+                if (body is Player2D { Recovery.IsActive: true })
+                {
+                    continue;
+                }
+
+                // A hazard that takes nothing (Damage 0) is harmless to touch: no sound, no effect,
+                // no safe window. It can still be stomped or struck above.
+                if (hazard is IHazardBody { Damage: <= 0 })
                 {
                     continue;
                 }
@@ -1383,10 +1390,12 @@ public class CollisionSystem
     /// Whether two moving bodies skip collision response with each other entirely (no push, no
     /// wake). A <see cref="ThrowableObject2D"/> that is not in flight and a moving hazard pass
     /// through each other, so a patrolling hazard never shoves a loose throwable along; a thrown
-    /// one stays solid against hazards, so it still hits and bounces off them.
+    /// one stays solid against hazards, so it still hits and bounces off them. A
+    /// <see cref="CorpseObject2D"/> is ignored by every other moving body.
     /// </summary>
     private static bool IgnoresMoverCollision(Body2D a, Body2D b) =>
-        IsLooseThrowableAgainstHazard(a, b) || IsLooseThrowableAgainstHazard(b, a);
+        a is CorpseObject2D || b is CorpseObject2D
+        || IsLooseThrowableAgainstHazard(a, b) || IsLooseThrowableAgainstHazard(b, a);
 
     private static bool IsLooseThrowableAgainstHazard(Body2D throwable, Body2D hazard) =>
         throwable is ThrowableObject2D { IsThrown: false } && hazard is IHazardBody;

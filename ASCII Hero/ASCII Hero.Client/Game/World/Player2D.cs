@@ -4,7 +4,7 @@ using ASCII_Hero.Client.Game.Constants;
 namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>The player-controlled character, backed by the loaded "Player" sprite asset.</summary>
-public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected, ICollectorBody, IKillerBody, IClimberBody, IHangerBody, ISwimmerBody, IPosedBody, IMotorBody
+public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected, ICollectorBody, IKillerBody, IClimberBody, IHangerBody, ISwimmerBody, IPosedBody, IMotorBody, IHurtableBody
 {
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }
@@ -238,13 +238,11 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     public double FallDamageImpactSpeed { get; set; } = GameDefaults.DefaultFallDamageImpactSpeed;
 
     /// <summary>
-    /// Seconds left of the safe window after surviving a hazard hit (see
-    /// <see cref="GameDefaults.HazardRecoverySeconds"/>); 0 when not recovering.
+    /// The safe window after surviving a hazard hit, during which hazards cannot hurt the player
+    /// (hard landings are not affected). Its length is <see cref="GameDefaults.DefaultPlayerRecoverySeconds"/>
+    /// unless the player's <c>RecoverySeconds</c> ini key overrides it.
     /// </summary>
-    public double RecoveryRemainingSeconds { get; set; }
-
-    /// <summary>Whether the player is inside its post-hit safe window and cannot be hurt by hazards.</summary>
-    public bool IsRecovering => RecoveryRemainingSeconds > 0;
+    public HitRecovery Recovery { get; } = new(GameDefaults.DefaultPlayerRecoverySeconds);
 
     /// <summary>Remaining lives (shown in the HUD). Lost when <see cref="Health"/> runs out, gained every <see cref="World2D.RingsPerLife"/> rings.</summary>
     public int Lives { get; set; } = GameDefaults.PlayerStartingLives;

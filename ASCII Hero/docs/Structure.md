@@ -252,7 +252,7 @@ The live game state and the entity types that make it up.
 	per-type pickup behavior. `Checkpoint`/`WorldEnd` typically set
 	`EffectPersists = true` so their pickup effect remains in the removed
 	collectable's place as a permanent "already used" marker, the same way a
-	killed hazard's effect can persist as a husk.
+	killed hazard's effect can persist as a husk (a killed `DynamicHazard2D` instead leaves a `CorpseObject2D`, a passable gravity-affected body that drops to the floor).
   - `EffectInstance2D` - a purely cosmetic, non-collidable body that plays a
 	short visual effect clip (a pickup fade, a kill "crumble") and then
 	either self-removes or persists as a permanent decorative husk. An
@@ -317,8 +317,10 @@ The live game state and the entity types that make it up.
   - `IKillableBody` - can be hurt and killed by a qualifying contact; carries real
 	state (`IsKillable`, `EffectPersists`, `KillImpactSpeed`) since not every instance of an
 	otherwise-killable type should be killable in every placement, plus health mirroring the
-	player's: `Health`, a post-hit safe window (`RecoveryRemainingSeconds`/`IsRecovering`,
-	`GameDefaults.HazardRecoverySeconds`, ticked down by `CollisionSystem`) and its hurt
+	player's via `IHurtableBody` (also implemented by `Player2D`): `Health`, a post-hit safe
+	window (`Recovery`, a `HitRecovery` with its own per-body duration, default
+	`GameDefaults.DefaultHazardRecoverySeconds` vs the player's `DefaultPlayerRecoverySeconds`;
+	one loop in `CollisionSystem.Resolve` ticks every body's) and its hurt
 	feedback (`HurtEffectClipName`, which follows the hazard, and `HurtSoundName`). Damage is
 	applied by `InteractionHandler.DamageHazard`; at 0 health it is removed for good.
   - `ThrowableObject2D` - a `DynamicObject2D` the player picks up into a `Gear2D` slot
@@ -477,7 +479,7 @@ The live game state and the entity types that make it up.
   history only; fall damage = the player's highest non-hazard bottom-contact
   impact speed this step reaching `Player2D.FallDamageImpactSpeed`, checked by
   `ResolveFallDamage` right after hazards/collectables; while
-  `Player2D.IsRecovering` (post-hazard-hit safe window, ticked down at the start of
+  `Player2D.Recovery.IsActive` (post-hazard-hit safe window, ticked down at the start of
   each `Resolve`) the player's hazard contacts are skipped and not recorded;
   what each interaction does - kills, damage (including fall damage via
   `InteractionHandler.OnHardLanding`), lives, score,

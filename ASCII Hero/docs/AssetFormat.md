@@ -1321,7 +1321,7 @@ Sound = RingPickup    ; Played when the player picks it up
 **`Damage` on hazards.** Optional, on any `*Hazard` placement: the share of a
 full health bar one hit removes (default 1, a whole bar, so the player loses a
 life at once). For example `Damage = 0.2` takes a fifth of the bar and
-`Damage = 0.5` half of it. A hit costing the last of the bar costs one life.
+`Damage = 0.5` half of it. A hit costing the last of the bar costs one life. `Damage = 0` makes the hazard harmless: touching it does nothing (no sound, no effect), though a killable one can still be squashed or hit.
 
 **`KillImpactSpeed` on killable hazards.** Optional, on any `*Hazard`
 placement with `Killable = true`: the minimum downward speed (cells per
@@ -1330,26 +1330,28 @@ it (default 5). A gentler touch from above - stepping or resting onto it - is
 an ordinary hit instead. For example `KillImpactSpeed = 0` makes any touch
 from above a squash, even standing on it; a high value requires a long fall.
 
-**`Health`, `HurtEffectClip` and `HurtSound` on killable hazards.** Optional,
+**`Health`, `HurtEffectClip`, `HurtSound` and `RecoverySeconds` on killable hazards.** Optional,
 on any `*Hazard` placement with `Killable = true`. A killable hazard has
 health, just like the player: `Health` (more than 0, default 1) is how much hurt
 it takes before it is defeated. Each squash takes the player's `StompDamage`
 (default 1) and each thrown object hit takes that object's `Damage`. A hit it
 survives plays `HurtEffectClip` (a clip on the hazard's own sprite, following
-it) and `HurtSound`, and gives it a short safe moment in which it cannot be hurt
-again - it keeps moving and can still hurt the player meanwhile. When its health
+it) and `HurtSound`, and gives it a short safe moment (`RecoverySeconds`, default `0.5`)
+in which it cannot be hurt again - it keeps moving and can still hurt the player
+meanwhile. When its health
 runs out it is defeated for good: `KillSound` plays and its `EffectClip` stays
 behind when `EffectPersists = true`. A squashed hazard that survives bounces the
 player off. With the defaults one squash defeats it.
 
 ```ini
-[ToughSnake]
+[Snake]
 Asset = Snake
 Kind = DynamicHazard
 Killable = true
 Health = 2              ; Two squashes, or four thrown stones of Damage 0.5
 HurtEffectClip = hurt   ; Glows over it when it is hurt but survives
 HurtSound = HazardHurt
+RecoverySeconds = 0.3   ; Can be hit again after 0.3 seconds
 KillSound = HazardKill
 ```
 
@@ -1429,6 +1431,19 @@ Clip = walk_idle
 Kind = Player
 FallDamage = 0.25
 FallDamageImpactSpeed = 30
+```
+
+**Safe moment after a hit.** `RecoverySeconds` (default `1`) is how long the player
+cannot be hurt by hazards again after surviving a hazard hit. Killable hazards have
+the same key with their own default (see above), so each can be tuned separately.
+Hard landings ignore it.
+
+```ini
+[Player]
+Asset = Player
+Clip = walk_idle
+Kind = Player
+RecoverySeconds = 1.5
 ```
 
 **Squash strength.** `StompDamage` (default `1`) is how much of a killable

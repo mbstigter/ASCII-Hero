@@ -7,9 +7,10 @@ namespace ASCII_Hero.Client.Game.World;
 /// per-instance state: implementing it unconditionally with <see cref="IsKillable"/> always true would
 /// make every instance of the implementing class killable in every world with no way to opt out, so
 /// <see cref="Physics.CollisionSystem"/> must check <c>body is IKillableBody { IsKillable: true }</c>,
-/// not just interface presence.
+/// not just interface presence. Its health (stomps and thrown objects remove it; 0 kills the hazard),
+/// safe window and hurt effect come from <see cref="IHurtableBody"/>, shared with the player.
 /// </summary>
-public interface IKillableBody
+public interface IKillableBody : IHurtableBody
 {
     /// <summary>Whether this instance can be killed at all, from the placement's <c>Killable</c> key.</summary>
     bool IsKillable { get; }
@@ -35,29 +36,6 @@ public interface IKillableBody
     /// an ordinary hazard hit.
     /// </summary>
     double KillImpactSpeed { get; }
-
-    /// <summary>
-    /// Remaining health, from 0 to the placement's <c>Health</c> key (default
-    /// <see cref="Constants.GameDefaults.DefaultHazardHealth"/>), mirroring <see cref="Player2D.Health"/>.
-    /// Stomps and thrown objects remove health; reaching 0 kills the hazard.
-    /// </summary>
-    double Health { get; set; }
-
-    /// <summary>
-    /// Seconds left of the safe window after surviving a hit (see
-    /// <see cref="Constants.GameDefaults.HazardRecoverySeconds"/>), during which it cannot be hurt again;
-    /// 0 when not recovering. Mirrors <see cref="Player2D.RecoveryRemainingSeconds"/>.
-    /// </summary>
-    double RecoveryRemainingSeconds { get; set; }
-
-    /// <summary>Whether this hazard is inside its post-hit safe window and cannot be hurt.</summary>
-    bool IsRecovering => RecoveryRemainingSeconds > 0;
-
-    /// <summary>
-    /// Optional clip (on this hazard's own sprite) played on it, following it, when it is hurt but
-    /// survives - from the placement's <c>HurtEffectClip</c> key. Null means no effect.
-    /// </summary>
-    string? HurtEffectClipName { get; }
 
     /// <summary>Optional sound played when this hazard is hurt but survives - from the placement's <c>HurtSound</c> key.</summary>
     string? HurtSoundName { get; }

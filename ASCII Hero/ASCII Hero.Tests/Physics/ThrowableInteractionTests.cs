@@ -66,14 +66,14 @@ public sealed class ThrowableInteractionTests
 
         Assert.Contains(snake, world.Objects);
         Assert.AreEqual(1.0 - rock.Damage, snake.Health, 1e-9);
-        Assert.AreEqual(GameDefaults.HazardRecoverySeconds, snake.RecoveryRemainingSeconds, 1e-9);
+        Assert.AreEqual(GameDefaults.DefaultHazardRecoverySeconds, snake.Recovery.RemainingSeconds, 1e-9);
     }
 
     [TestMethod]
     public async Task ThrownRockHitDuringRecovery_DoesNotHurt()
     {
         var (world, snake, rock) = await LoadAsync();
-        snake.RecoveryRemainingSeconds = GameDefaults.HazardRecoverySeconds;
+        snake.Recovery.Start();
         DropOnto(rock, snake);
 
         Resolve(world);
@@ -195,7 +195,7 @@ public sealed class ThrowableInteractionTests
 
         Assert.Contains(snake, world.Objects);
         Assert.AreEqual(2.0 - player.StompDamage, snake.Health, 1e-9);
-        Assert.IsGreaterThan(0.0, snake.RecoveryRemainingSeconds);
+        Assert.IsGreaterThan(0.0, snake.Recovery.RemainingSeconds);
         Assert.IsLessThanOrEqualTo(-GameDefaults.StompBounceSpeed, player.Velocity.Y);
         Assert.AreEqual(health, player.Health);
     }

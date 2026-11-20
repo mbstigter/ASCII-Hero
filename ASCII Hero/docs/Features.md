@@ -106,7 +106,9 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
 - **Enemy health.** A killable hazard has `Health` (default 1), just like the player. A
   squash or a thrown object takes some of it; a hit it survives plays its `HurtEffectClip`
   and `HurtSound` and gives it a short safe moment, and a squashed survivor bounces the
-  player off. When its health runs out it is defeated for good.
+  player off. When its health runs out it is defeated for good, leaving its `died`
+  clip behind as a corpse; a flying or falling enemy's corpse drops to the floor and stays,
+  and everything passes through it.
 
 ### Throwing and gear
 
