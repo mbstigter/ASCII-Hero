@@ -276,6 +276,14 @@ capture the "why" behind a decision without needing a lengthy narrative.
   decides whether it toggles or only turns on. A gate is key-operated (`Lock`, stays
   open) or switch-operated (`Link`), never both. Hazards operating switches are not
   implemented.
+- **Timed on/off is a capability of `TwoStateObject2D`**, not a separate system: optional
+  `OnSeconds` (and `OffSeconds`, defaulting to `OnSeconds`) make any two-state object
+  alternate by itself, ticked by `AnimationSystem`. A hazard that blinks is a
+  `TimedHazard2D` (hurts only while on, via `IHazardBody.IsHarmful`); a hazard is static,
+  moving, or timed - a moving blinking hazard is not supported. The off clip is optional
+  for it: no `Clip` means nothing is drawn while off.
+- **Touching a hazard affects only the player** (plus stomps and thrown stones on killable
+  hazards): other moving bodies, such as patrolling enemies, are not hurt or shown an effect.
 - **A body's own force/impulse (motor force, jump-off) is never scaled by the ambient
   medium.** A medium resists self-propelled motion only through its passive buoyancy and
   quadratic drag above, which already grow with speed and frontal area. Force gains
@@ -543,7 +551,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
   only that world select draws no box around unselected worlds, while the ring
   draws every slot in a dark box.
 - **The action key does one thing per press, in priority order:** operate a switch
-  in reach, else unlock a key gate in reach with the selected gear (the Key slot),
+  else open/close a key gate in reach
   else throw from the selected gear (`World2D.TryThrow`; nothing for a key).
   A thrown item appears just in front of the player, on the side it last faced, at
   head height, flying off at the object's `ThrowSpeed`/`ThrowAngle` plus the player's
@@ -584,8 +592,10 @@ capture the "why" behind a decision without needing a lengthy narrative.
   `Key` is removed on pickup and goes into the `Key` gear slot (inert without a
   `Lock` name or that slot; the lock name lives on `Key2D`, not on
   `Body2D`); a `Gate2D` with a matching `Lock` is opened by the action key
-  (`E`/`Enter`) when the player is within one cell of it with the Key gear selected,
-  using up one matching key, and then stays open.
+  (`E`/`Enter`) when the player is within one cell of it with the Key gear selected;
+  the same press closes it again (refused while a solid moving body is in the gate).
+  Keys are permanent (never used up) and carry across worlds, so lock names must be
+  unique across a world and its sub-worlds. Key gates stay key-only (no `Link`).
   `Checkpoint`/`WorldEnd` are also removed on
   pickup like every other collectable; a collectable's own
   `Collectable2D.EffectPersists` (mirroring `IKillableBody.EffectPersists`

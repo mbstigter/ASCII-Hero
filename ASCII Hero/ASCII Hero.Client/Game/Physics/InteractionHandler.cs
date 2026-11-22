@@ -141,13 +141,12 @@ public static class InteractionHandler
     /// window (<see cref="Player2D.Recovery"/>) in which hazards can't hurt it again.
     /// A player already out of health (e.g. touching a hazard during the death delay) gets no sound or effect. If the deduction brings health to
     /// exactly 0, a Death transition starts: it costs a life, and GameLoop respawns (or ends the
-    /// game) once the death effect has played. Any other moving body just plays its own effect.
+    /// game) once the death effect has played. Any other moving body is unaffected by touching a hazard.
     /// </summary>
     public static void OnHazardHit(World2D world, Body2D body, Body2D hazard)
     {
         if (body is not Player2D player)
         {
-            SpawnEffectIfConfigured(body, world);
             return;
         }
 

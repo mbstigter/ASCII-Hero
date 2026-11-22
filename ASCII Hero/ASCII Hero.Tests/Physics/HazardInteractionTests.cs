@@ -206,6 +206,21 @@ public sealed class HazardInteractionTests
     }
 
     [TestMethod]
+    public async Task NonPlayerTouchingHazard_IsUnaffected()
+    {
+        var (world, snake) = await LoadSnakeAsync();
+        var spike = new StaticHazard2D();
+        var objectCount = world.Objects.Count;
+        var health = snake.Health;
+
+        InteractionHandler.OnHazardHit(world, snake, spike);
+
+        Assert.HasCount(objectCount, world.Objects, "A non-player body plays no effect on touching a hazard.");
+        Assert.AreEqual(health, snake.Health);
+        Assert.Contains(snake, world.Objects);
+    }
+
+    [TestMethod]
     public void PhysicsReset_SeedsKeyEdgesFromHeldKeys()
     {
         var input = new InputState();

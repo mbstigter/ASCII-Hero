@@ -679,7 +679,8 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     private void HandleActionKeys()
     {
         var actionKeyDown = _input.IsActionKeyDown;
-        if (actionKeyDown && !_wasActionKeyDown && (_world.TryOperateSwitch() || _world.TryOpenGate() || _world.TryThrow()))
+        if (actionKeyDown && !_wasActionKeyDown
+            && (_world.TryOperateSwitch() || _world.TryOperateGate() || _world.TryThrow()))
         {
             _world.ApplyPendingRemovals();
         }

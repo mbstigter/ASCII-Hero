@@ -2,8 +2,9 @@ namespace ASCII_Hero.Client.Game.World;
 
 /// <summary>
 /// A <see cref="CollectableType.Key"/> collectable. On pickup it goes into the player's
-/// <see cref="GearName"/> gear slot; with that slot selected, the action key opens a
-/// <see cref="Gate2D"/> with the same lock name (see <see cref="World2D.TryOpenGate"/>).
+/// <see cref="GearName"/> gear slot; with that slot selected, the action key opens and closes a
+/// <see cref="Gate2D"/> with the same lock name (see <see cref="World2D.TryOperateGate"/>). The key is
+/// never used up.
 /// </summary>
 public class Key2D : Collectable2D
 {
@@ -15,4 +16,10 @@ public class Key2D : Collectable2D
     /// case-insensitively). A key without one is inert.
     /// </summary>
     public string? LockName { get; set; }
+
+    /// <summary>
+    /// Optional sound played when the key is turned in its gate's lock (the placement's
+    /// <c>TurnSound</c> key); the gate's own <c>Sound</c> follows. Its <c>Sound</c> plays on pickup.
+    /// </summary>
+    public string? TurnSoundName { get; set; }
 }

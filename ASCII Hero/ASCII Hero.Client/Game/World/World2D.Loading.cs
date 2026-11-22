@@ -248,6 +248,10 @@ public partial class World2D
     /// <summary>Clip used by a placement with no <c>Clip</c> key, and by every materials-only object.</summary>
     private const string DefaultClipName = "default";
 
+    /// <summary>A timed hazard without a <c>Clip</c> (but with a <c>ClipWhenOn</c>) shows nothing while off.</summary>
+    private static bool OffIsHidden(ObjectSection section) =>
+        section.Text("Kind") == "TimedHazard" && section.Text("Clip") is null && section.Text("ClipWhenOn") is not null;
+
     /// <summary>
     /// Scans every object definition (not the placement grid) for the sprite assets this world
     /// needs and, per asset, the union of clips any section requests from it - two sections can
@@ -278,7 +282,7 @@ public partial class World2D
                 clipNamesByAsset[assetName] = clipNames;
             }
 
-            clipNames.Add(section.Text("Clip") ?? DefaultClipName);
+            clipNames.Add(section.Text("Clip") ?? (OffIsHidden(section) ? section.Text("ClipWhenOn")! : DefaultClipName));
             if (section.Text("ClipWhenOn") is { } onClipName)
             {
                 clipNames.Add(onClipName);
@@ -305,7 +309,7 @@ public partial class World2D
         if (section.Text("Asset") is { } assetName)
         {
             var sprite = spriteCache[assetName];
-            var clipName = section.Text("Clip") ?? DefaultClipName;
+            var clipName = section.Text("Clip") ?? (OffIsHidden(section) ? section.Text("ClipWhenOn")! : DefaultClipName);
             return (sprite, clipName, sprite.GetClip(clipName).DefaultFrame, EffectClips.Read(section));
         }
 
@@ -411,7 +415,9 @@ public partial class World2D
 
         T SpawnTwoState<T>(T body) where T : TwoStateObject2D
         {
-            body.SpawnTwoState(sprite, clipName, onClipName, initialOn, position, span);
+            body.OnSeconds = section.FiniteNonNegativeNumber("OnSeconds");
+            body.OffSeconds = section.FiniteNonNegativeNumber("OffSeconds");
+            body.SpawnTwoState(sprite, OffIsHidden(section) ? null : clipName, onClipName, initialOn, position, span);
             return body;
         }
 
@@ -435,6 +441,10 @@ public partial class World2D
 
             case "Switch":
                 body = SpawnTwoState(new Switch2D { Latching = section.Flag("Latching"), LinkName = linkName });
+                break;
+
+            case "TimedHazard":
+                body = SpawnTwoState(new TimedHazard2D { Damage = damage });
                 break;
 
             case "Device":
@@ -548,7 +558,9 @@ public partial class World2D
                 CollectableType? collectableType = Enum.TryParse<CollectableType>(section.Text("Type"), ignoreCase: true, out var parsedType)
                     ? parsedType
                     : null;
-                var collectable = collectableType == CollectableType.Key ? new Key2D { LockName = lockName } : new Collectable2D();
+                var collectable = collectableType == CollectableType.Key
+                    ? new Key2D { LockName = lockName, TurnSoundName = section.Text("TurnSound") }
+                    : new Collectable2D();
                 collectable.Spawn(sprite, clipName, frameIndex, position, collectableType, span);
                 collectable.EffectClipName = effects.Effect;
                 collectable.EffectPersists = effectPersists;
@@ -563,7 +575,7 @@ public partial class World2D
         // switches and flow zones never block unless explicitly set to.
         if (body is not Gate2D)
         {
-            body.IsPassable = section.Flag("Passable", fallback: kind is "StaticHazard" or "KinematicHazard" or "Collectable" or "Switch" or "FlowZone" or "Portal");
+            body.IsPassable = section.Flag("Passable", fallback: kind is "StaticHazard" or "KinematicHazard" or "TimedHazard" or "Collectable" or "Switch" or "FlowZone" or "Portal");
         }
 
         body.SoundName = section.Text("Sound");

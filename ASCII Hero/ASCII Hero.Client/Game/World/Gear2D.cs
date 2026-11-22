@@ -45,6 +45,14 @@ public sealed class Gear2D(string name, char icon)
         return true;
     }
 
+    /// <summary>Finds the most recently stored object that matches <paramref name="match"/> (e.g. the key for one lock), without taking it.</summary>
+    public bool TryFind(Func<Body2D, bool> match, out Body2D item)
+    {
+        var index = _items.FindLastIndex(candidate => match(candidate));
+        item = index >= 0 ? _items[index] : null!;
+        return index >= 0;
+    }
+
     /// <summary>The object <see cref="TryTake(out Body2D)"/> would take next, without taking it.</summary>
     public bool TryPeek(out Body2D item)
     {

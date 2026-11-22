@@ -62,7 +62,7 @@ public static class GameDefaults
     /// will) - slower still than <see cref="HangSpeed"/>. Not overridable via any ini file.
     /// The clamber animation is travel-driven (<c>CellsPerFrame</c>), so it needs no retuning.
     /// </summary>
-    public const double ClamberSpeed = 5.0;
+    public const double ClamberSpeed = 4.0;
 
     /// <summary>
     /// Target horizontal swim speed while swimming left/right. Its own dedicated speed rather
@@ -71,7 +71,7 @@ public static class GameDefaults
     /// any ini file. The swim animation is travel-driven (<c>CellsPerFrame</c>, relative to the
     /// water's flow), so it needs no retuning.
     /// </summary>
-    public const double SwimHorizontalSpeed = 9.0;
+    public const double SwimHorizontalSpeed = 8.0;
 
     /// <summary>
     /// Target vertical swim speed (rising/sinking - depth control) while swimming up/down. Its
@@ -80,7 +80,7 @@ public static class GameDefaults
     /// overridable via any ini file. The swim animation is travel-driven (<c>CellsPerFrame</c>,
     /// relative to the water's flow), so it needs no retuning.
     /// </summary>
-    public const double SwimVerticalSpeed = 5.0;
+    public const double SwimVerticalSpeed = 6.0;
 
     /// <summary>
     /// Deadzone (in world cells/second) below which <see cref="World.Player2D.UpdatePose"/>
@@ -109,10 +109,10 @@ public static class GameDefaults
     public const double GroundJumpSpeed = 22.0;
 
     /// <summary>Instantaneous vertical velocity kick for jumping off a climbable. Not overridable via any ini file.</summary>
-    public const double ClimbJumpSpeed = 14.0;
+    public const double ClimbJumpSpeed = 16.0;
 
     /// <summary>Instantaneous vertical velocity kick for jumping off while hanging. Not overridable via any ini file.</summary>
-    public const double HangJumpSpeed = 12.0;
+    public const double HangJumpSpeed = 14.0;
 
     // --- Force multipliers ---
 

@@ -37,33 +37,90 @@ public sealed class KeyGearTests
     }
 
     [TestMethod]
-    public async Task TryOpenGate_NeedsTheKeyGearSelected()
+    public async Task TryOperateGate_NeedsTheKeyGearSelected()
     {
         var (world, redGate, keyGear) = await LoadAsync();
         keyGear.Add(TakeKey(world, "Red"));
         world.Player.Position = redGate.Position;
 
         world.Player.SelectedGear = world.Player.Gear.First(gear => gear != keyGear);
-        Assert.IsFalse(world.TryOpenGate());
+        Assert.IsFalse(world.TryOperateGate());
         Assert.IsFalse(redGate.IsOn);
 
         world.Player.SelectedGear = keyGear;
-        Assert.IsTrue(world.TryOpenGate());
+        Assert.IsTrue(world.TryOperateGate());
         Assert.IsTrue(redGate.IsOn);
-        Assert.AreEqual(0, keyGear.Count);
+        Assert.AreEqual(1, keyGear.Count);
     }
 
     [TestMethod]
-    public async Task TryOpenGate_WithTheWrongKey_KeepsTheGateClosedAndTheKey()
+    public async Task TryOperateGate_ClosesAnOpenGateWithTheSameKey()
+    {
+        var (world, redGate, keyGear) = await LoadAsync();
+        keyGear.Add(TakeKey(world, "Red"));
+        world.Player.SelectedGear = keyGear;
+        world.Player.Position = redGate.Position;
+        redGate.SetState(true);
+        world.Player.Position = new Vector2D(redGate.Position.X - world.Player.Size.X - 0.5, redGate.Position.Y);
+
+        Assert.IsTrue(world.TryOperateGate());
+        Assert.IsFalse(redGate.IsOn);
+        Assert.AreEqual(1, keyGear.Count);
+    }
+
+    [TestMethod]
+    public async Task TryOperateGate_DoesNotCloseOnThePlayer()
+    {
+        var (world, redGate, keyGear) = await LoadAsync();
+        keyGear.Add(TakeKey(world, "Red"));
+        world.Player.SelectedGear = keyGear;
+        redGate.SetState(true);
+        world.Player.Position = redGate.Position;
+
+        Assert.IsFalse(world.TryOperateGate());
+        Assert.IsTrue(redGate.IsOn);
+    }
+
+    [TestMethod]
+    public async Task TryOperateGate_WithTheWrongKey_KeepsTheGateClosedAndTheKey()
     {
         var (world, redGate, keyGear) = await LoadAsync();
         keyGear.Add(TakeKey(world, "Blue"));
         world.Player.SelectedGear = keyGear;
         world.Player.Position = redGate.Position;
 
-        Assert.IsFalse(world.TryOpenGate());
+        Assert.IsFalse(world.TryOperateGate());
         Assert.IsFalse(redGate.IsOn);
         Assert.AreEqual(1, keyGear.Count);
+    }
+
+    [TestMethod]
+    public async Task TryOperateGate_PlaysKeyTurnThenTheGateSound()
+    {
+        var (world, redGate, keyGear) = await LoadAsync();
+        keyGear.Add(TakeKey(world, "Red"));
+        world.Player.SelectedGear = keyGear;
+        world.Player.Position = redGate.Position;
+        world.DrainPendingSounds();
+
+        Assert.IsTrue(world.TryOperateGate());
+
+        CollectionAssert.AreEqual(new[] { "KeyTurn", redGate.SoundName }, world.DrainPendingSounds().ToArray());
+    }
+
+    [TestMethod]
+    public async Task TryOperateSwitch_PlaysTheSwitchSoundThenTheLinkedGateSound()
+    {
+        var (world, _, _) = await LoadAsync();
+        var button = world.Objects.OfType<Switch2D>().Single(candidate => candidate.SoundName == "ButtonPress");
+        var gate = button.Targets.OfType<Gate2D>().Single();
+        world.Player.Position = button.Position;
+        world.DrainPendingSounds();
+
+        Assert.IsTrue(world.TryOperateSwitch());
+
+        var sounds = world.DrainPendingSounds().ToArray();
+        CollectionAssert.AreEqual(new[] { "ButtonPress", gate.SoundName }, sounds, string.Join(",", sounds));
     }
 
     [TestMethod]

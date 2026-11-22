@@ -144,6 +144,11 @@ public class WorldRenderer
 
     private void AddGameObjectGlyphs(List<Glyph> glyphs, Body2D gameObject, World2D world, Camera camera)
     {
+        if (gameObject is TwoStateObject2D { IsHidden: true })
+        {
+            return;
+        }
+
         var frame = gameObject.Frame;
         var emptyChar = gameObject.Sprite.EmptyChar;
         var palette = world.Palette;

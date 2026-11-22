@@ -312,13 +312,15 @@ public partial class World2D
         .Select(rect => new Physics.Rect(rect.X - 1, rect.Y - 1, rect.Width + 2, rect.Height + 2))];
 
     /// <summary>
-    /// Opens one closed key-operated gate next to the player, if the player's
+    /// Opens or closes one key-operated gate next to the player, if the player's
     /// <see cref="Player2D.SelectedGear"/> holds a <see cref="Key2D"/> with the gate's
-    /// <see cref="Gate2D.LockName"/>: the gate opens (and stays open), that key is used up and the
-    /// gate's <c>Sound</c> plays. "Next to" means within one cell of the player's collision shape.
-    /// Returns whether a gate was opened. Called by <see cref="GameLoop"/> on an action key press.
+    /// <see cref="Gate2D.LockName"/>: a closed gate opens, an open one closes, the key's <c>TurnSound</c>
+    /// and then the gate's <c>Sound</c> play.
+    /// would close on top of a solid moving body (the player included) stays open instead.
+    /// "Next to" means within one cell of the player's collision shape.
+    /// Returns whether a gate changed state. Called by <see cref="GameLoop"/> on an action key press.
     /// </summary>
-    public bool TryOpenGate()
+    public bool TryOperateGate()
     {
         if (Player.SelectedGear is not { Count: > 0 } gear)
         {
@@ -329,21 +331,36 @@ public partial class World2D
 
         foreach (var gate in Objects.OfType<Gate2D>())
         {
-            if (gate.IsOn || gate.LockName is not { } lockName
+            if (gate.LockName is not { } lockName
                 || !gate.CollisionRects.Any(gateRect => reach.Any(gateRect.Overlaps))
-                || !gear.TryTake(item => item is Key2D key && string.Equals(key.LockName, lockName, StringComparison.OrdinalIgnoreCase), out _))
+                || !gear.TryFind(item => item is Key2D key && string.Equals(key.LockName, lockName, StringComparison.OrdinalIgnoreCase), out var keyItem))
             {
                 continue;
             }
 
-            gate.SetState(true);
+            gate.Toggle();
+            if (!gate.IsOn && IsBlockedByMovingSolid(gate))
+            {
+                gate.SetState(true);
+                continue;
+            }
+
             WakeAllSleepingBodies();
+            PlaySound(((Key2D)keyItem).TurnSoundName);
             PlaySound(gate.SoundName);
             return true;
         }
 
         return false;
     }
+
+    /// <summary>Whether a solid moving body (the player, a crate, a loose stone) overlaps <paramref name="gate"/> as it is now.</summary>
+    private bool IsBlockedByMovingSolid(Gate2D gate) => Objects.Any(body =>
+        !body.IsStatic
+        && !body.IsPassable
+        && body is not EffectInstance2D
+        && body is not CorpseObject2D
+        && body.CollisionRects.Any(rect => gate.CollisionRects.Any(rect.Overlaps)));
 
     /// <summary>Sound played when the player throws an object.</summary>
     public const string ThrowSoundName = "Throw";
@@ -394,7 +411,7 @@ public partial class World2D
 
     /// <summary>
     /// Operates one switch next to the player (see <see cref="Switch2D.Operate"/>) and plays its
-    /// <c>Sound</c>. A switch whose state doesn't change (an already-pressed button) does nothing.
+    /// <c>Sound</c>, then the <c>Sound</c> of every gate it drives.
     /// Returns whether a switch was operated.
     /// </summary>
     public bool TryOperateSwitch()
@@ -412,6 +429,10 @@ public partial class World2D
             {
                 WakeAllSleepingBodies();
                 PlaySound(switchObject.SoundName);
+                foreach (var gate in switchObject.Targets.OfType<Gate2D>())
+                {
+                    PlaySound(gate.SoundName);
+                }
                 return true;
             }
         }

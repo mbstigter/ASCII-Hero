@@ -83,8 +83,8 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
 
 ### Gates, keys and switches
 
-- **Locked gates.** A gate with a `Lock` name opens when the player carries a key with the same
-  `Lock`, has the Key gear selected and presses the action key next to it.
+toggles open/closed when the player carries a key with the same
+  `Lock`, has the Key gear selected and presses the action key next to it. The key is never used up.
 - **Switches.** A switch drives every gate, device, flow zone or kinematic object with the same
   `Link` name. Switches can toggle or latch on.
 
@@ -208,7 +208,7 @@ Climbable and hangable surfaces are ordinary terrain objects marked with `Climba
   `Clamber`, `Swim`) to a sound played on each animation frame step. `JumpStart` and `Land`
   play when the player leaves and returns to the ground, and `HardLanding` when a fall hurts.
 - **Built-in sounds** in the global library include `DiamondPickup`, `RingPickup`,
-  `KeyPickup`, `GateUnlock`, `Checkpoint`, `WorldEnd`, `HazardKill`, `Jump`, `Land`, `Step`,
+  `KeyPickup`, `KeyTurn`, `DoorMove`, `HatchMove`, `ButtonPress`, `LeverPull`, `Checkpoint`, `WorldEnd`, `HazardKill`, `Jump`, `Land`, `Step`,
   `SoftStep`, `Grab`, `Splash`, `MenuMove` and `MenuSelect` (subtle sounds for moving through
   the world selection menu and choosing a world).
 - **Per-world sound overrides.** A world can replace or add sounds with its own

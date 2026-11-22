@@ -201,15 +201,20 @@ The live game state and the entity types that make it up.
   - `StaticObject2D` - solid, static terrain (platforms, walls, decoration).
   - `TwoStateObject2D` - a `StaticObject2D` with an off/on state that swaps between
     two clips of its sprite (`Clip` / `ClipWhenOn`) via `SetState`; subclasses react in
-    `OnStateChanged`. Four subclasses:
+    `OnStateChanged`. An optional timer (`OnSeconds`/`OffSeconds`) toggles it by itself:
+    `AnimationSystem.Update` calls `Tick` on every two-state object each frame (not while a
+    death or world end is pending). Without an off clip it is drawn as nothing while off
+    (`IsHidden`, skipped by `WorldRenderer`). Five subclasses:
     `Gate2D` (door/hatch: solid while closed, passable while open; opened by a key
-    `Lock` via `World2D.TryOpenGate`, or driven by a switch through `Link`),
+    `Lock` via `World2D.TryOperateGate`, which opens and closes it, or driven by a switch through `Link`),
     `Switch2D` (button/lever: toggles, or only turns on if `Latching`, and pushes the
     state to all its `Targets`; operated via `World2D.TryOperateSwitch`),
     `Device2D` (a machine-like object - fan, lamp - that swaps its off/on clip; a conveyor
     surface, e.g. a rope, only moves while on, or always when unlinked) and
     `FlowZone2D` (a passable medium volume - water, air - whose medium flows in a
-    `FlowDirection` at a `FlowSpeed` while on).
+    `FlowDirection` at a `FlowSpeed` while on) and
+    `TimedHazard2D` (an `IHazardBody` whose `IsHarmful` is true only while on, e.g. a
+    retracting spike).
   - `ILinkTarget` - capability of an object a switch can drive (`LinkName`, `SetState`),
     implemented by `Gate2D`, `Device2D`, `FlowZone2D` and `KinematicObject2D` (which stops
     while off). `World2D.ResolveLinks` enforces one-switch-to-many-targets `Link` matching
@@ -305,7 +310,9 @@ The live game state and the entity types that make it up.
 	`InteractionHandler.OnHazardHit`, which deducts it from
 	`Player2D.Health` on the first frame of a fresh, non-fatal
 	contact - clamped at 0; when the bar empties it removes one `Player2D.Lives`
-	and sets `World2D.PendingTransition` to `Death`.
+	and sets `World2D.PendingTransition` to `Death`. `IsHarmful` (default true) lets a
+	hazard stop hurting; `CollisionSystem` ignores hazards that are not harmful. Any
+	body other than the player is unaffected by touching a hazard.
   - `ICollectableBody` - removed from the world on contact with a collector
 	(marker only); see `Collectable2D`'s own entry above for how its
 	`EffectPersists` can leave its pickup effect behind as a permanent marker
@@ -618,7 +625,7 @@ The live game state and the entity types that make it up.
   disturbed. Sleeping bodies are skipped by `PhysicsSystem` integration and by
   the solver except where an awake body or moving solid reaches them;
   `World2D.ApplyPendingRemovals` wakes sleepers that touched a removed body,
-  `World2D.TryOpenGate`/`TryOperateSwitch` wake all sleepers after a state
+  `World2D.TryOperateGate`/`TryOperateSwitch`
   change (an opened gate or switched flow), and `Body2D` wakes itself when an
   animation frame changes its collision shape.
 - **`TipSystem`** - run by `CollisionSystem` at the end of each step, just

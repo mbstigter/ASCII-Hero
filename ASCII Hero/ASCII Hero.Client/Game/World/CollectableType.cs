@@ -39,7 +39,8 @@ public enum CollectableType
     /// <summary>
     /// Removed on pickup like <see cref="Diamond"/>/<see cref="Ring"/>, and carried in the player's
     /// <see cref="Key2D.GearName"/> gear slot. A key without a <c>Lock</c> name (or without that slot
-    /// listed) is inert. Opens a gate with the same lock name, see <see cref="World2D.TryOpenGate"/>.
+    /// listed) is inert. Never used up: it opens and closes a gate with the same lock name, see
+    /// <see cref="World2D.TryOperateGate"/>.
     /// </summary>
     Key,
 

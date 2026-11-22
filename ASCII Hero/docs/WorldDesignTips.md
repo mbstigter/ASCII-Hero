@@ -67,10 +67,20 @@ changes gravity or the player's walk speed changes these numbers too.
 
 - A hangable object (e.g. a lying-flat pipe, ladder or rope) is in reach of a standing
   player's jump when it is **at most 5 rows above the floor the player stands on**.
+- A player hanging from a pipe can jump up to another hangable pipe **1 or 2 rows above** and
+  grab it, so a route of closely stacked pipes can be climbed using only the hands.
 - Anything climbable or hangable that the player is meant to step off onto a ledge should end
   level with (or just above) that ledge.
 - Moving ladders, pipes and ropes: make sure both ends of the route are reachable, and that the
   player cannot get squeezed between the moving object and the scenery.
+
+## Keys and locked gates
+
+- A key is never used up: the player keeps it and can open and close its gate as often as wanted,
+  and keeps it when moving between worlds and sub-worlds.
+- **Give every lock name a unique name across the world and all its sub-worlds**, because carried
+  keys follow the player through portals and a key would also work on a same-named gate elsewhere.
+- A key gate cannot close while the player or something else solid stands in it.
 
 ## Repeatable objects
 

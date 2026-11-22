@@ -440,7 +440,7 @@ public class CollisionSystem
     /// </summary>
     private void ResolveHazardsAndCollectables(World2D world)
     {
-        var hazards = world.Objects.OfType<IHazardBody>().Cast<Body2D>().ToList();
+        var hazards = world.Objects.OfType<IHazardBody>().Where(hazard => hazard.IsHarmful).Cast<Body2D>().ToList();
         var collectables = world.Objects.OfType<ICollectableBody>().Cast<Body2D>().ToList();
         var throwables = world.Objects.OfType<ThrowableObject2D>().ToList();
 

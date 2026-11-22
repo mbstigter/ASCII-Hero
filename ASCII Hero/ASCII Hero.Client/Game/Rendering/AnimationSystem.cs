@@ -69,6 +69,14 @@ public class AnimationSystem
             body.TintColor = null;
         }
 
+        if (!transitionPending)
+        {
+            foreach (var timed in world.Objects.OfType<TwoStateObject2D>())
+            {
+                timed.Tick(deltaSeconds);
+            }
+        }
+
         foreach (var body in world.Objects)
         {
             var advanced = !(transitionPending && body is Player2D) && body.AdvanceAnimation(deltaSeconds);

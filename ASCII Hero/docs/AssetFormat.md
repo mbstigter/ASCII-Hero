@@ -1125,7 +1125,8 @@ instead of the effect fading away like an ordinary pickup:
   `EffectPersists = true` for the same reason as `Checkpoint`.
 - `Key` — adds a key to the player's inventory and is removed. Requires a
   `Lock = <name>` key naming the lock it opens; a key without `Lock` is inert
-  (like a missing `Type`). See "Gates, keys and switches" below.
+  (like a missing `Type`). Optional `TurnSound = <name>` is played when the key is turned in
+  its gate, before the gate's own `Sound`. See "Gates, keys and switches" below.
 - `HealthPack` — restores the player's health fully and is removed. While the
   player's health is already full it is left in place (no sound, no effect).
 
@@ -1156,10 +1157,12 @@ placement. A gate is opened in one of two ways, never both (a gate with both
 `Lock` and `Link` is a load error):
 
 - **By key**: `Lock = <name>`. A key (`Kind = Collectable`, `Type = Key`) with the
-  same `Lock` is picked up first. Names match case-insensitively and one key opens
-  one gate. The player opens it by standing next to it (within one cell) and
-  pressing the action key (`E` or `Enter`); the gate then stays open, the key is
-  consumed and the gate's `Sound` plays. Keys are kept on respawn.
+  Names match case-insensitively.
+  pressing the action key (`E` or `Enter`) with the Key gear selected; a closed gate
+  opens and an open gate closes, and the gate's `Sound` plays. The key is never
+  used up, and stays with the player on respawn and across portals. A gate will not
+  close while the player or another solid moving body is in it. Lock names should be
+  unique across a world and all its sub-worlds.
 - **By switch**: `Link = <name>`, see below.
 
 A *switch* (`Kind = Switch`) is a button or lever: a passable object with an off clip
@@ -1171,9 +1174,10 @@ swaps between its off and on clips; if it also has `ConveyorDirection`/`Conveyor
 (e.g. a rope), its surface only moves while on (always, if it has no `Link`). Links are
 one switch to many targets: a switch without a matching target, a target without a
 switch, or two switches with the same `Link` are load errors. The switch's `Sound` plays
-when it is operated. A locked gate's `Sound` plays
-when a key unlocks it; a gate opened by a switch has no sound of its own, only the
-switch's.
+when it is operated. A gate's `Sound` plays whenever it changes state, whether a key or
+a switch caused it, after the operating sound (the switch's `Sound`, or the key's
+`TurnSound`). One sound per gate type, e.g. `DoorMove` or `HatchMove`; the
+same sound plays for opening and closing. A refused close is silent.
 
 A gate becomes passable the moment it opens. Its open clip may be a short animation
 (`[Animation.open] Mode = Once`) that plays once and holds its last frame. Closing
@@ -1190,6 +1194,12 @@ placement for a wooden, steel or other door.
 | `ClipWhenOn`   | Clip shown while on/open. Without it the state still changes but the sprite stays. |
 | `InitialState` | `On` to start on/open (the target is synchronised on load). Default off/closed. |
 | `Latching`     | Switches only. `true`: operating turns it on and it stays on. `false` (default): each operation toggles it. |
+| `OnSeconds`    | Optional timer for any gate, device, flow zone or `TimedHazard`: seconds spent on before it switches off by itself. `InitialState` sets the start. |
+| `OffSeconds`   | Seconds spent off before switching on again. Defaults to `OnSeconds`, so `OnSeconds = 2` alternates 2 s on, 2 s off. |
+
+A `TimedHazard` (`Kind = TimedHazard`, e.g. a retracting spike) hurts on touch only while on and is
+harmless while off; it takes `Damage`, `Sound`, `Clip` (off) and `ClipWhenOn` like the keys above.
+Leave `Clip` out and the hazard is invisible while off.
 
 ```ini
 [RedKey]
@@ -1198,6 +1208,7 @@ Kind = Collectable
 Type = Key
 Lock = Red
 Sound = KeyPickup
+TurnSound = KeyTurn
 
 [RedDoor]
 Asset = Door
@@ -1205,7 +1216,7 @@ Clip = closed
 ClipWhenOn = open
 Kind = Gate
 Lock = Red
-Sound = GateUnlock  ; Played when the key unlocks the door
+Sound = DoorMove  ; Played whenever the door opens or closes
 
 [Lever]
 Asset = Lever
@@ -1214,7 +1225,7 @@ ClipWhenOn = on
 Kind = Switch
 Latching = false
 Link = Bridge
-Sound = SwitchClick
+Sound = LeverPull
 
 [BridgeGate]
 Asset = Hatch
@@ -1222,6 +1233,7 @@ Clip = closed
 ClipWhenOn = open
 Kind = Gate
 Link = Bridge
+Sound = HatchMove
 ```
 
 **Medium.** A passable static placement is only treated as an ambient medium

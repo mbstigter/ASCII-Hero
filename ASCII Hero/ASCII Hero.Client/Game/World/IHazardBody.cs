@@ -14,4 +14,7 @@ public interface IHazardBody
     /// whole health bar.
     /// </summary>
     double Damage { get; }
+
+    /// <summary>Whether the hazard currently hurts on contact; false for e.g. a timed hazard while it is off.</summary>
+    bool IsHarmful => true;
 }
