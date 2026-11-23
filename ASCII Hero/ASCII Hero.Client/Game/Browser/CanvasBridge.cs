@@ -64,5 +64,6 @@ public class CanvasBridge(IJSRuntime jsRuntime) : IAsyncDisposable
         }
 
         _dotNetRef?.Dispose();
+        GC.SuppressFinalize(this);
     }
 }

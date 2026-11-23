@@ -18,8 +18,8 @@ public class Key2D : Collectable2D
     public string? LockName { get; set; }
 
     /// <summary>
-    /// Optional sound played when the key is turned in its gate's lock (the placement's
-    /// <c>TurnSound</c> key); the gate's own <c>Sound</c> follows. Its <c>Sound</c> plays on pickup.
+    /// Optional <c>UseSound</c> inherited from <see cref="Collectable2D"/>, played when the key is
+    /// turned in its gate's lock; the gate's <c>OperateSound</c> follows. Its <c>CollectSound</c>
+    /// plays on pickup.
     /// </summary>
-    public string? TurnSoundName { get; set; }
 }

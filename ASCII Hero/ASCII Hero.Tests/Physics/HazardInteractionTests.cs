@@ -64,7 +64,7 @@ public sealed class HazardInteractionTests
 
         Assert.AreEqual(health, player.Health, "A corpse is not a hazard.");
         Assert.IsTrue(corpse.GravityAffected);
-        Assert.IsFalse(corpse is IHazardBody);
+        Assert.IsFalse(typeof(IHazardBody).IsAssignableFrom(corpse.GetType()));
         Assert.AreEqual(corpseHeight, corpse.Position.Y, 1e-9);
     }
 

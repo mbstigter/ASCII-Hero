@@ -60,5 +60,6 @@ public class WebAudioSoundPlayer(IJSRuntime jsRuntime) : ISoundPlayer, IAsyncDis
             await _module.InvokeVoidAsync("dispose");
             await _module.DisposeAsync();
         }
+        GC.SuppressFinalize(this);
     }
 }

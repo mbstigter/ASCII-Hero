@@ -457,7 +457,8 @@ public class PhysicsSystem
             // The kick is relative to the support's own vertical velocity (a jump off a rising
             // platform launches faster in world terms), and by Newton's third law the push-off
             // drives a finite-mass support downward with the equal and opposite momentum.
-            var support = player.GetContactingBodies(ContactType.SurfaceBottom).FirstOrDefault();
+            var supports = player.GetContactingBodies(ContactType.SurfaceBottom);
+            var support = supports.Count > 0 ? supports[0] : null;
             var supportVelocityY = support?.GetCarryVelocity().Y ?? 0.0;
             velocity.Y = supportVelocityY - GameDefaults.GroundJumpSpeed;
             if (support is { IsStatic: false } and IPhysicsBody movableSupport)
@@ -481,7 +482,7 @@ public class PhysicsSystem
     /// body is at rest with its forces balanced by its supports, so it is left untouched until
     /// something wakes it - see <see cref="SleepSystem"/>.
     /// </summary>
-    private void IntegrateBodies(World2D world, double deltaSeconds)
+    private static void IntegrateBodies(World2D world, double deltaSeconds)
     {
         foreach (var body in world.Objects)
         {
@@ -513,8 +514,11 @@ public class PhysicsSystem
     /// The climbable/hangable body the player is gripping (recorded as a grip contact of the
     /// given <paramref name="type"/> by <see cref="CollisionSystem"/>), or null if none.
     /// </summary>
-    private static Body2D? GetGrippedBody(Player2D player, ContactType type) =>
-        player.GetContactingBodies(type).FirstOrDefault();
+    private static Body2D? GetGrippedBody(Player2D player, ContactType type)
+    {
+        var contacts = player.GetContactingBodies(type);
+        return contacts.Count > 0 ? contacts[0] : null;
+    }
 
     /// <summary>
     /// Extra horizontal motor target speed that gently pulls a climbing player toward the
@@ -800,7 +804,8 @@ public class PhysicsSystem
         // whatever it rests on holds it; an immovable one simply absorbs it.
         if (player.IsDrivingOnGround)
         {
-            var support = player.GetContactingBodies(ContactType.SurfaceBottom).FirstOrDefault();
+            var supports = player.GetContactingBodies(ContactType.SurfaceBottom);
+            var support = supports.Count > 0 ? supports[0] : null;
             if (support is not null)
             {
                 var friction = CollisionSystem.CombineFriction(player.Friction, support.Friction);

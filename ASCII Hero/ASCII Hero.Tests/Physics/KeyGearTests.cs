@@ -22,18 +22,22 @@ public sealed class KeyGearTests
         return key;
     }
 
+    private static readonly string[] expected = ["KeyPickup"];
+
     [TestMethod]
     public async Task PlayerTouchingKey_CarriesItInTheKeyGear()
     {
         var (world, _, keyGear) = await LoadAsync();
         var key = world.Objects.OfType<Key2D>().Single(candidate => candidate.LockName == "Red");
         world.Player.Position = key.Position;
+        world.DrainPendingSounds();
 
         new CollisionSystem().Resolve(world, 0.0);
         world.ApplyPendingRemovals();
 
         Assert.AreEqual(1, keyGear.Count);
         Assert.DoesNotContain(key, world.Objects);
+        CollectionAssert.AreEqual(expected, world.DrainPendingSounds().ToArray());
     }
 
     [TestMethod]
@@ -94,6 +98,8 @@ public sealed class KeyGearTests
         Assert.AreEqual(1, keyGear.Count);
     }
 
+    private static readonly string[] expectedArray = ["KeyTurn", "HatchMove"];
+
     [TestMethod]
     public async Task TryOperateGate_PlaysKeyTurnThenTheGateSound()
     {
@@ -105,14 +111,16 @@ public sealed class KeyGearTests
 
         Assert.IsTrue(world.TryOperateGate());
 
-        CollectionAssert.AreEqual(new[] { "KeyTurn", redGate.SoundName }, world.DrainPendingSounds().ToArray());
+        CollectionAssert.AreEqual(expectedArray, world.DrainPendingSounds().ToArray());
     }
+
+    private static readonly string[] expectedArray0 = ["ButtonPress", "DoorMove"];
 
     [TestMethod]
     public async Task TryOperateSwitch_PlaysTheSwitchSoundThenTheLinkedGateSound()
     {
         var (world, _, _) = await LoadAsync();
-        var button = world.Objects.OfType<Switch2D>().Single(candidate => candidate.SoundName == "ButtonPress");
+        var button = world.Objects.OfType<Switch2D>().Single(candidate => candidate.OperateSoundName == "ButtonPress");
         var gate = button.Targets.OfType<Gate2D>().Single();
         world.Player.Position = button.Position;
         world.DrainPendingSounds();
@@ -120,7 +128,8 @@ public sealed class KeyGearTests
         Assert.IsTrue(world.TryOperateSwitch());
 
         var sounds = world.DrainPendingSounds().ToArray();
-        CollectionAssert.AreEqual(new[] { "ButtonPress", gate.SoundName }, sounds, string.Join(",", sounds));
+        Assert.AreEqual("DoorMove", gate.OperateSoundName);
+        CollectionAssert.AreEqual(expectedArray0, sounds, string.Join(",", sounds));
     }
 
     [TestMethod]

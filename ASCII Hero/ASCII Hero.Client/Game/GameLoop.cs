@@ -156,7 +156,7 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// <summary>Gear box right of the HUD box: the selected gear's icon and count. The gear ring opens out of it.</summary>
     private readonly UIFrame _hudGearBox = new(col: 38, row: 1, width: 7, height: 4);
 
-    /// <summary>The selected gear's icon (first line, dimmed while empty) and dimmed count as "x3" (second line), centered inside <see cref="_hudGearBox"/>.</summary>
+    /// <summary>The selected gear's fallback text icon and dimmed "x3" count; sprite icons are drawn separately in the first row.</summary>
     private readonly UILabel _hudGearLabel = new(col: 39, row: 2, width: 5, height: 2);
 
     // ---------------------------------------------------------------------------------------
@@ -673,14 +673,17 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     }
 
     /// <summary>
-    /// Handles the once-per-press action key: operates a switch next to the player, otherwise opens
-    /// a key gate next to it, otherwise throws the selected gear.
+    /// Handles the once-per-press action key: operates a switch, opens a key gate, uses a selected
+    /// health pack when the player is hurt, or throws the selected gear, in that priority order.
     /// </summary>
     private void HandleActionKeys()
     {
         var actionKeyDown = _input.IsActionKeyDown;
         if (actionKeyDown && !_wasActionKeyDown
-            && (_world.TryOperateSwitch() || _world.TryOperateGate() || _world.TryThrow()))
+            && (_world.TryOperateSwitch()
+                || _world.TryOperateGate()
+                || InteractionHandler.TryUseHealthPack(_world)
+                || _world.TryThrow()))
         {
             _world.ApplyPendingRemovals();
         }
@@ -771,11 +774,21 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             AddPanel(glyphs, _hudGearBox, panelColor);
             UIRenderer.AddFrame(glyphs, _hudGearBox, cellWidth, cellHeight);
 
-            var icon = CenterIn(selectedGear.Icon.ToString(), _hudGearLabel.Width);
+            var icon = CenterIn(selectedGear.Icon, _hudGearLabel.Width);
             _hudGearLabel.Lines.Clear();
-            _hudGearLabel.Lines.Add(selectedGear.Count > 0 ? icon : "{" + icon + "}");
+            _hudGearLabel.Lines.Add(selectedGear.IconFrame is null
+                ? selectedGear.Count > 0 ? icon : "{" + icon + "}"
+                : string.Empty);
             _hudGearLabel.Lines.Add("{" + CenterIn("x" + selectedGear.Count, _hudGearLabel.Width) + "}");
             UIRenderer.AddLabel(glyphs, _hudGearLabel, cellWidth, cellHeight);
+            if (selectedGear.IconFrame is { } iconFrame)
+            {
+                UIRenderer.AddMonochromeIcon(
+                    glyphs, iconFrame, selectedGear.IconEmptyChar,
+                    _hudGearLabel.Col, _hudGearLabel.Row, _hudGearLabel.Width, 1,
+                    _colors.Interface.Normal, _colors.Background, panelColor,
+                    cellWidth, cellHeight);
+            }
         }
     }
 
@@ -886,7 +899,8 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
     /// Draws the frozen frame with the gear ring on top. Releasing the gear ring key selects the
     /// highlighted gear as the ring starts closing (so the gear box already shows it as the ring
     /// shrinks back into it); once closed, play resumes. Keys still held from the ring don't act
-    /// again in play: a cancelling Escape doesn't ask to exit, and a held action key doesn't throw.
+    /// again in play: a cancelling Escape doesn't ask to exit, and a held action key doesn't use or
+    /// throw the selected gear.
     /// </summary>
     private async Task OnGearRingFrameAsync(double deltaSeconds)
     {
@@ -924,7 +938,8 @@ public class GameLoop(CanvasBridge canvasBridge, IAssetFileProvider assetFilePro
             glyphs, _gearRing,
             originCol: _hudGearBox.Col + (_hudGearBox.Width / 2),
             originRow: _hudGearBox.Row + (_hudGearBox.Height / 2),
-            _colors.Interface.Dark, _colors.Interface.Normal, _colors.Interface.Light, InterfaceBackdropColor,
+            _colors.Interface.Dark, _colors.Interface.Normal, _colors.Interface.Light,
+            _colors.Interface.Normal, _colors.Background, InterfaceBackdropColor,
             _viewportWidthCells, _viewportHeightCells, _renderer.CellWidthPixels, _renderer.CellHeightPixels);
         await DrawWorldAsync(glyphs);
     }

@@ -50,6 +50,8 @@ public sealed class HttpAssetFileProviderTests
     private static HttpAssetFileProvider CreateProvider(PathHandler handler, string? manifestPath) =>
         new(new HttpClient(handler) { BaseAddress = new Uri("http://localhost/") }, manifestPath);
 
+    private static readonly string[] ExpectedManifestFilteredRequests = ["Assets/manifest.txt", "Assets/a.ini"];
+
     [TestMethod]
     public async Task TryReadTextAsync_WithManifest_UnlistedFileIsAbsentWithoutRequest()
     {
@@ -62,7 +64,7 @@ public sealed class HttpAssetFileProviderTests
 
         Assert.AreEqual("A", await provider.TryReadTextAsync("Assets/a.ini"));
         Assert.IsNull(await provider.TryReadTextAsync("Assets/other.ini"));
-        CollectionAssert.AreEqual(new[] { "Assets/manifest.txt", "Assets/a.ini" }, handler.Requests);
+        CollectionAssert.AreEqual(ExpectedManifestFilteredRequests, handler.Requests);
     }
 
     [TestMethod]
@@ -74,6 +76,8 @@ public sealed class HttpAssetFileProviderTests
         Assert.IsNull(await provider.TryReadTextAsync("Assets/b.ini"));
     }
 
+    private static readonly string[] ExpectedUnfilteredRequests = ["Assets/manifest.txt", "Assets/a.ini", "Assets/other.ini"];
+
     [TestMethod]
     public async Task TryReadTextAsync_ManifestMissing_RequestsEveryFile()
     {
@@ -82,7 +86,7 @@ public sealed class HttpAssetFileProviderTests
 
         Assert.AreEqual("A", await provider.TryReadTextAsync("Assets/a.ini"));
         Assert.IsNull(await provider.TryReadTextAsync("Assets/other.ini"));
-        CollectionAssert.AreEqual(new[] { "Assets/manifest.txt", "Assets/a.ini", "Assets/other.ini" }, handler.Requests);
+        CollectionAssert.AreEqual(ExpectedUnfilteredRequests, handler.Requests);
     }
 
     [TestMethod]

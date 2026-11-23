@@ -45,10 +45,8 @@ public enum CollectableType
     Key,
 
     /// <summary>
-    /// Removed on pickup like <see cref="Diamond"/>/<see cref="Ring"/>, and restores the collecting
-    /// <see cref="Player2D"/>'s <see cref="Player2D.Health"/> to
-    /// <see cref="Constants.GameDefaults.PlayerFullHealth"/>. Left in place, silently, while the
-    /// player's health is already full (or the collector isn't the player).
+    /// Picked up into the player's <c>HealthPack</c> gear slot, even at full health. The action key
+    /// consumes one whole pack to restore full health only when the player's health is below full.
     /// </summary>
     HealthPack,
 }

@@ -13,9 +13,6 @@ namespace ASCII_Hero.Client.Game.Physics;
 /// </summary>
 public static class InteractionHandler
 {
-    /// <summary>The player sprite's [Sounds] key played on a hard landing (see <see cref="OnHardLanding"/>).</summary>
-    public const string HardLandingSoundKey = "HardLanding";
-
     /// <summary>
     /// A killable hazard's health ran out: it is queued for removal and its own effect (if
     /// configured) persists as a permanent husk when EffectPersists is set. A moving
@@ -52,13 +49,12 @@ public static class InteractionHandler
     }
 
     /// <summary>
-    /// A thrown object hit a killable hazard hard enough: its <c>Sound</c> plays, the hazard loses
-    /// the object's <see cref="ThrowableObject2D.Damage"/> (see <see cref="DamageHazard"/>), and a
+    /// A thrown object hit a killable hazard hard enough: the hazard loses the object's
+    /// <see cref="ThrowableObject2D.Damage"/> (see <see cref="DamageHazard"/>), and a
     /// single-use object is used up. A reusable one keeps bouncing.
     /// </summary>
     public static void OnHazardStruck(World2D world, ThrowableObject2D thrown, Body2D hazard, IKillableBody killable)
     {
-        world.PlaySound(thrown.SoundName);
         DamageHazard(world, hazard, killable, thrown.Damage);
         if (!thrown.Reusable)
         {
@@ -123,7 +119,7 @@ public static class InteractionHandler
         }
 
         gear.Add(throwable);
-        world.PlaySound(throwable.PickupSoundName);
+        world.PlaySound(throwable.CollectSoundName);
         world.QueueRemoval(throwable);
     }
 
@@ -155,7 +151,6 @@ public static class InteractionHandler
             return;
         }
 
-        world.PlaySound(hazard.SoundName);
         if (!DamagePlayer(world, player, ((IHazardBody)hazard).Damage))
         {
             player.Recovery.Start();
@@ -167,22 +162,15 @@ public static class InteractionHandler
     }
 
     /// <summary>
-    /// The player landed hard (see <see cref="Player2D.FallDamageImpactSpeed"/>): it plays the
-    /// player sprite's "HardLanding" sound and loses <see cref="Player2D.FallDamage"/>, which can
-    /// cost a life just like a hazard hit. The hurt effect only plays if the player survived - a
-    /// fatal landing shows just the died effect. Unlike a hazard hit there is no other body to
-    /// supply the sound, so it comes from the player's own [Sounds] section.
+    /// The player landed hard (see <see cref="Player2D.FallDamageImpactSpeed"/>) and loses
+    /// <see cref="Player2D.FallDamage"/>, which can cost a life just like a hazard hit. The player's
+    /// hurt or kill sound plays according to the outcome, along with the corresponding effect.
     /// </summary>
     public static void OnHardLanding(World2D world, Player2D player)
     {
         if (player.Health <= 0)
         {
             return;
-        }
-
-        if (player.Sprite.PoseSounds.TryGetValue(HardLandingSoundKey, out var hardLandingSound))
-        {
-            world.PlaySound(hardLandingSound);
         }
 
         if (!DamagePlayer(world, player, player.FallDamage)
@@ -193,10 +181,9 @@ public static class InteractionHandler
     }
 
     /// <summary>
-    /// Deducts
-    /// what empties the bar (a fresh death, not an already-dead player), a Death transition starts:
-    /// it costs a life, plays the died effect, and GameLoop respawns (or ends the game) once that
-    /// effect has played. Returns whether this hit killed the player, so callers skip the hurt effect.
+    /// Deducts damage and plays the player's hurt or kill sound. When health reaches zero, a Death
+    /// transition starts and costs a life. Returns whether this hit killed the player, so callers
+    /// skip the hurt effect.
     /// </summary>
     private static bool DamagePlayer(World2D world, Player2D player, double damage)
     {
@@ -208,14 +195,42 @@ public static class InteractionHandler
         player.Health = Math.Max(0, player.Health - damage);
         if (player.Health > 0)
         {
+            world.PlaySound(player.HurtSoundName);
             return false;
         }
 
+        world.PlaySound(player.KillSoundName);
         player.Lives = Math.Max(0, player.Lives - 1);
         world.PendingTransition = PendingTransition.Death;
         if (player.DiedEffectClipName is { } diedEffectClipName)
         {
             SpawnEffect(player, diedEffectClipName, world);
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Uses one selected health pack when the player is not already at full health. Selection alone
+    /// never consumes it; a fresh action-key press is required.
+    /// </summary>
+    public static bool TryUseHealthPack(World2D world)
+    {
+        var player = world.Player;
+        if (player.Health >= GameDefaults.PlayerFullHealth
+            || player.SelectedGear is not { } gear
+            || !string.Equals(gear.Name, nameof(CollectableType.HealthPack), StringComparison.OrdinalIgnoreCase)
+            || !gear.TryTake(item => item is Collectable2D { Type: CollectableType.HealthPack }, out var item)
+            || item is not Collectable2D healthPack)
+        {
+            return false;
+        }
+
+        world.PlaySound(healthPack.UseSoundName);
+        player.Health = GameDefaults.PlayerFullHealth;
+        if (player.HealedEffectClipName is { } healedEffectClipName)
+        {
+            SpawnEffect(player, healedEffectClipName, world);
         }
 
         return true;
@@ -231,23 +246,24 @@ public static class InteractionHandler
     {
         if (collectable is not Collectable2D typedCollectable)
         {
-            world.PlaySound(collectable.SoundName);
+            world.PlaySound(collectable.CollectSoundName);
             SpawnEffectIfConfigured(collectable, world);
             world.QueueRemoval(collectable);
             return;
         }
 
-        // A health pack is only taken by a player who actually needs it; otherwise it stays in
-        // place without sound or effect, as if it was never touched.
+        // Health packs are stored for later use, but only the player can carry one and only when
+        // the game's HealthPack gear slot is listed.
         if (typedCollectable.Type == CollectableType.HealthPack
-            && movingBody is not Player2D { Health: < GameDefaults.PlayerFullHealth })
+            && (movingBody is not Player2D healthPackPlayer
+                || healthPackPlayer.FindGear(nameof(CollectableType.HealthPack)) is null))
         {
             return;
         }
 
         if (typedCollectable.Type is not null)
         {
-            world.PlaySound(typedCollectable.SoundName);
+            world.PlaySound(typedCollectable.CollectSoundName);
         }
 
         // Every variant below is removed on pickup and spawns its own effect (if
@@ -318,7 +334,7 @@ public static class InteractionHandler
             case CollectableType.Key:
                 // Only the player can carry a key, in its Key gear slot, and a key needs its Lock
                 // name (see Key2D.LockName) - without any of these it is left in place, inert.
-                if (collectable is not Key2D { LockName: { Length: > 0 } } key
+                if (collectable is not Key2D { LockName.Length: > 0 } key
                     || movingBody is not Player2D keyPlayer
                     || keyPlayer.FindGear(Key2D.GearName) is not { } keyGear)
                 {
@@ -331,17 +347,12 @@ public static class InteractionHandler
                 break;
 
             case CollectableType.HealthPack:
-                // Same as Diamond/Ring, but restores the player's health fully and plays the
-                // player's own healed effect clip (e.g. a temporary recolor).
-                SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
-                world.QueueRemoval(collectable);
-                if (movingBody is Player2D healthPlayer)
+                if (movingBody is Player2D healthPlayer
+                    && healthPlayer.FindGear(nameof(CollectableType.HealthPack)) is { } healthPackGear)
                 {
-                    healthPlayer.Health = GameDefaults.PlayerFullHealth;
-                    if (healthPlayer.HealedEffectClipName is { } healedEffectClipName)
-                    {
-                        SpawnEffect(healthPlayer, healedEffectClipName, world);
-                    }
+                    healthPackGear.Add(typedCollectable);
+                    SpawnEffectIfConfigured(collectable, world, typedCollectable.EffectPersists);
+                    world.QueueRemoval(collectable);
                 }
                 break;
 

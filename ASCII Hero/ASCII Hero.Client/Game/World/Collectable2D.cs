@@ -26,6 +26,9 @@ public class Collectable2D : Body2D, ICollectableBody, IEffectTrigger
     /// </summary>
     public bool EffectPersists { get; set; }
 
+    /// <summary>Optional sound played when using this collectable, from the placement's <c>UseSound</c> key.</summary>
+    public string? UseSoundName { get; set; }
+
     /// <summary>
     /// What picking this up actually does - see <see cref="CollectableType"/> and the branching in
     /// <see cref="Physics.CollisionSystem.ResolveHazardsAndCollectables"/>. Null means this

@@ -79,6 +79,9 @@ public class SpriteClip
     /// <summary>How this clip cycles through its frames. Defaults to Loop.</summary>
     public AnimationMode AnimationMode { get; init; } = AnimationMode.Loop;
 
+    /// <summary>Whether playback initially advances toward lower frame indices.</summary>
+    public bool Reverse { get; init; }
+
     /// <summary>
     /// Optional total playing time, in seconds, when this clip is spawned as an effect
     /// (<see cref="World.EffectInstance2D"/>) - replaces the default of frame count times
@@ -109,16 +112,19 @@ public class SpriteClip
     /// </summary>
     public char? TintAlternateColor { get; init; }
 
+    /// <summary>Optional third color in the tint cycle, from <c>TintThirdColor</c>.</summary>
+    public char? TintThirdColor { get; init; }
+
     /// <summary>
-    /// How long each blink phase of <see cref="TintColor"/> lasts, in seconds (from
-    /// <c>TintBlinkSeconds</c>). Null means a steady tint without blinking.
+    /// How long each tint phase lasts, in seconds (from <c>TintBlinkSeconds</c>).
+    /// Null means a steady tint without blinking.
     /// </summary>
     public double? TintBlinkSeconds { get; init; }
 
     /// <summary>
     /// The frame index this clip starts at when spawned, e.g. a "Center" frame in a
     /// Left/Center/Right clip so PingPong mode bounces symmetrically (Center, Right, Center,
-    /// Left, ...). Defaults to 0.
+    /// Left, ...). When unspecified, the loader uses the last frame for reversed clips and 0 otherwise.
     /// </summary>
     public int DefaultFrame { get; init; }
 

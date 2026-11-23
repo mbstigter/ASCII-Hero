@@ -68,7 +68,6 @@ Climbable = false            ; default: false
 ClimbStyle = Climb           ; (optional) Climb or Shimmy; only valid with Climbable = true
 Hangable = false             ; default: false
 Medium = false               ; default: false (true = water-like volume that gives buoyancy/drag; needs a static, Passable = true object)
-Sound = SoundName            ; (optional) sound played on contact; not allowed on Portal
 ```
 
 ### 1.5 Conveyor surface (StaticObject, Gate, Switch, Device, FlowZone, Portal, Collectable, StaticHazard, KinematicObject, KinematicHazard)
@@ -121,6 +120,8 @@ CrawlSpeed = 6               ; default: 6
 FallDamage = 0.2             ; default: 0.2 (health lost on a hard landing)
 FallDamageImpactSpeed = 28.3 ; default: about 28.3 (landing speed that causes fall damage; equals a 10-cell fall at default gravity)
 StompDamage = 1.0            ; default: 1.0 (damage dealt by landing on a hazard)
+HurtSound = Name             ; (optional) played when the player survives damage
+KillSound = Name             ; (optional) played when the player loses a life
 PortalEnteredSound = Name    ; (optional)
 PortalArrivedSound = Name    ; (optional)
 CameraTarget = false         ; default: false
@@ -174,13 +175,12 @@ With `OnSeconds` set, the object alternates on and off by itself (`OnSeconds = 2
 [LockedGate]
 Kind = Gate
 Asset = Gate
-Clip = closed
-ClipWhenOn = open
+Clip = default
 Lock = RedDoor               ; (optional) opened and closed by a Key collectable with the same lock name
-Sound = DoorMove             ; (optional) played whenever the gate opens or closes
+OperateSound = DoorMove      ; (optional) played when operated by a key or switch
 ```
 
-The matching key (`Kind = Collectable`, `Type = Key`, `Lock = RedDoor`) takes `Sound` (played on pickup) and `TurnSound` (played when the key is turned, before the gate's own `Sound`). The key is never used up.
+The matching key (`Kind = Collectable`, `Type = Key`, `Lock = RedDoor`) takes `CollectSound` (played on pickup) and `UseSound` (played together with the gate's `OperateSound`). The key is never used up. A gate may instead use one timed, one-shot `Clip` and omit `ClipWhenOn`: its first frame is closed, its last is open, and it plays between them in either direction. Switches and their linked gates, devices, flow zones and kinematic objects can also have `OperateSound`; timer-driven changes are silent.
 
 ### 4.2 Gate, opened by a switch
 
@@ -188,8 +188,7 @@ The matching key (`Kind = Collectable`, `Type = Key`, `Lock = RedDoor`) takes `S
 [SwitchGate]
 Kind = Gate
 Asset = Gate
-Clip = closed
-ClipWhenOn = open
+Clip = default
 Link = Bridge1               ; (optional) opened by a Switch with the same link name
 ```
 
@@ -277,7 +276,7 @@ FlowSpeed = 12               ; default: 12
 
 ### 4.9 TimedHazard
 
-A hazard (e.g. a retracting spike) that hurts only while on. Passable by default. Takes the hazard keys `Damage` and `Sound`; it is not killable and plays no effects.
+A hazard (e.g. a retracting spike) that hurts only while on. Passable by default. Takes `Damage`; it is not killable and plays no effects. The player's damage sounds play when it is hurt.
 
 ```ini
 [Spike]
@@ -287,7 +286,6 @@ ClipWhenOn = up              ; clip shown while out and dangerous
 OnSeconds = 2                ; 2 s out, then 2 s hidden, and so on
 InitialState = Off           ; default: Off (starts hidden)
 Damage = 0.5
-Sound = Hurt
 ```
 
 Leave `Clip` out and the hazard is invisible while off.
@@ -426,7 +424,9 @@ HitSpeed = 5                 ; default: 5 (minimum impact speed at which it hurt
 Reusable = true              ; default: true (false = used up on hit)
 ThrowSpeed = 20              ; default: 20
 ThrowAngle = 30              ; default: 30 (degrees)
-PickupSound = Name           ; (optional)
+CollectSound = Name          ; (optional) played on pickup
+UseSound = Name              ; (optional) played when thrown
+HitSound = Name              ; (optional) physical impact at 1 cell/second or more
 EffectClip = hit             ; (optional)
 GravityAffected = true       ; default: true
 InitialVelocityX = 0         ; default: 0
@@ -533,9 +533,9 @@ All patrol keys from 5.7 apply to DynamicHazard.
 Not moved by physics. Without patrol keys it keeps moving at its initial velocity forever (0 = fixed in place, e.g. a static saw). On a patrolled axis the initial velocity is only a starting value that the patrol then overrides.
 
 ```ini
-[Saw]
+[Chainsaw]
 Kind = KinematicHazard
-Asset = Saw
+Asset = Chainsaw
 Clip = spin
 InitialVelocityX = 0         ; default: 0 (constant speed in cells/second; non-zero makes it drift)
 InitialVelocityY = 0         ; default: 0
@@ -546,9 +546,9 @@ InitialVelocityY = 0         ; default: 0
 Follows a fixed path at a constant speed, ignoring collisions.
 
 ```ini
-[Saw]
+[Chainsaw]
 Kind = KinematicHazard
-Asset = Saw
+Asset = Chainsaw
 Clip = spin
 PatrolMinX = 10              ; (optional) X path; default: 0 if only Max set
 PatrolMaxX = 30              ; (optional) default: world right edge if only Min set
@@ -642,15 +642,16 @@ Patrol = true
 Leads to another world.
 
 ```ini
-[Door]
+[FloorPortal]
 Kind = Portal
-Asset = Door
-Clip = default
+Asset = Portal
+Clip = horizontal
+Span = 6                     ; (optional) repeat the horizontal unit across this length
 TargetWorld = 2              ; (required) world number, 0 or more
 TargetEntry = North          ; (optional) named Player Entry in the target world; default: its default spawn
 ```
 
-`Sound` is not allowed on a Portal (the player's `PortalEnteredSound` is used).
+Portal sounds belong to the player (`PortalEnteredSound` and `PortalArrivedSound`).
 
 ---
 
@@ -662,7 +663,8 @@ Shared keys:
 
 ```ini
 Type = Diamond               ; (required for an effect) see variants
-EffectClip = pop             ; (optional)
+CollectSound = Name          ; (optional) played on pickup
+EffectClip = fade            ; (optional)
 EffectPersists = false       ; default: false
 ```
 
@@ -711,7 +713,7 @@ Ends the world.
 ```ini
 [Goal]
 Kind = Collectable
-Asset = Goal
+Asset = WorldEnd
 Clip = default
 Type = WorldEnd
 ```
@@ -731,7 +733,9 @@ Lock = RedDoor               ; (optional) a key without a lock name does nothing
 
 ### 10.6 HealthPack
 
-Restores full health; stays in place while health is already full.
+Picked up into the player's `HealthPack` gear slot, even at full health. Select it and press the
+action key to consume one whole pack and restore full health; at full health it is not consumed.
+`CollectSound` plays on pickup; optional `UseSound` plays when the pack is consumed.
 
 ```ini
 [HealthPack]
@@ -739,6 +743,7 @@ Kind = Collectable
 Asset = HealthPack
 Clip = default
 Type = HealthPack
+UseSound = HealthUse
 ```
 
 ---

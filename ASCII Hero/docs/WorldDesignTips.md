@@ -80,7 +80,22 @@ changes gravity or the player's walk speed changes these numbers too.
   and keeps it when moving between worlds and sub-worlds.
 - **Give every lock name a unique name across the world and all its sub-worlds**, because carried
   keys follow the player through portals and a key would also work on a same-named gate elsewhere.
-- A key gate cannot close while the player or something else solid stands in it.
+- A key- or switch-operated gate cannot close while the player or another solid moving object is
+  in its closed shape. If any gate linked to a switch is blocked, none of that switch's targets change.
+
+## Gear icons
+
+- The HUD gear box and gear ring use the same separate **`icon`** clip. List the
+  sprite asset as `Name = SpriteAsset` in `Global/Settings.ini` `[Gear]`; its
+  `icon` clip is used automatically (see [AssetFormat.md §4.4](AssetFormat.md#44-globalsettingsini)).
+- **An icon must be exactly one line tall and one to three characters wide.**
+  A world sprite can be much larger: draw a compact, recognizable representation
+  in its icon clip without changing the object's appearance in the world.
+  Icons are centered, not automatically scaled down.
+- In the icon's foreground and background color layers, use only `EmptyChar`
+  and `^`. `^` uses the active interface foreground color in either layer.
+  Empty foreground cells use the interface background color, allowing reversed
+  shapes; empty background cells leave the panel backdrop unchanged.
 
 ## Repeatable objects
 
@@ -102,10 +117,12 @@ that is not a multiple of the unit ends with a partial unit; for a clean end, pi
 | Ladder | `vertical` | 1 tall | 3 wide |
 | Ladder | `horizontal` | 2 wide | 2 tall |
 | Pipe | `horizontal` / `vertical` | 1 | 1 |
+| Portal (horizontal) | `horizontal` | 2 wide | 1 tall |
+| Portal (vertical) | `vertical` | 1 tall | 2 wide |
 | Fan (lying flat) | `horizontal_up_*`, `horizontal_down_*` | 7 wide (one rotor) | 3 tall |
 | Fan (upright) | `vertical_left_*`, `vertical_right_*` | 5 tall (one rotor) | 4 wide |
-| Door (closed) | `closed` | 1 tall | 2 wide |
-| Hatch (closed) | `closed` | 1 wide | 1 tall |
+| Door (gate) | `default` / `ancient` | 2 wide | 1 tall |
+| Hatch (gate) | `default` / `ancient` | 1 wide | 1 tall |
 | Floor | `ancient` | 8 wide | 1 tall |
 | Wall | `ancient` | 2 tall | 2 wide |
 | Column | `ancient` | 1 tall | 3 wide |

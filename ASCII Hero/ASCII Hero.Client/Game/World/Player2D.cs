@@ -57,6 +57,12 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// </summary>
     public string? HurtEffectClipName { get; set; }
 
+    /// <summary>Optional sound played when the player is hurt but survives.</summary>
+    public string? HurtSoundName { get; set; }
+
+    /// <summary>Optional sound played when the player loses a life.</summary>
+    public string? KillSoundName { get; set; }
+
     /// <summary>
     /// Optional clip name (on this instance's own <see cref="Body2D.Sprite"/>) to play as a
     /// cosmetic effect when a <see cref="CollectableType.Checkpoint"/> is reached. Null (the
@@ -187,9 +193,10 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     private Gear2D? _selectedGear;
 
     /// <summary>
-    /// The gear slot the action key uses (a throw, or a key for a gate), shown in the HUD's gear box:
-    /// the one picked in the gear ring or, until one is picked, the first slot; null only without any
-    /// <see cref="Gear"/>. It stays selected when it runs empty. Kept across respawns.
+    /// The gear slot the action key uses (throwing an item, operating a gate with a key, or using a
+    /// health pack), shown in the HUD's gear box: the one picked in the gear ring or, until one is
+    /// picked, the first slot; null only without any <see cref="Gear"/>. It stays selected when it
+    /// runs empty. Kept across respawns.
     /// </summary>
     public Gear2D? SelectedGear
     {

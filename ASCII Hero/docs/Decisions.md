@@ -323,8 +323,11 @@ capture the "why" behind a decision without needing a lengthy narrative.
   cells are solid). Used by the shared Door/Hatch so one drawing serves every
   material, picked per placement with `Material`. A material without a
   `Character` used with such a sprite is a load error. A closed door is as
-  thick as a wall and a closed hatch as a floor; their open clip is a
-  play-once swing animation growing right/down.
+  thick as a wall and a closed hatch as a floor; their single one-shot movement clip swings
+  right/down on opening and plays backwards on closing. Passability changes immediately;
+  closing collision uses the first, closed frame throughout the visual animation. Key and switch
+  operations refuse to close a gate over a solid moving body; a blocked linked gate prevents
+  the whole switch operation so its targets remain synchronized.
 - **Tileable placements set their length with `Span` (cells), not a repeat
   count.** The authored unit may be any number of cells long; the unit is
   repeated to fill the span exactly, cutting the last unit short when needed.
@@ -352,8 +355,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   their active clip - and facing, including a vertical axis for `Climb` - from
   each clip name's own suffix
 - **Multi-frame animation is supported per clip** (`[Animation.{clip}]`
-  timing overrides, `DefaultFrame`, `AnimationMode.Off` as an explicit
-  opt-out for multi-frame-but-non-animating assets), including subtle idle
+  timing overrides, `DefaultFrame`, `Reverse` for initial playback direction, and
+  `AnimationMode.Off` as an explicit opt-out for multi-frame-but-non-animating assets), including subtle idle
   animation (e.g. blinking) using the same mechanism as static shape
   variants.
 - **Animation that depicts movement is travel-driven, not time-driven**: a
@@ -396,11 +399,15 @@ capture the "why" behind a decision without needing a lengthy narrative.
   designers can make silent worlds.
 - **Player movement sounds are per pose** (`[Sounds]` in the sprite
   settings), played on animation frame steps, kept subtle.
-- **Object sound keys are `Sound` and `KillSound`, with `Sound` meaning
-  "the object's main event"**: for a hazard, the player being hurt by it; for
-  a collectable, being picked up. `KillSound` is for a hazard being squashed
-  and replaces `Sound` for that contact. The same two keys serve every kind
-  of object.
+- **Placement sounds name the object's own event**: `CollectSound`, `UseSound`,
+  `HitSound` and `OperateSound` describe collection, use, throwable impact and
+  switch-driven operation. `PortalEnteredSound` and `PortalArrivedSound` belong to
+  the player's placement. A throwable's `HitSound` plays on physical impacts
+  (including while loose) at the resting-bounce threshold, not on passable overlaps;
+  its damage threshold is separate. `HurtSound` and `KillSound` belong to the damaged
+  player or hazard; surviving damage and fatal damage play only the corresponding
+  sound. Hard landings use the player's damage sounds too. The old `Sound`,
+  `PickupSound` and `TurnSound` keys are rejected.
 - **Each sound is a single pitch slide**; multi-note sounds are not
   supported (kept simple for now).
 - **The world-select menu plays subtle `MenuMove`/`MenuSelect` sounds** when
@@ -514,23 +521,28 @@ capture the "why" behind a decision without needing a lengthy narrative.
   stays solid against hazards so its hits still collide. This is a fixed rule for all
   throwables, not an ini setting; hazards still push ordinary dynamic objects.
 - **Gear slots are game-wide, listed in `Global/Settings.ini` `[Gear]`**
-  (`Name = Icon`), not per world. A `Gear2D` is an inventory slot, not a body; it
-  keeps the picked-up bodies themselves so a throw puts the same object (with its
-  tuning) back. A throwable whose gear isn't listed cannot be picked up. Every
-  listed slot is always shown (gear ring), empty ones greyed out; there is no
-  "discovered" state. `Player2D.SelectedGear` is the slot chosen in the gear ring,
-  or the first slot until one is chosen; it does not jump to another slot when it
-  runs empty (the action key then does nothing with it).
+  (`Name = SpriteAsset`), not per world. Gear always uses the asset's `icon` clip,
+  a one-row drawing up to three cells wide; `^` in either color layer means the
+  active interface foreground, while an empty foreground cell uses the
+  interface background. A `Gear2D` is an inventory slot, not a body; it keeps
+  picked-up bodies themselves so a throw puts the same object (with its tuning)
+  back. A throwable whose gear isn't listed cannot be picked up. Every listed
+  slot is always shown; counts remain dimmed, with no "discovered" state.
+  `Player2D.SelectedGear` is the slot chosen in the gear ring, or the first slot
+  until one is chosen; it does not jump to another slot when it runs empty (the
+  action key then does nothing with it). Health packs are stored in the
+  `HealthPack` slot.
 - **Keys are gear like any other**, carried in the `Key` slot (`Key2D.GearName`;
   not listed = keys can't be picked up), not in a separate key list or the HUD.
   The key slot must be selected to unlock a gate; the gate then still checks that
   the slot holds a key for its lock. This keeps "the action key uses the selected
-  gear" true for every gear. `[Gear]` also lists placeholder gear that no
-  throwable uses, so the ring has six slots to try.
+  gear" true for every gear. The active settings list only the Key, Rock and
+  HealthPack slots; unused placeholder slots are not shown.
 - **Gear is shown in its own gear box, chosen in the gear ring.** The HUD box
   itself never shows gear; a fixed gear box right of it (`GameLoop._hudGearBox`)
-  always shows the selected gear's icon (dimmed while empty) and dimmed count as
-  `x3` (the same `x` form as the ring). Holding
+  always shows the selected gear's monochrome sprite icon and dimmed count as
+  `x3` (the same `x` form as the ring). Both surfaces render the same loaded
+  `IconFrame` through `UIRenderer.AddMonochromeIcon`. Holding
   `Tab` (`InputState.IsGearRingKeyDown`, browser focus move suppressed in
   game-interop.js) opens the gear ring (`GameMode.GearRing`, game paused like the
   exit prompt): one small dark box per slot around a circle, snapped to whole
@@ -550,12 +562,14 @@ capture the "why" behind a decision without needing a lengthy narrative.
   ring is fully open, so it stays lit while the ring moves). The difference is
   only that world select draws no box around unselected worlds, while the ring
   draws every slot in a dark box.
-- **The action key does one thing per press, in priority order:** operate a switch
-  else open/close a key gate in reach
-  else throw from the selected gear (`World2D.TryThrow`; nothing for a key).
-  A thrown item appears just in front of the player, on the side it last faced, at
-  head height, flying off at the object's `ThrowSpeed`/`ThrowAngle` plus the player's
-  velocity, and is refused (keeping the item) when that spot is blocked.
+- **The action key does one thing per press, in priority order:** operate a switch,
+  open/close a key gate in reach, use a selected health pack when health is below
+  full, or throw from the selected gear. A health pack is used whole and consumed
+  only on successful healing; selecting it or pressing the action key at full
+  health leaves it in inventory. A thrown item appears just in front of the player,
+  on the side the player last faced, at head height, flying off at the object's
+  `ThrowSpeed`/`ThrowAngle` plus the player's velocity, and is refused (keeping
+  the item) when that spot is blocked.
 - **Gravity is a non-negative magnitude that always pulls down.** Inverted
   gravity is not a concept; negative or non-finite values are rejected at load.
   Zero means weightless; weight-scaled patrol caps then give no force, except
@@ -587,8 +601,10 @@ capture the "why" behind a decision without needing a lengthy narrative.
   during testing instead of silently behaving like some other variant.
   `Diamond`/`Ring` are removed on pickup and increment
   `Player2D.Score` (and `Rings` for `Ring`);
-  `HealthPack` restores `Player2D.Health` fully and is removed, but is left in
-  place untouched while health is already full, so it isn't wasted;
+  `HealthPack` is removed on pickup and stored in the `HealthPack` gear slot;
+  using it consumes one whole pack and restores `Player2D.Health` to full only
+  when the player is hurt, playing its optional `UseSound`; `CollectSound` remains
+  the pickup sound;
   `Key` is removed on pickup and goes into the `Key` gear slot (inert without a
   `Lock` name or that slot; the lock name lives on `Key2D`, not on
   `Body2D`); a `Gate2D` with a matching `Lock` is opened by the action key
@@ -608,8 +624,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   (see below).
 - **Player effects follow the player**: every effect the player plays stays
   attached to the player at its clip's `OffsetX`/`OffsetY`, and may tint the
-  player via `TintColor`/`TintAlternateColor`/`TintBlinkSeconds` in the same
-  `[Animation.{clip}]` section (no separate tint structure). The tint is
+  player via `TintColor`/`TintAlternateColor`/optional `TintThirdColor`/`TintBlinkSeconds`
+  in the same `[Animation.{clip}]` section (no separate tint structure). The tint is
   temporary and wins over the normal foreground color chain. A hazard's hurt
   effect follows (and may tint) the hazard the same way; other non-player
   effects stay where they were spawned. A clip with a tint and no drawing files
@@ -797,7 +813,7 @@ capture the "why" behind a decision without needing a lengthy narrative.
 - **Portals have no sound or effect of their own; the player owns them.** The player's
   `PortalEnteredEffectClip`/`PortalEnteredSound` play on stepping in and
   `PortalArrivedEffectClip`/`PortalArrivedSound` on arrival, mirroring the other player
-  effect keys. A `Sound` key on a `Portal` placement is rejected. Play is frozen briefly
+  effect keys. Play is frozen briefly
   (`GameLoop.PortalTransitionSeconds`) only when the player has the matching effect clip.
   A world smaller than the window is centred by the camera instead of left-aligned.
 - **World selection is a strict `GameMode` state machine** backed by a

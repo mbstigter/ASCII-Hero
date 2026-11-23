@@ -13,6 +13,9 @@ namespace ASCII_Hero.Tests.Physics;
 public sealed class FallDamageTests
 {
     private const double Penetration = 0.1;
+    private static readonly string[] expectedArray0 = ["died"];
+    private static readonly string[] expectedArray = ["PlayerDeath"];
+    private static readonly string[] expected = ["PlayerHurt"];
 
     /// <summary>Loads the Crates world and lets the player settle on the floor.</summary>
     private static async Task<World2D> LoadGroundedPlayerAsync()
@@ -58,13 +61,14 @@ public sealed class FallDamageTests
     {
         var world = await LoadGroundedPlayerAsync();
         var player = world.Player;
-
+        player.HurtSoundName = "PlayerHurt";
+        player.KillSoundName = "PlayerDeath";
         world.DrainPendingSounds();
 
         LandAt(world, player.FallDamageImpactSpeed * 1.2);
 
         Assert.AreEqual(GameDefaults.PlayerFullHealth - GameDefaults.DefaultFallDamage, player.Health, 1e-9);
-        Assert.Contains(player.Sprite.PoseSounds[InteractionHandler.HardLandingSoundKey], world.DrainPendingSounds());
+        CollectionAssert.AreEqual(expected, world.DrainPendingSounds().ToArray());
     }
 
     [TestMethod]
@@ -72,13 +76,14 @@ public sealed class FallDamageTests
     {
         var world = await LoadGroundedPlayerAsync();
         var player = world.Player;
-
+        player.HurtSoundName = "PlayerHurt";
+        player.KillSoundName = "PlayerDeath";
         world.DrainPendingSounds();
 
         LandAt(world, player.FallDamageImpactSpeed * 0.8);
 
         Assert.AreEqual(GameDefaults.PlayerFullHealth, player.Health);
-        Assert.DoesNotContain(player.Sprite.PoseSounds[InteractionHandler.HardLandingSoundKey], world.DrainPendingSounds());
+        Assert.IsEmpty(world.DrainPendingSounds());
     }
 
     [TestMethod]
@@ -107,13 +112,17 @@ public sealed class FallDamageTests
         var world = await LoadGroundedPlayerAsync();
         var player = world.Player;
         player.Health = GameDefaults.DefaultFallDamage / 2;
+        player.HurtSoundName = "PlayerHurt";
+        player.KillSoundName = "PlayerDeath";
         var lives = player.Lives;
+        world.DrainPendingSounds();
 
         LandAt(world, player.FallDamageImpactSpeed * 1.2);
 
         Assert.AreEqual(0.0, player.Health);
         Assert.AreEqual(lives - 1, player.Lives);
         Assert.AreEqual(PendingTransition.Death, world.PendingTransition);
+        CollectionAssert.AreEqual(expectedArray, world.DrainPendingSounds().ToArray());
     }
 
     [TestMethod]
@@ -127,7 +136,7 @@ public sealed class FallDamageTests
         LandAt(world, player.FallDamageImpactSpeed * 1.2);
 
         var effectClips = world.Objects.OfType<EffectInstance2D>().Select(effect => effect.Clip.Name).ToList();
-        CollectionAssert.AreEqual(new[] { "died" }, effectClips);
+        CollectionAssert.AreEqual(expectedArray0, effectClips);
     }
 
     [TestMethod]

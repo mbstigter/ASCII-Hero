@@ -1,3 +1,5 @@
+using ASCII_Hero.Client.Game.Assets;
+
 namespace ASCII_Hero.Client.Game.Rendering;
 
 /// <summary>
@@ -38,6 +40,38 @@ public static class UIRenderer
         GlyphBuilder.AddBox(
             glyphs, frame.Col, frame.Row, frame.Col + frame.Width - 1, frame.Row + frame.Height - 1,
             frame.ForeColor, frame.BackColor, cellWidthPixels, cellHeightPixels);
+    }
+
+    public static void AddMonochromeIcon(
+        List<Glyph> glyphs, SpriteFrame frame, char emptyChar,
+        double col, double row, int width, int height,
+        string interfaceForegroundColor, string interfaceBackgroundColor, string? backColor,
+        double cellWidthPixels, double cellHeightPixels)
+    {
+        var iconCol = col + Math.Max(0, Math.Floor((width - frame.Width) / 2.0));
+        var iconRow = row + Math.Max(0, Math.Floor((height - frame.Height) / 2.0));
+        for (var y = 0; y < frame.Height; y++)
+        {
+            for (var x = 0; x < frame.Width; x++)
+            {
+                var character = frame.Chars[y, x];
+                var foreCode = frame.Fore[y, x];
+                var backCode = frame.Back[y, x];
+                if (character == emptyChar && backCode != '^')
+                {
+                    continue;
+                }
+
+                var foreColor = foreCode == '^' ? interfaceForegroundColor : interfaceBackgroundColor;
+                var cellBackColor = backCode == '^' ? interfaceForegroundColor : backColor;
+                glyphs.Add(GlyphBuilder.BuildGlyph(
+                    (iconCol + x) * cellWidthPixels,
+                    (iconRow + y) * cellHeightPixels,
+                    character == emptyChar ? ' ' : character,
+                    foreColor,
+                    cellBackColor));
+            }
+        }
     }
 
     public static void AddLabel(List<Glyph> glyphs, UILabel label, double cellWidthPixels, double cellHeightPixels)

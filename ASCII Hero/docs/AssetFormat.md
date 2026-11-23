@@ -290,10 +290,14 @@ multiple frames. If omitted, multi-frame clips remain static at frame `DefaultFr
     for an inanimate variant of an otherwise-animated asset that still wants to
     share the same multi-frame art/settings file (e.g. a dead hazard variant that
     should render a fixed pose while a living one animates).
-- `DefaultFrame` (default `0`) — the frame index a clip starts at, whether or not
-  it animates. Useful for starting an animated Left/Center/Right clip at the
-  Center frame so `PingPong` bounces symmetrically, or for a static shape-variant
-  clip that should always render a frame other than `0`.
+- `Reverse` (default `false`) — start playback toward lower frame indices. `Once` holds
+  at frame 0, `Loop` wraps from frame 0 to the last frame, and `PingPong` starts in the
+  reverse direction and bounces at either endpoint. At an endpoint, `PingPong` always moves
+  inward. This also applies to travel-driven clips.
+- `DefaultFrame` — the frame index a clip starts at; defaults to `0`, or the last frame
+  when `Reverse = true`. An explicit asset-wide or per-clip value overrides that default.
+  For `PingPong`, a middle frame lets the initial direction be visible. Static shape-variant
+  clips can also select a frame other than `0`.
 - `EffectDurationSeconds` (optional, per-clip only) — only used when the clip is
   played as an effect (e.g. a `hurt`/`checkpointreached` clip): how long it
   plays before it disappears
@@ -319,7 +323,10 @@ multiple frames. If omitted, multi-frame clips remain static at frame `DefaultFr
   ```
 - `TintAlternateColor` (optional) — color the tint blinks against; when absent
   it blinks against the body's normal colors.
-- `TintBlinkSeconds` (optional) — length of each blink phase; when absent the
+- `TintThirdColor` (optional) — a third palette color in the cycle. Requires
+  `TintColor`, `TintAlternateColor` and a positive `TintBlinkSeconds`; phases repeat
+  in that order.
+- `TintBlinkSeconds` (optional) — length of each tint phase; when absent the
   tint is steady.
 
 Animation settings are resolved **per clip**, not asset-wide, since clips of the
@@ -1125,10 +1132,12 @@ instead of the effect fading away like an ordinary pickup:
   `EffectPersists = true` for the same reason as `Checkpoint`.
 - `Key` — adds a key to the player's inventory and is removed. Requires a
   `Lock = <name>` key naming the lock it opens; a key without `Lock` is inert
-  (like a missing `Type`). Optional `TurnSound = <name>` is played when the key is turned in
-  its gate, before the gate's own `Sound`. See "Gates, keys and switches" below.
-- `HealthPack` — restores the player's health fully and is removed. While the
-  player's health is already full it is left in place (no sound, no effect).
+  (like a missing `Type`). Optional `UseSound = <name>` is played when the key is turned in
+  its gate, before the gate's own `OperateSound`. See "Gates, keys and switches" below.
+- `HealthPack` — picked up into the player's `HealthPack` gear slot and removed from the world,
+  even while health is full. Selecting it does not use it; the action key consumes one whole pack
+  and restores full health only when health is below full. Optional `UseSound = <name>` plays
+  when the pack is consumed; `CollectSound` remains the pickup sound.
 
 ```ini
 [Ring]
@@ -1148,21 +1157,18 @@ EffectPersists = true
 ```
 
 **Gates, keys and switches.** A *gate* (`Kind = Gate`) is a door, hatch or similar
-passage: solid while closed, passable while open. It has two clips of its sprite
-asset - `Clip` (closed) and `ClipWhenOn` (open) - and swaps between them. The clip
-names are free (conventionally `closed`/`open` for gates and `off`/`on` for
-switches); `Clip` defaults to
-`default` when omitted. `Span`, `ForegroundColor` etc. work as for any sprite
+passage: solid while closed, passable while open. It can use `Clip` (closed) and
+`ClipWhenOn` (open), or a single timed one-shot `Clip` with no `ClipWhenOn`. For the
+single-clip form, the first frame is closed and the last is open. Clip names are free;
+`Clip` defaults to `default` when omitted. `Span`, `ForegroundColor` etc. work as for any sprite
 placement. A gate is opened in one of two ways, never both (a gate with both
 `Lock` and `Link` is a load error):
 
-- **By key**: `Lock = <name>`. A key (`Kind = Collectable`, `Type = Key`) with the
-  Names match case-insensitively.
-  pressing the action key (`E` or `Enter`) with the Key gear selected; a closed gate
-  opens and an open gate closes, and the gate's `Sound` plays. The key is never
-  used up, and stays with the player on respawn and across portals. A gate will not
-  close while the player or another solid moving body is in it. Lock names should be
-  unique across a world and all its sub-worlds.
+- **By key**: `Lock = <name>`. Pick up a key (`Kind = Collectable`, `Type = Key`) with the
+  same lock name, select the Key gear, and press the action key (`E` or `Enter`) next to the gate.
+  Names match case-insensitively. A closed gate opens and an open gate closes, and the gate's
+  `OperateSound` plays. The key is never used up, and stays with the player on respawn and across
+  portals. Lock names should be unique across a world and all its sub-worlds.
 - **By switch**: `Link = <name>`, see below.
 
 A *switch* (`Kind = Switch`) is a button or lever: a passable object with an off clip
@@ -1173,15 +1179,22 @@ off and moves while on). A `Device` is a machine-like object (fan, lamp, pump) t
 swaps between its off and on clips; if it also has `ConveyorDirection`/`ConveyorSpeed`
 (e.g. a rope), its surface only moves while on (always, if it has no `Link`). Links are
 one switch to many targets: a switch without a matching target, a target without a
-switch, or two switches with the same `Link` are load errors. The switch's `Sound` plays
-when it is operated. A gate's `Sound` plays whenever it changes state, whether a key or
-a switch caused it, after the operating sound (the switch's `Sound`, or the key's
-`TurnSound`). One sound per gate type, e.g. `DoorMove` or `HatchMove`; the
-same sound plays for opening and closing. A refused close is silent.
+switch, or two switches with the same `Link` are load errors. The switch's `OperateSound` plays
+at the same time as the `OperateSound` of each linked gate, device, flow zone or kinematic object.
+A gate operated by a key plays its `OperateSound` at the same time as the key's `UseSound`.
+The same gate sound plays for opening and closing; a refused close is silent. A key-operated
+or switch-operated gate will not close while a solid moving body overlaps its closed shape. If
+any linked gate is blocked, the entire switch operation is refused and all targets keep their
+states. Timer-driven state changes are silent.
 
-A gate becomes passable the moment it opens. Its open clip may be a short animation
-(`[Animation.open] Mode = Once`) that plays once and holds its last frame. Closing
-returns to the closed clip at once. A clip's frames grow from the gate's top-left
+A gate becomes passable the moment it opens and solid the moment it closes. A single timed
+one-shot clip (`Mode = Once`) plays from its first frame toward its last when opening and
+backwards when closing, holding at the endpoint. Its initial state selects the endpoint, and
+reversing mid-animation continues from the current frame. The first frame supplies the closed
+collision shape. In the two-clip form, a timed one-shot open clip plays in reverse on closing
+before returning to the closed clip, whose default frame supplies the closed collision shape.
+For a single-clip gate, its state determines movement direction regardless of the clip's
+`Reverse` setting. A clip's frames grow from the gate's top-left
 corner, so a growing door swings out to the right and a growing hatch swings down.
 The shared `Door` and `Hatch` sprites are drawn with `MaterialChar` (§2.4): a closed door
 is 2 cells wide and a closed hatch 1 cell high, both shown in their material's
@@ -1191,15 +1204,15 @@ placement for a wooden, steel or other door.
 | Key            | Meaning |
 |----------------|---------|
 | `Link`         | Name shared by a switch and its target. |
-| `ClipWhenOn`   | Clip shown while on/open. Without it the state still changes but the sprite stays. |
+| `ClipWhenOn`   | Clip shown while on/open. Without it, a gate's timed one-shot `Clip` plays between closed and open endpoints; other objects keep the same clip. |
 | `InitialState` | `On` to start on/open (the target is synchronised on load). Default off/closed. |
 | `Latching`     | Switches only. `true`: operating turns it on and it stays on. `false` (default): each operation toggles it. |
 | `OnSeconds`    | Optional timer for any gate, device, flow zone or `TimedHazard`: seconds spent on before it switches off by itself. `InitialState` sets the start. |
 | `OffSeconds`   | Seconds spent off before switching on again. Defaults to `OnSeconds`, so `OnSeconds = 2` alternates 2 s on, 2 s off. |
 
 A `TimedHazard` (`Kind = TimedHazard`, e.g. a retracting spike) hurts on touch only while on and is
-harmless while off; it takes `Damage`, `Sound`, `Clip` (off) and `ClipWhenOn` like the keys above.
-Leave `Clip` out and the hazard is invisible while off.
+harmless while off; it takes `Damage`, `Clip` (off) and `ClipWhenOn` like the keys above.
+The player's own damage sound plays when hurt. Leave `Clip` out and the hazard is invisible while off.
 
 ```ini
 [RedKey]
@@ -1207,16 +1220,15 @@ Asset = Key
 Kind = Collectable
 Type = Key
 Lock = Red
-Sound = KeyPickup
-TurnSound = KeyTurn
+CollectSound = KeyPickup
+UseSound = KeyTurn
 
 [RedDoor]
 Asset = Door
-Clip = closed
-ClipWhenOn = open
+Clip = default
 Kind = Gate
 Lock = Red
-Sound = DoorMove  ; Played whenever the door opens or closes
+OperateSound = DoorMove  ; Played when operated by a key or switch
 
 [Lever]
 Asset = Lever
@@ -1225,15 +1237,14 @@ ClipWhenOn = on
 Kind = Switch
 Latching = false
 Link = Bridge
-Sound = LeverPull
+OperateSound = LeverPull
 
 [BridgeGate]
 Asset = Hatch
-Clip = closed
-ClipWhenOn = open
+Clip = default
 Kind = Gate
 Link = Bridge
-Sound = HatchMove
+OperateSound = HatchMove
 ```
 
 **Medium.** A passable static placement is only treated as an ambient medium
@@ -1291,10 +1302,11 @@ Score, lives, health, rings and keys go along. `TargetWorld`, `TargetEntry` and 
 on any other kind are rejected.
 
 ```ini
-[PortalHatch]
-Asset = Hatch
-Clip = ancient_closed
+[FloorPortal]
+Asset = Portal
+Clip = horizontal
 Kind = Portal
+Span = 6
 TargetWorld = 1
 TargetEntry = FromMain
 
@@ -1305,29 +1317,45 @@ Kind = Player
 Entry = FromCellar
 ```
 
-**Sound keys on object placements.** `Sound` and `KillSound` name a sound from
-`SoundLibrary.ini` (§4.5). Both keys are optional
-object. Which event the key refers to depends on the kind of object:
+**Sound keys on object placements.** These optional keys name sounds in
+`SoundLibrary.ini` (§4.5) and describe events on the object itself:
 
-| Key         | On a hazard (`*Hazard`)                                              | On a `Collectable`                              |
-|-------------|----------------------------------------------------------------------|-------------------------------------------------|
-| `Sound`     | Played when the player is hurt by touching it (once per fresh contact, not while health is already 0). | Played when the player picks it up. Only plays when `Type` is set (an untyped collectable is inert). |
-| `KillSound` | Played when the player squashes it by landing on top (only for a killable hazard). That contact plays `KillSound` *instead of* `Sound`. | Not used.                                       |
+| Key | Event |
+|-----|-------|
+| `CollectSound` | A typed collectable or throwable is picked up. An untyped collectable is inert. |
+| `UseSound` | A key is used on a gate, a health pack is consumed to heal, or a throwable is thrown. |
+| `HitSound` | A throwable physically impacts a surface, object or world edge, at or above 1 cell/second closing speed. |
+| `OperateSound` | A switch is operated, or a linked gate, device, flow zone or kinematic object is operated by a switch; a gate also plays it when operated by a key. Timers are silent. |
+| `HurtSound` | The player or a killable hazard takes damage and survives. |
+| `KillSound` | The player loses a life or a killable hazard is defeated. |
+| `PortalEnteredSound`, `PortalArrivedSound` | The player enters or arrives through a portal. |
 
-Other kinds of object (platforms, walls, balls) never play these keys. A hazard
-can therefore have two different sounds - `Sound` for hurting the player and
-`KillSound` for being killed - but a single contact only ever plays one of them.
+Player damage sounds apply to both hazard hits and hard landings. An already-dead
+player makes no further damage sounds. `Sound`, `PickupSound` and `TurnSound` are
+obsolete and rejected; migrate them to the keys above. For a former hazard `Sound`,
+configure the player placement's `HurtSound` and `KillSound` instead. Replace the
+sprite's former `HardLanding` sound with those same player placement keys. A former
+throwable `Sound` becomes `HitSound`; `PickupSound` becomes `CollectSound`, and
+`TurnSound` becomes `UseSound`. Configure `UseSound` on throwables to retain a throw
+sound. Sound keys on kinds that cannot play them are rejected. Missing sound names
+are silent.
 
 ```ini
+[Player]
+Kind = Player
+Asset = Player
+HurtSound = PlayerHurt
+KillSound = PlayerKill
+
 [Creature]
 Kind = DynamicHazard
-Sound
-KillSound = HazardKill    ; Played when the player kills it from above
+HurtSound = HazardHurt
+KillSound = HazardKill
 
 [Ring]
 Kind = Collectable
 Type = Ring
-Sound = RingPickup    ; Played when the player picks it up
+CollectSound = RingPickup
 ```
 
 **`Damage` on hazards.** Optional, on any `*Hazard` placement: the share of a
@@ -1382,13 +1410,18 @@ hazards pass through it without pushing it.
 |---|---|
 | `Gear` | Required. The gear it is carried as |
 | `Damage` | How much of a hazard's `Health` one hit takes (default 0.5) |
-| `HitSpeed` | Minimum impact speed, cells/second, at which a hit counts (default 5) |
+| `HitSpeed` | Minimum speed, cells/second, at which a thrown object damages a killable hazard (default 5); independent of `HitSound` |
 | `Reusable` | `true` (default): can be picked up again after landing. `false`: used up on its first hazard hit or when it lands |
 | `ThrowSpeed` | Throw speed in cells/second, before the player's own speed is added (default 20) |
 | `ThrowAngle` | Throw angle in degrees above horizontal (default 30) |
-| `Sound` | Played when it hits a hazard |
-| `PickupSound` | Played when it is picked up |
+| `HitSound` | Played for each solid physical impact at a normal closing speed of at least 1 cell/second, including loose objects and world edges |
+| `CollectSound` | Played when it is picked up |
+| `UseSound` | Played when it is thrown |
 | `EffectClip` | Played where a single-use object is used up (e.g. a splat) |
+
+Passable static objects, including passable hazards, do not produce a physical impact sound.
+A passable killable hazard can still take damage and play its own `HurtSound` or
+`KillSound`. Tiny resting contacts below the impact threshold stay silent.
 
 ```ini
 [Stone]
@@ -1398,8 +1431,9 @@ Kind = ThrowableObject
 Gear = Stone
 Damage = 0.5
 Restitution = 0.4      ; A few small hops before it settles
-Sound = ThrowableHit
-PickupSound = ThrowablePickup
+HitSound = ThrowableHit
+CollectSound = ThrowablePickup
+UseSound = ThrowableUse
 ```
 
 The `Player` section may additionally override its own "muscle power" and
@@ -1828,20 +1862,37 @@ FontHeightPixels = 32
   configured.
 
 The `[Gear]` section lists the kinds of gear the player can carry, one per
-line as `Name = Icon`; the icon is the first character of the value. The list
-is game-wide: every world starts with all of them, empty. A `ThrowableObject`
-names its gear with its `Gear` key and can only be picked up when that gear is
-listed here, so commenting a line out switches that gear off everywhere. Keys
-are carried as the gear named `Key`, so a `Key` line is needed for keys to be
-picked up. The selected gear's icon and count are shown in the gear box next to
-the HUD; the action key throws it or, with `Key` selected, unlocks a matching
-gate. Holding `Tab` opens the gear ring with every listed gear in the order
-listed here; the first is selected at the start of a game.
+line as `Name = SpriteAsset`. The value names the sprite asset, including any
+group folder, just like an `Asset` key in a world object definition. Gear always
+uses that asset's **`icon`** clip, shown in both the HUD gear box and gear ring.
+It must be **exactly one line tall and one to three characters wide**. Its size
+is independent of the world sprite: author a separate, simplified drawing of a
+larger object without changing its world clip. The icon is not automatically
+scaled; its authored cells are centered in the available space. Use the normal
+clip filenames: `{AssetName}_icon_characters.txt`,
+`{AssetName}_icon_foregroundcolors.txt` and `{AssetName}_icon_backgroundcolors.txt`.
+The icon holds the clip's `DefaultFrame`; it does not animate. The usual sprite
+folder override and `[ClipFolders]` rules apply: a world-local override of a gear
+sprite must also supply its `icon` clip, with no per-clip fallback to the global folder.
+Sprite, material and world default colors do not affect icon colors.
+
+For these monochrome icon clips, foreground and background color layers may
+contain only the sprite's `EmptyChar` or `^`. `^` means the default interface
+foreground color (the active interface color's normal tint) in either layer;
+an empty foreground cell uses the interface background color, while an empty
+background cell leaves the gear box or ring backdrop unchanged. Commenting a
+line out switches that gear off everywhere. A `ThrowableObject` names its gear
+with its `Gear` key and can only be picked up when that gear is listed here;
+keys use the gear named `Key`, and health packs use `HealthPack`. The action key
+throws selected gear, unlocks a matching gate when `Key` is selected, or consumes
+one selected health pack to restore full health when the player is hurt. Holding
+`Tab` opens the gear ring with every listed gear in the order listed here; the
+first is selected at the start of a game.
 
 ```ini
 [Gear]
-Stone = ●
-Key = ♀
+GearA = SpriteA
+GearB = Group/SpriteB
 ```
 
 ### 4.5 `Global/SoundLibrary.ini`
@@ -1865,15 +1916,13 @@ Each section is one sound, named by its section header, with these keys:
 A sound that isn't defined is simply silent - there is no fallback, so a world
 can be made completely silent.
 
-Sounds are referenced by name from: an object's `Sound` / `KillSound` keys in
-`_objects.ini` (see "Sound keys on object placements" in §3.4 for what each
-means on a hazard versus a collectable), and a sprite's
-`[Sounds]` section in its settings file, which maps a pose name to a sound
-played on each animation frame step of a moving clip. The pose is the one
-(`Walk`, `Crawl`, `Climb`, `Shimmy`, `Hang`, `Clamber`, `Swim`)
-extra keys, `JumpStart` and `Land`, play once when the player leaves the
-ground upward and when it lands. `HardLanding` plays when a landing is hard
-enough to cause fall damage (on top of `Land`).
+Sounds are referenced by name from event-specific placement keys in `_objects.ini`
+(see "Sound keys on object placements" in §3.4), and a sprite's `[Sounds]` section
+in its settings file, which maps a pose name (`Walk`, `Crawl`, `Climb`, `Shimmy`,
+`Hang`, `Clamber`, `Swim`) to a sound played on each animation frame step of a
+moving clip. `JumpStart` and `Land` play once when the player leaves the ground
+upward and when it lands. A damaging landing additionally plays the player's
+placement `HurtSound` or `KillSound`.
 
 `Global/Settings.ini`'s `[Sound]` section has `Enabled` (true/false) and
 `MasterVolume` (0-1); either key may be omitted (defaults: on, full volume).

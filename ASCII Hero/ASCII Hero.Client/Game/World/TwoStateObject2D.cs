@@ -6,7 +6,7 @@ namespace ASCII_Hero.Client.Game.World;
 /// A static object that is either off or on and shows a different clip of its own sprite asset
 /// for each state - the shared base of <see cref="Switch2D"/> (off/on) and <see cref="Gate2D"/>
 /// (closed/open). The off clip is the placement's <c>Clip</c>; the on clip is its optional
-/// <c>ClipWhenOn</c> (without one the state still changes, but the sprite stays the same).
+/// <c>ClipWhenOn</c>. A gate can also use one timed one-shot clip for both states.
 /// </summary>
 public abstract class TwoStateObject2D : StaticObject2D
 {
@@ -28,7 +28,7 @@ public abstract class TwoStateObject2D : StaticObject2D
     public bool IsHidden => !IsOn && _offClipName is null;
 
     /// <summary>Assigns the sprite asset, both state clips, initial state and world position for this instance.</summary>
-    public void SpawnTwoState(SpriteAsset sprite, string? offClipName, string? onClipName, bool initialOn, Vector2D position, int span = 0)
+    public virtual void SpawnTwoState(SpriteAsset sprite, string? offClipName, string? onClipName, bool initialOn, Vector2D position, int span = 0)
     {
         _offClipName = offClipName;
         _onClipName = onClipName;
@@ -59,7 +59,7 @@ public abstract class TwoStateObject2D : StaticObject2D
     }
 
     /// <summary>Sets the state, swapping to the matching clip. No-ops if the state is unchanged.</summary>
-    public void SetState(bool on)
+    public virtual void SetState(bool on)
     {
         if (IsOn == on)
         {
@@ -80,6 +80,10 @@ public abstract class TwoStateObject2D : StaticObject2D
     protected virtual void OnStateChanged()
     {
     }
+
+    protected string? OffClipName => _offClipName;
+    protected string? OnClipName => _onClipName;
+    protected int Span => _span;
 
     private double CurrentPhaseSeconds => (IsOn ? OnSeconds : OffSeconds ?? OnSeconds) ?? 0;
 

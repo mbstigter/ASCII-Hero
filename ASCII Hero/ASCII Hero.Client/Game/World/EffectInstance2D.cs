@@ -30,9 +30,9 @@ public class EffectInstance2D : Body2D
 
     /// <summary>
     /// The tint color this effect currently applies to its <see cref="FollowTarget"/>, following
-    /// the clip's <see cref="SpriteClip.TintColor"/>/<see cref="SpriteClip.TintAlternateColor"/>/
-    /// <see cref="SpriteClip.TintBlinkSeconds"/>. Null when the clip has no tint, or during a
-    /// blink phase that shows the body's normal colors.
+    /// the clip's <see cref="SpriteClip.TintColor"/>, <see cref="SpriteClip.TintAlternateColor"/>,
+    /// optional <see cref="SpriteClip.TintThirdColor"/> and <see cref="SpriteClip.TintBlinkSeconds"/>.
+    /// Null when the clip has no tint, or during a phase that shows the body's normal colors.
     /// </summary>
     public char? CurrentTintColor
     {
@@ -43,9 +43,18 @@ public class EffectInstance2D : Body2D
                 return null;
             }
 
-            return Clip.TintBlinkSeconds is { } blinkSeconds && (int)(_elapsedSeconds / blinkSeconds) % 2 == 1
-                ? Clip.TintAlternateColor
-                : tint;
+            if (Clip.TintBlinkSeconds is not { } blinkSeconds)
+            {
+                return tint;
+            }
+
+            var phase = (int)(_elapsedSeconds / blinkSeconds) % (Clip.TintThirdColor is null ? 2 : 3);
+            return phase switch
+            {
+                1 => Clip.TintAlternateColor,
+                2 => Clip.TintThirdColor,
+                _ => tint,
+            };
         }
     }
 
@@ -75,7 +84,8 @@ public class EffectInstance2D : Body2D
     /// </summary>
     public void Spawn(SpriteAsset sprite, string clipName, Vector2D position, bool persistsAfterPlayback = false, Body2D? followTarget = null)
     {
-        SetFrame(sprite, clipName);
+        var startClip = sprite.GetClip(clipName);
+        SetFrame(sprite, clipName, startClip.Reverse ? startClip.DefaultFrame : 0);
         Position = position;
         PersistsAfterPlayback = persistsAfterPlayback;
         FollowTarget = followTarget;

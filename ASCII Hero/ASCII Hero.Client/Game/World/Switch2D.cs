@@ -20,12 +20,13 @@ public class Switch2D : TwoStateObject2D
 
     /// <summary>
     /// Operates the switch: toggles it, or only turns it on if <see cref="Latching"/>. Pushes the
-    /// new state to every one of <see cref="Targets"/>.
+    /// new state to every target, unless a linked gate would close on a solid moving body.
     /// </summary>
-    public bool Operate()
+    public bool Operate(World2D world)
     {
         var newState = Latching || !IsOn;
-        if (newState == IsOn)
+        if (newState == IsOn || (!newState && Targets.OfType<Gate2D>()
+            .Any(gate => gate.IsOn && world.IsBlockedByMovingSolid(gate))))
         {
             return false;
         }

@@ -24,8 +24,7 @@ public interface IKillableBody : IHurtableBody
 
     /// <summary>
     /// Optional <c>SoundLibrary.ini</c> name, from the placement's <c>KillSound</c> key: played
-    /// when the player squashes this hazard by landing on it, instead of its ordinary
-    /// <see cref="Body2D.SoundName"/>. Null means silent.
+    /// when this hazard is defeated. Null means silent.
     /// </summary>
     string? KillSoundName { get; }
 

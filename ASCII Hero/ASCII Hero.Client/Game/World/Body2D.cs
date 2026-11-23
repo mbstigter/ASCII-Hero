@@ -129,13 +129,11 @@ public abstract class Body2D
     /// </summary>
     public bool IsMediumCandidate { get; set; }
 
-    /// <summary>
-    /// Optional <c>SoundLibrary.ini</c> name, from the placement's <c>Sound</c> key. Its meaning
-    /// depends on the kind of body: for a collectable it plays when the player picks it up; for a
-    /// hazard it plays when the player is hurt by touching it (a squash plays
-    /// <see cref="IKillableBody.KillSoundName"/> instead). Null means silent - there is no default sound.
-    /// </summary>
-    public string? SoundName { get; set; }
+    /// <summary>Optional sound played when this body is collected, from the placement's <c>CollectSound</c> key.</summary>
+    public string? CollectSoundName { get; set; }
+
+    /// <summary>Optional sound played when this body is operated, from the placement's <c>OperateSound</c> key.</summary>
+    public string? OperateSoundName { get; set; }
 
     /// <summary>
     /// Whether the player can climb this static body - straight up/down movement,
@@ -317,6 +315,9 @@ public abstract class Body2D
     /// <summary>The specific frame within <see cref="Clip"/> currently active.</summary>
     public SpriteFrame Frame { get; private set; } = null!;
 
+    /// <summary>The frame used to derive and verify collision geometry.</summary>
+    public SpriteFrame CollisionFrame { get; private set; } = null!;
+
     /// <summary>
     /// Collision shape, as one or more rectangles in local cell coordinates (relative to
     /// <see cref="Position"/>, not world space). Derived from the active frame's actual grid
@@ -374,7 +375,7 @@ public abstract class Body2D
     /// <see cref="SpriteFrameTiler"/>), letting one small tileable unit build up an
     /// arbitrary-length platform/wall.
     /// </summary>
-    protected void SetFrame(SpriteAsset sprite, string clipName, int frameIndex = 0, int span = 0)
+    protected void SetFrame(SpriteAsset sprite, string clipName, int frameIndex = 0, int span = 0, bool? reverse = null)
     {
         Sprite = sprite;
         MaterialName ??= sprite.DefaultMaterial;
@@ -382,13 +383,23 @@ public abstract class Body2D
         _animationFrameIndex = frameIndex;
         _span = span;
         _animationProgress = 0;
-        // Starting already at the last frame means the next PingPong tick should move backward,
-        // not forward-then-immediately-clamp (which would otherwise waste one full tick doing
-        // nothing visible - noticeable on short clips, e.g. a 2-frame walk cycle started at index 1).
-        _animationDirection = _animationFrameIndex >= Clip.Frames.Count - 1 ? -1 : 1;
+        _animationDirection = (reverse ?? Clip.Reverse) ? -1 : 1;
+        if (Clip.AnimationMode == AnimationMode.PingPong)
+        {
+            if (_animationFrameIndex == 0)
+            {
+                _animationDirection = 1;
+            }
+            else if (_animationFrameIndex == Clip.Frames.Count - 1)
+            {
+                _animationDirection = -1;
+            }
+        }
 
         ApplyFrame(Clip.Frames[_animationFrameIndex]);
     }
+
+    protected int AnimationFrameIndex => _animationFrameIndex;
 
     /// <summary>
     /// Advances the animation and cycles to the next frame once enough progress has built up:
@@ -402,7 +413,7 @@ public abstract class Body2D
     /// Returns true if at least one frame step was taken this call (used to time per-frame
     /// sounds, e.g. footsteps).
     /// </summary>
-    public bool AdvanceAnimation(double deltaSeconds)
+    public virtual bool AdvanceAnimation(double deltaSeconds)
     {
         if (Clip.Frames.Count <= 1 || Clip.AnimationMode == AnimationMode.Off)
         {
@@ -433,17 +444,11 @@ public abstract class Body2D
 
             if (Clip.AnimationMode == AnimationMode.Loop)
             {
-                _animationFrameIndex = (_animationFrameIndex + 1) % Clip.Frames.Count;
+                _animationFrameIndex = (_animationFrameIndex + _animationDirection + Clip.Frames.Count) % Clip.Frames.Count;
             }
             else if (Clip.AnimationMode == AnimationMode.Once)
             {
-                // Advance toward the last frame and then clamp there - unlike Loop, never wraps
-                // back to the first frame, so a one-shot transformation (e.g. a killed hazard's
-                // crumble-to-husk clip) visibly plays through once and then holds indefinitely.
-                if (_animationFrameIndex < Clip.Frames.Count - 1)
-                {
-                    _animationFrameIndex++;
-                }
+                _animationFrameIndex = Math.Clamp(_animationFrameIndex + _animationDirection, 0, Clip.Frames.Count - 1);
             }
             else // PingPong (Off already returned above)
             {
@@ -631,14 +636,18 @@ public abstract class Body2D
     private void ApplyFrame(SpriteFrame sourceFrame)
     {
         Frame = SpriteFrameTiler.Tile(sourceFrame, Clip.TileAxis, _span);
-        Size = new Vector2D(Frame.Width, Frame.Height);
+        CollisionFrame = GetCollisionFrame(Frame);
+        Size = new Vector2D(Math.Max(Frame.Width, CollisionFrame.Width), Math.Max(Frame.Height, CollisionFrame.Height));
         var previousRects = _localCollisionRects;
-        _localCollisionRects = CollisionShapeBuilder.DeriveRectangles(Frame.Chars, Sprite.EmptyChar);
+        _localCollisionRects = CollisionShapeBuilder.DeriveRectangles(CollisionFrame.Chars, Sprite.EmptyChar);
         if (IsSleeping && !previousRects.SequenceEqual(_localCollisionRects))
         {
             Wake();
         }
     }
+
+    /// <summary>Returns the frame used for collision; normally this is the displayed frame.</summary>
+    protected virtual SpriteFrame GetCollisionFrame(SpriteFrame displayedFrame) => displayedFrame;
 
     /// <summary>
     /// This frame's resolved contacts, keyed by <see cref="Physics.ContactType"/> flag with the

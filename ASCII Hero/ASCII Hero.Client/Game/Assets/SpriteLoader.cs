@@ -29,6 +29,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         var defaultCellsPerFrame = ParseCellsPerFrame(settings.TryGetValue("Animation", "CellsPerFrame"));
         var defaultAnimationMode = ParseAnimationMode(settings.TryGetValue("Animation", "Mode"));
         var defaultDefaultFrame = ParseDefaultFrame(settings.TryGetValue("Animation", "DefaultFrame"));
+        var defaultReverse = ParseReverse(settings.TryGetValue("Animation", "Reverse"), assetName, "Animation") ?? false;
         var (poses, defaultPose) = ParsePoses(assetName, settings.Section("Poses"));
         var clipFolders = ParseClipFolders(settings.Section("ClipFolders"));
 
@@ -62,6 +63,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             var clipDefaultFrame = clipAnimationSection.TryGetValue("DefaultFrame", out var clipDefaultFrameText)
                 ? ParseDefaultFrame(clipDefaultFrameText)
                 : defaultDefaultFrame;
+            var reverse = ParseReverse(clipAnimationSection.GetValueOrDefault("Reverse"), assetName, $"Animation.{clipName}") ?? defaultReverse;
             var effectDurationSeconds = clipAnimationSection.TryGetValue("EffectDurationSeconds", out var effectDurationText)
                 ? ParseFrameDurationSeconds(effectDurationText)
                 : null;
@@ -69,15 +71,24 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             {
                 Name = clipName,
                 Frames = [],
+                Reverse = reverse,
                 CellsPerFrame = cellsPerFrame,
                 EffectOffsetX = IniValueParser.TryParseInt(clipAnimationSection.GetValueOrDefault("OffsetX"), out var offsetX) ? offsetX : 0,
                 EffectOffsetY = IniValueParser.TryParseInt(clipAnimationSection.GetValueOrDefault("OffsetY"), out var offsetY) ? offsetY : 0,
                 TintColor = IniValueParser.ParseColorCode(clipAnimationSection.GetValueOrDefault("TintColor")),
                 TintAlternateColor = IniValueParser.ParseColorCode(clipAnimationSection.GetValueOrDefault("TintAlternateColor")),
+                TintThirdColor = IniValueParser.ParseColorCode(clipAnimationSection.GetValueOrDefault("TintThirdColor")),
                 TintBlinkSeconds = clipAnimationSection.TryGetValue("TintBlinkSeconds", out var tintBlinkText)
                     ? ParseFrameDurationSeconds(tintBlinkText)
                     : null,
             };
+            if (clipAnimationSection.ContainsKey("TintThirdColor") &&
+                (effectSettings.TintThirdColor is null || effectSettings.TintColor is null ||
+                 effectSettings.TintAlternateColor is null || effectSettings.TintBlinkSeconds is not > 0 ||
+                 !double.IsFinite(effectSettings.TintBlinkSeconds.Value)))
+            {
+                throw new FormatException($"Sprite '{assetName}' [Animation.{clipName}] TintThirdColor requires three tint colors and a positive finite TintBlinkSeconds.");
+            }
             // Per-clip [Layout.{clipName}]
             var clipTileAxis = settings.Section($"Layout.{clipName}").TryGetValue("TileAxis", out var clipTileAxisText)
                 ? ParseTileAxis(clipTileAxisText)
@@ -87,7 +98,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
 
             clips[clipName] = await LoadClipAsync(
                 clipFolder, assetName, clipName, emptyChar,
-                frameDurationSeconds, animationMode, clipDefaultFrame ?? 0, effectDurationSeconds, clipTileAxis, effectSettings);
+                frameDurationSeconds, animationMode, clipDefaultFrame, effectDurationSeconds, clipTileAxis, effectSettings);
         }
 
         return new SpriteAsset
@@ -107,6 +118,19 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         };
     }
 
+    private static bool? ParseReverse(string? value, string assetName, string section)
+    {
+        if (value is null)
+        {
+            return null;
+        }
+        if (bool.TryParse(value, out var reverse))
+        {
+            return reverse;
+        }
+        throw new FormatException($"Sprite '{assetName}' [{section}] Reverse must be true or false, not '{value}'.");
+    }
+
     private async Task<SpriteClip> LoadClipAsync(
         string folder,
         string assetName,
@@ -114,7 +138,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
         char emptyChar,
         double? frameDurationSeconds,
         AnimationMode animationMode,
-        int defaultFrame,
+        int? defaultFrame,
         double? effectDurationSeconds,
         TileAxis tileAxis,
         SpriteClip effectSettings)
@@ -157,13 +181,15 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
             CellsPerFrame = effectSettings.CellsPerFrame,
             Facing = ResolveFacingFromClipName(clipName),
             AnimationMode = animationMode,
-            DefaultFrame = defaultFrame,
+            Reverse = effectSettings.Reverse,
+            DefaultFrame = defaultFrame ?? (effectSettings.Reverse ? frames.Count - 1 : 0),
             EffectDurationSeconds = effectDurationSeconds,
             TileAxis = tileAxis,
             EffectOffsetX = effectSettings.EffectOffsetX,
             EffectOffsetY = effectSettings.EffectOffsetY,
             TintColor = effectSettings.TintColor,
             TintAlternateColor = effectSettings.TintAlternateColor,
+            TintThirdColor = effectSettings.TintThirdColor,
             TintBlinkSeconds = effectSettings.TintBlinkSeconds,
         };
     }
@@ -175,9 +201,9 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
     /// flat in the asset's root folder. Absent entirely for simple single-/few-clip assets (e.g.
     /// Pipe), which keep the flat layout.
     /// </summary>
-    private static IReadOnlyDictionary<string, string> ParseClipFolders(
+    private static Dictionary<string, string> ParseClipFolders(
         IReadOnlyDictionary<string, string> clipFoldersSection) =>
-        new Dictionary<string, string>(clipFoldersSection, StringComparer.OrdinalIgnoreCase);
+        new(clipFoldersSection, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Resolves the folder a given clip's files should be read from: the asset's own root
@@ -185,7 +211,7 @@ public class SpriteLoader(IAssetFileProvider fileProvider)
     /// maps the clip name (or its "_"-prefix, e.g. "walk" for "walk_left") to one.
     /// </summary>
     private static string ResolveClipFolder(
-        string assetFolder, string clipName, IReadOnlyDictionary<string, string> clipFolders)
+        string assetFolder, string clipName, Dictionary<string, string> clipFolders)
     {
         if (clipFolders.Count == 0)
         {

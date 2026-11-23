@@ -33,6 +33,82 @@ public sealed class TravelAnimationTests
     private static int FrameIndexOf(Body2D body) => body.Clip.Frames.ToList().IndexOf(body.Frame);
 
     [TestMethod]
+    [DataRow("Once", 1, 0, 0)]
+    [DataRow("Loop", 1, 0, 2)]
+    [DataRow("PingPong", 1, 0, 1)]
+    public async Task ReverseAnimation_PlaysEachModeFromLastFrame(string mode, int first, int second, int third)
+    {
+        var sprite = await LoadAsync($"[Animation]\nFrameDurationSeconds = 0.1\nMode = {mode}\nReverse = true");
+        var clip = sprite.GetClip("spin");
+        var body = new StaticObject2D();
+        body.Spawn(sprite, "spin", clip.DefaultFrame, new Vector2D(0, 0));
+        Assert.AreEqual(2, FrameIndexOf(body));
+        body.AdvanceAnimation(0.1);
+        Assert.AreEqual(first, FrameIndexOf(body));
+        body.AdvanceAnimation(0.1);
+        Assert.AreEqual(second, FrameIndexOf(body));
+        body.AdvanceAnimation(0.1);
+        Assert.AreEqual(third, FrameIndexOf(body));
+    }
+
+    [TestMethod]
+    public async Task ReversePingPong_StartsBackwardFromMiddleAndBouncesAtEndpoints()
+    {
+        var sprite = await LoadAsync("[Animation]\nFrameDurationSeconds = 0.1\nMode = PingPong\nReverse = true\nDefaultFrame = 1");
+        var body = new StaticObject2D();
+        body.Spawn(sprite, "spin", sprite.GetClip("spin").DefaultFrame, new Vector2D(0, 0));
+        body.AdvanceAnimation(0.1);
+        Assert.AreEqual(0, FrameIndexOf(body));
+        body.AdvanceAnimation(0.1);
+        Assert.AreEqual(1, FrameIndexOf(body));
+    }
+
+    [TestMethod]
+    public async Task ReverseSetting_InheritsAndCanBeOverridden()
+    {
+        var sprite = await LoadAsync("[Animation]\nReverse = true\n[Animation.spin]\nReverse = false");
+        Assert.IsTrue(sprite.GetClip("run_right").Reverse);
+        Assert.AreEqual(2, sprite.GetClip("run_right").DefaultFrame);
+        Assert.IsFalse(sprite.GetClip("spin").Reverse);
+        Assert.AreEqual(0, sprite.GetClip("spin").DefaultFrame);
+    }
+
+    [TestMethod]
+    public async Task ReverseSetting_InvalidValueReportsAssetAndSection()
+    {
+        var error = await Assert.ThrowsExactlyAsync<FormatException>(() => LoadAsync("[Animation.spin]\nReverse = backwards"));
+        Assert.Contains("Thing", error.Message);
+        Assert.Contains("Animation.spin", error.Message);
+        Assert.Contains("Reverse", error.Message);
+    }
+
+    [TestMethod]
+    public async Task ReverseLoop_UsesDistanceForTravelDrivenClip()
+    {
+        var sprite = await LoadAsync("[Animation]\nCellsPerFrame = 1\nMode = Loop\nReverse = true");
+        var belt = new StaticObject2D();
+        belt.Spawn(sprite, "spin", sprite.GetClip("spin").DefaultFrame, new Vector2D(0, 0));
+        belt.ConveyorVelocity = new Vector2D(2, 0);
+        belt.AdvanceAnimation(0.5);
+        Assert.AreEqual(1, FrameIndexOf(belt));
+        belt.AdvanceAnimation(0.5);
+        Assert.AreEqual(0, FrameIndexOf(belt));
+        belt.AdvanceAnimation(0.5);
+        Assert.AreEqual(2, FrameIndexOf(belt));
+    }
+
+    [TestMethod]
+    public async Task ReverseEffect_StartsAtLastFrame()
+    {
+        var sprite = await LoadAsync("[Animation.spin]\nFrameDurationSeconds = 0.1\nMode = Once\nReverse = true");
+        var effect = new EffectInstance2D();
+        effect.Spawn(sprite, "spin", new Vector2D(0, 0));
+        Assert.AreEqual(2, FrameIndexOf(effect));
+        effect.AdvanceAnimation(0.1);
+        Assert.AreEqual(1, FrameIndexOf(effect));
+    }
+
+    [TestMethod]
     public async Task Loader_ResolvesCellsPerFramePerClip_AndFacingFromSuffix()
     {
         var sprite = await LoadAsync("[Animation]\nCellsPerFrame = 2\n\n[Animation.run_up]\nCellsPerFrame = 0.5\n\n[Animation.spin]\nCellsPerFrame = -1");

@@ -39,8 +39,11 @@ public class ThrowableObject2D : DynamicObject2D, IEffectTrigger
     /// <summary>Launch angle in degrees above horizontal (the <c>ThrowAngle</c> key).</summary>
     public double ThrowAngleDegrees { get; set; } = GameDefaults.DefaultThrowAngleDegrees;
 
-    /// <summary>Optional sound played when it is picked up (the <c>PickupSound</c> key). Its <c>Sound</c> plays when it hurts a hazard.</summary>
-    public string? PickupSoundName { get; set; }
+    /// <summary>Optional sound played on a meaningful physical impact, from the <c>HitSound</c> key.</summary>
+    public string? HitSoundName { get; set; }
+
+    /// <summary>Optional sound played when it is thrown, from the <c>UseSound</c> key.</summary>
+    public string? UseSoundName { get; set; }
 
     /// <summary>
     /// Optional clip (on its own sprite) played where a single-use object is used up (the

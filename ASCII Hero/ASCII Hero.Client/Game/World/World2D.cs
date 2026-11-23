@@ -314,8 +314,8 @@ public partial class World2D
     /// <summary>
     /// Opens or closes one key-operated gate next to the player, if the player's
     /// <see cref="Player2D.SelectedGear"/> holds a <see cref="Key2D"/> with the gate's
-    /// <see cref="Gate2D.LockName"/>: a closed gate opens, an open one closes, the key's <c>TurnSound</c>
-    /// and then the gate's <c>Sound</c> play.
+    /// <see cref="Gate2D.LockName"/>: a closed gate opens, an open one closes, and the key's <c>UseSound</c>
+    /// and the gate's <c>OperateSound</c> play together. A gate that
     /// would close on top of a solid moving body (the player included) stays open instead.
     /// "Next to" means within one cell of the player's collision shape.
     /// Returns whether a gate changed state. Called by <see cref="GameLoop"/> on an action key press.
@@ -338,41 +338,41 @@ public partial class World2D
                 continue;
             }
 
-            gate.Toggle();
-            if (!gate.IsOn && IsBlockedByMovingSolid(gate))
+            if (gate.IsOn && IsBlockedByMovingSolid(gate))
             {
-                gate.SetState(true);
                 continue;
             }
 
+            gate.Toggle();
             WakeAllSleepingBodies();
-            PlaySound(((Key2D)keyItem).TurnSoundName);
-            PlaySound(gate.SoundName);
+            PlaySound(((Key2D)keyItem).UseSoundName);
+            PlaySound(gate.OperateSoundName);
             return true;
         }
 
         return false;
     }
 
-    /// <summary>Whether a solid moving body (the player, a crate, a loose stone) overlaps <paramref name="gate"/> as it is now.</summary>
-    private bool IsBlockedByMovingSolid(Gate2D gate) => Objects.Any(body =>
-        !body.IsStatic
-        && !body.IsPassable
-        && body is not EffectInstance2D
-        && body is not CorpseObject2D
-        && body.CollisionRects.Any(rect => gate.CollisionRects.Any(rect.Overlaps)));
-
-    /// <summary>Sound played when the player throws an object.</summary>
-    public const string ThrowSoundName = "Throw";
+    /// <summary>Whether a solid moving body overlaps the gate's closed shape.</summary>
+    internal bool IsBlockedByMovingSolid(Gate2D gate)
+    {
+        var closedRects = gate.ClosedCollisionRects;
+        return Objects.Any(body =>
+            !body.IsStatic
+            && !body.IsPassable
+            && body is not EffectInstance2D
+            && body is not CorpseObject2D
+            && body.CollisionRects.Any(rect => closedRects.Any(rect.Overlaps)));
+    }
 
     /// <summary>
     /// Throws one object from the player's <see cref="Player2D.SelectedGear"/>: it reappears just in
     /// front of the player (on the side it last faced, at head height) and flies off at its
     /// <see cref="ThrowableObject2D.ThrowSpeed"/> and <see cref="ThrowableObject2D.ThrowAngleDegrees"/>,
     /// plus the player's own velocity. Nothing is thrown (and nothing is used) when there is no room
-    /// for it there, or when the selected gear holds something that can't be thrown (a key). Returns
-    /// whether something was thrown. Called by <see cref="GameLoop"/> on an
-    /// action key press that neither operated a switch nor opened a gate.
+    /// for it there, or when the selected gear holds something that can't be thrown (a key or health
+    /// pack). Returns whether something was thrown. Called by <see cref="GameLoop"/> on an action key
+    /// press that neither operated a switch or gate nor used a health pack.
     /// </summary>
     public bool TryThrow()
     {
@@ -405,13 +405,13 @@ public partial class World2D
                 (direction * Math.Cos(angle) * item.ThrowSpeed) + Player.Velocity.X,
                 (-Math.Sin(angle) * item.ThrowSpeed) + Player.Velocity.Y));
         Objects.Add(item);
-        PlaySound(ThrowSoundName);
+        PlaySound(item.UseSoundName);
         return true;
     }
 
     /// <summary>
     /// Operates one switch next to the player (see <see cref="Switch2D.Operate"/>) and plays its
-    /// <c>Sound</c>, then the <c>Sound</c> of every gate it drives.
+    /// <c>OperateSound</c> together with that of each object it drives.
     /// Returns whether a switch was operated.
     /// </summary>
     public bool TryOperateSwitch()
@@ -425,13 +425,13 @@ public partial class World2D
                 continue;
             }
 
-            if (switchObject.Operate())
+            if (switchObject.Operate(this))
             {
                 WakeAllSleepingBodies();
-                PlaySound(switchObject.SoundName);
-                foreach (var gate in switchObject.Targets.OfType<Gate2D>())
+                PlaySound(switchObject.OperateSoundName);
+                foreach (var target in switchObject.Targets.OfType<Body2D>())
                 {
-                    PlaySound(gate.SoundName);
+                    PlaySound(target.OperateSoundName);
                 }
                 return true;
             }

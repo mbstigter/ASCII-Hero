@@ -40,6 +40,66 @@ public sealed class PortalTests
         Assert.IsTrue(main.Entries.ContainsKey(toMain.TargetEntry!));
         Assert.AreEqual(1, sub.SubWorld);
         Assert.AreEqual(0, main.SubWorld);
+        Assert.AreEqual("PlayerHurt", sub.Player.HurtSoundName);
+        Assert.AreEqual("PlayerKill", sub.Player.KillSoundName);
+    }
+
+    [TestMethod]
+    [DataRow(0, "horizontal", 6, 1, 1, "FromMain")]
+    [DataRow(1, "vertical", 2, 8, 0, "FromSubWorld")]
+    public async Task AncientWorld_PortalUsesTiledAnimatedSprite(int subWorld, string clip, int width, int height, int targetWorld, string targetEntry)
+    {
+        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "AncientWorld", subWorld: subWorld);
+        var portal = world.Objects.OfType<Portal2D>().Single();
+        Assert.AreEqual("Portal", portal.Sprite.Name);
+        Assert.AreEqual(clip, portal.Clip.Name);
+        Assert.AreEqual(targetWorld, portal.TargetWorld);
+        Assert.AreEqual(targetEntry, portal.TargetEntry);
+        Assert.IsTrue(portal.IsPassable);
+        Assert.AreEqual(width, portal.Frame.Width);
+        Assert.AreEqual(height, portal.Frame.Height);
+        Assert.HasCount(3, portal.Clip.Frames);
+        foreach (var frame in portal.Clip.Frames)
+        {
+            Assert.AreEqual(subWorld == 0 ? 1 : 2, frame.Width);
+            Assert.AreEqual(1, frame.Height);
+        }
+
+        foreach (var color in new[] { 'H', 'I', 'J', 'I' })
+        {
+            for (var y = 0; y < height; y++)
+            {
+                for (var x = 0; x < width; x++)
+                {
+                    Assert.AreEqual('░', portal.Frame.Chars[y, x]);
+                    Assert.AreEqual(color, portal.Frame.Fore[y, x]);
+                }
+            }
+            portal.AdvanceAnimation(portal.Clip.FrameDurationSeconds
+                ?? throw new AssertFailedException("Portal clip must declare a frame duration."));
+        }
+        Assert.AreEqual('H', portal.Frame.Fore[0, 0]);
+    }
+
+    [TestMethod]
+    [DataRow(1)]
+    [DataRow(3)]
+    public async Task HorizontalPortal_TilesToSingleAndOddSpans(int span)
+    {
+        var sprite = await new SpriteLoader(new DiskAssetFileProvider()).LoadAsync("Portal", ["horizontal"], null);
+        var clip = sprite.GetClip("horizontal");
+
+        foreach (var frame in clip.Frames)
+        {
+            var tiled = SpriteFrameTiler.Tile(frame, clip.TileAxis, span);
+            Assert.AreEqual(span, tiled.Width);
+            Assert.AreEqual(1, tiled.Height);
+            for (var x = 0; x < span; x++)
+            {
+                Assert.AreEqual('░', tiled.Chars[0, x]);
+                Assert.AreEqual(frame.Fore[0, 0], tiled.Fore[0, x]);
+            }
+        }
     }
 
     [TestMethod]
@@ -105,10 +165,10 @@ public sealed class PortalTests
     }
 
     [TestMethod]
-    [DataRow("[Bad]\nAsset = Hatch\nClip = ancient_closed\nKind = Portal")]
-    [DataRow("[Bad]\nAsset = Hatch\nClip = ancient_closed\nKind = Portal\nTargetWorld = -1")]
-    [DataRow("[Bad]\nAsset = Hatch\nClip = ancient_closed\nKind = StaticObject\nTargetWorld = 1")]
-    [DataRow("[Bad]\nAsset = Hatch\nClip = ancient_closed\nKind = StaticObject\nEntry = X")]
+    [DataRow("[Bad]\nAsset = Portal\nClip = horizontal\nKind = Portal")]
+    [DataRow("[Bad]\nAsset = Portal\nClip = horizontal\nKind = Portal\nTargetWorld = -1")]
+    [DataRow("[Bad]\nAsset = Portal\nClip = horizontal\nKind = StaticObject\nTargetWorld = 1")]
+    [DataRow("[Bad]\nAsset = Portal\nClip = horizontal\nKind = StaticObject\nEntry = X")]
     [DataRow("[PlayerFromSubWorld2]\nAsset = Player\nClip = walk_idle\nKind = Player\nEntry = FromSubWorld")]
     public async Task InvalidPortalOrEntry_IsRejectedWhenPlaced(string extraIni)
     {
@@ -118,6 +178,23 @@ public sealed class PortalTests
         // The extra section must also be placed on the grid to be validated.
         var files = new PlacingProvider(provider, '9');
         await Assert.ThrowsExactlyAsync<FormatException>(() => World2D.LoadAsync(files, "AncientWorld"));
+    }
+
+    [TestMethod]
+    [DataRow("Sound")]
+    [DataRow("TurnSound")]
+    [DataRow("PickupSound")]
+    [DataRow("HitSound")]
+    [DataRow("CollectSound")]
+    [DataRow("HurtSound")]
+    public async Task InvalidSoundKey_IsRejectedWithKeyName(string key)
+    {
+        var provider = new AppendProvider($"[Bad]\nAsset = Portal\nClip = horizontal\nKind = Portal\nTargetWorld = 1\n{key} = Example\n[ObjectCodes]\n9 = Bad");
+        var files = new PlacingProvider(provider, '9');
+
+        var error = await Assert.ThrowsExactlyAsync<FormatException>(() => World2D.LoadAsync(files, "AncientWorld"));
+
+        Assert.Contains(key, error.Message);
     }
 
     /// <summary>Puts <paramref name="code"/> in the grid's top-left cell so a new definition gets placed.</summary>
@@ -162,6 +239,50 @@ public sealed class PortalTests
         world.Player.Position = portal.Position;
         collision.Resolve(world, step);
         Assert.AreEqual(PendingTransition.EnterWorld, world.PendingTransition);
+    }
+
+    [TestMethod]
+    public async Task VerticalPortal_FiresWhenPlayerWalksIntoLowerEnd()
+    {
+        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "AncientWorld", subWorld: 1);
+        var portal = world.Objects.OfType<Portal2D>().Single();
+        world.Player.Position = new Vector2D(portal.Position.X, portal.Position.Y + portal.Size.Y - world.Player.Size.Y);
+
+        new CollisionSystem().Resolve(world, PhysicsConstants.FixedPhysicsStepSeconds);
+
+        Assert.AreEqual(PendingTransition.EnterWorld, world.PendingTransition);
+        Assert.AreSame(portal, world.PendingPortal);
+        Assert.AreEqual(0, portal.TargetWorld);
+        Assert.AreEqual("FromSubWorld", portal.TargetEntry);
+    }
+
+    [TestMethod]
+    [DataRow("portalentered", "JIH")]
+    [DataRow("portalarrived", "HIJ")]
+    public async Task PortalEffects_TintAndSparksUseMatchingBlueSequence(string clipName, string colors)
+    {
+        var world = await LoadMain();
+        var effect = new EffectInstance2D();
+        effect.Spawn(world.Player.Sprite, clipName, world.Player.Position, followTarget: world.Player);
+        Assert.HasCount(3, effect.Clip.Frames);
+
+        for (var index = 0; index < colors.Length; index++)
+        {
+            Assert.AreEqual(colors[index], effect.CurrentTintColor);
+            var frame = effect.Frame;
+            for (var y = 0; y < frame.Height; y++)
+            {
+                for (var x = 0; x < frame.Width; x++)
+                {
+                    if (frame.Chars[y, x] != world.Player.Sprite.EmptyChar)
+                    {
+                        Assert.AreEqual(colors[index], frame.Fore[y, x]);
+                    }
+                }
+            }
+            effect.AdvanceAnimation(0.2);
+            effect.Tick(0.2);
+        }
     }
 
     [TestMethod]

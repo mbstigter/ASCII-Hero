@@ -14,6 +14,9 @@ namespace ASCII_Hero.Tests.Physics;
 public sealed class ThrowableInteractionTests
 {
     private const double Penetration = 0.1;
+    private static readonly string[] expectedArray0 = ["icon", "icon"];
+    private static readonly string[] expectedArray = ["Stones/Small", "HealthPack"];
+    private static readonly string[] expected = ["Rock", "HealthPack"];
 
     private static async Task<(World2D World, DynamicHazard2D Snake, ThrowableObject2D Rock)> LoadAsync()
     {
@@ -268,14 +271,25 @@ public sealed class ThrowableInteractionTests
     }
 
     [TestMethod]
-    public void GearSlots_AreReadInOrderWithTheirIcons()
+    public void GearSlots_AreReadInOrderWithTheirSpriteClips()
     {
-        var settings = IniDocument.Parse("[Gear]\nRock = ●\nTomato = o ; a juicy one\n");
+        var settings = IniDocument.Parse("[Gear]\nRock = Stones/Small\nHealthPack = HealthPack ; compact icon\n");
 
         var slots = World2D.ParseGearSlots(settings);
 
-        CollectionAssert.AreEqual(new[] { "Rock", "Tomato" }, slots.Select(slot => slot.Name).ToArray());
-        CollectionAssert.AreEqual(new[] { '●', 'o' }, slots.Select(slot => slot.Icon).ToArray());
+        CollectionAssert.AreEqual(expected, slots.Select(slot => slot.Name).ToArray());
+        CollectionAssert.AreEqual(expectedArray, slots.Select(slot => slot.IconAssetName).ToArray());
+        CollectionAssert.AreEqual(expectedArray0, slots.Select(slot => slot.IconClipName).ToArray());
+    }
+
+    [TestMethod]
+    [DataRow("")]
+    [DataRow("HealthPack:monochrome")]
+    public void GearSlots_RejectInvalidAssetNames(string assetName)
+    {
+        var settings = IniDocument.Parse($"[Gear]\nHealthPack = {assetName}\n");
+
+        Assert.ThrowsExactly<FormatException>(() => World2D.ParseGearSlots(settings));
     }
 
     [TestMethod]

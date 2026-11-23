@@ -92,7 +92,7 @@ public static class CollisionShapeBuilder
     /// the same logic by swapping which grid axis is walked first and how the final <see
     /// cref="Rect"/> is assembled.
     /// </param>
-    private static IReadOnlyList<Rect> DeriveRunRectangles(char[,] grid, char emptyChar, bool transposed)
+    private static List<Rect> DeriveRunRectangles(char[,] grid, char emptyChar, bool transposed)
     {
         var height = grid.GetLength(0);
         var width = grid.GetLength(1);

@@ -37,7 +37,14 @@ public partial class World2D
             foreach (var target in matches)
             {
                 switchObject.Targets.Add(target);
-                target.SetState(switchObject.IsOn);
+                if (target is Gate2D gate)
+                {
+                    gate.InitializeLinkedState(switchObject.IsOn);
+                }
+                else
+                {
+                    target.SetState(switchObject.IsOn);
+                }
             }
         }
 
@@ -124,7 +131,8 @@ public partial class World2D
             world.Gravity = gravity;
         }
 
-        world.Player.Gear.AddRange(ParseGearSlots(globalSettings));
+        var gearSlots = ParseGearSlots(globalSettings);
+        world.Player.Gear.AddRange(gearSlots);
         progress?.Report(1);
 
         world.Palette = await ColorPalette.LoadAsync(fileProvider, worldName);
@@ -183,12 +191,27 @@ public partial class World2D
         var objectsGrid = AssetTextReader.ParseFixedSizeGrid(objectsContentForSizing, width, height, emptyChar);
         progress?.Report(4);
 
-        // Loads every distinct sprite asset once, up front, with the union of clips any object
-        // section needs from it, so the placement loop below never awaits. Reports fractional
-        // progress through step 5 per asset, since this is where the HTTP fetches happen.
+        // Loads every distinct sprite asset once, with the clips needed by placements and gear
+        // icons, so the placement loop below never awaits. Reports fractional progress through
+        // step 5 per asset, since this is where the HTTP fetches happen.
         var spriteLoader = new SpriteLoader(fileProvider);
         var spriteCache = new Dictionary<string, SpriteAsset>(StringComparer.OrdinalIgnoreCase);
         var clipNamesByAsset = CollectClipNamesByAsset(objectsIni, displayName);
+        foreach (var gear in gearSlots)
+        {
+            var assetName = gear.IconAssetName
+                ?? throw new InvalidOperationException($"Gear slot '{gear.Name}' has no sprite asset configured.");
+            var clipName = gear.IconClipName
+                ?? throw new InvalidOperationException($"Gear slot '{gear.Name}' has no sprite clip configured.");
+            if (!clipNamesByAsset.TryGetValue(assetName, out var clipNames))
+            {
+                clipNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                clipNamesByAsset[assetName] = clipNames;
+            }
+
+            clipNames.Add(clipName);
+        }
+
         var assetsLoaded = 0;
         await Task.WhenAll(clipNamesByAsset.Select(async entry =>
         {
@@ -199,6 +222,11 @@ public partial class World2D
         if (clipNamesByAsset.Count == 0)
         {
             progress?.Report(5.0);
+        }
+
+        foreach (var gear in gearSlots)
+        {
+            gear.LoadIcon(spriteCache[gear.IconAssetName!]);
         }
 
         // Materials-only sections get a synthesized asset, shared between placements with the
@@ -353,6 +381,36 @@ public partial class World2D
         Dictionary<(string Material, char Glyph, int Width, int Height), SpriteAsset> syntheticSpriteCache)
     {
         var kind = section.Required("Kind");
+        foreach (var oldKey in new[] { "Sound", "TurnSound", "PickupSound" })
+        {
+            if (section.Values.ContainsKey(oldKey))
+            {
+                throw section.Error($"uses obsolete '{oldKey}'; use an event-specific sound key instead");
+            }
+        }
+
+        void RequireSoundKind(string key, bool allowed)
+        {
+            if (!allowed && section.Text(key) is not null)
+            {
+                throw section.Error($"is a {kind} and cannot use '{key}'");
+            }
+        }
+
+        var isPlayer = kind == "Player" && section.Text("Entry") is null;
+        var isHazard = kind is "StaticHazard" or "KinematicHazard" or "DynamicHazard";
+        RequireSoundKind("CollectSound", kind is "Collectable" or "ThrowableObject");
+        RequireSoundKind("UseSound", kind == "ThrowableObject" ||
+            (kind == "Collectable" && section.Text("Type") is { } collectableTypeText
+                && (string.Equals(collectableTypeText, "Key", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(collectableTypeText, "HealthPack", StringComparison.OrdinalIgnoreCase))));
+        RequireSoundKind("HitSound", kind == "ThrowableObject");
+        RequireSoundKind("OperateSound", kind is "Switch" or "Gate" or "Device" or "FlowZone" or "KinematicObject");
+        RequireSoundKind("HurtSound", isPlayer || isHazard);
+        RequireSoundKind("KillSound", isPlayer || isHazard);
+        RequireSoundKind("PortalEnteredSound", isPlayer);
+        RequireSoundKind("PortalArrivedSound", isPlayer);
+
         var span = section.PositiveInt("Span") ?? 0;
         var (sprite, clipName, frameIndex, effects) = ResolveSprite(world, section, spriteCache, syntheticSpriteCache);
 
@@ -381,11 +439,6 @@ public partial class World2D
         if (section.Text("Entry") is not null)
         {
             throw section.Error($"is a {kind} and cannot have 'Entry'; only a Player placement can be named");
-        }
-
-        if (kind == "Portal" && section.Text("Sound") is not null)
-        {
-            throw section.Error("is a Portal and cannot have 'Sound'; the player's 'PortalEnteredSound' is played instead");
         }
 
         if (kind != "Portal" && (section.Text("TargetWorld") is not null || section.Text("TargetEntry") is not null))
@@ -475,7 +528,8 @@ public partial class World2D
                     Reusable = section.Flag("Reusable", fallback: true),
                     ThrowSpeed = section.FiniteNonNegativeNumber("ThrowSpeed") ?? GameDefaults.DefaultThrowSpeed,
                     ThrowAngleDegrees = section.Number("ThrowAngle") ?? GameDefaults.DefaultThrowAngleDegrees,
-                    PickupSoundName = section.Text("PickupSound"),
+                    HitSoundName = section.Text("HitSound"),
+                    UseSoundName = section.Text("UseSound"),
                     EffectClipName = effects.Effect,
                 };
                 throwable.Spawn(sprite, clipName, frameIndex, position, initialVelocity, gravityAffected, span);
@@ -559,9 +613,10 @@ public partial class World2D
                     ? parsedType
                     : null;
                 var collectable = collectableType == CollectableType.Key
-                    ? new Key2D { LockName = lockName, TurnSoundName = section.Text("TurnSound") }
+                    ? new Key2D { LockName = lockName }
                     : new Collectable2D();
                 collectable.Spawn(sprite, clipName, frameIndex, position, collectableType, span);
+                collectable.UseSoundName = section.Text("UseSound");
                 collectable.EffectClipName = effects.Effect;
                 collectable.EffectPersists = effectPersists;
                 body = collectable;
@@ -578,7 +633,8 @@ public partial class World2D
             body.IsPassable = section.Flag("Passable", fallback: kind is "StaticHazard" or "KinematicHazard" or "TimedHazard" or "Collectable" or "Switch" or "FlowZone" or "Portal");
         }
 
-        body.SoundName = section.Text("Sound");
+        body.CollectSoundName = section.Text("CollectSound");
+        body.OperateSoundName = section.Text("OperateSound");
         body.IsClimbable = section.Flag("Climbable");
         var climbStyleText = section.Text("ClimbStyle");
         if (climbStyleText is not null)
@@ -648,21 +704,21 @@ public partial class World2D
 
     /// <summary>
     /// Reads the game's gear slots from <c>Global/Settings.ini</c> <c>[Gear]</c>: one line per slot,
-    /// <c>Name = Icon</c>, in the order listed; the icon is the value's first character. A slot that
-    /// is not listed (or commented out) does not exist, so throwables for it cannot be picked up.
+    /// <c>Name = Asset</c>, in the order listed; each asset supplies an <c>icon</c> clip.
+    /// A slot that is not listed or commented out does not exist, so items for it cannot be picked up.
     /// </summary>
     internal static List<Gear2D> ParseGearSlots(IniDocument globalSettings)
     {
         var slots = new List<Gear2D>();
         foreach (var (name, value) in globalSettings.Section("Gear"))
         {
-            var icon = value.Trim();
-            if (icon.Length == 0)
+            var assetName = value.Trim();
+            if (string.IsNullOrWhiteSpace(name) || assetName.Length == 0 || assetName.Contains(':'))
             {
-                throw new FormatException($"Global settings [Gear] '{name}' needs an icon character.");
+                throw new FormatException($"Global settings [Gear] '{name}' needs a sprite asset name; its 'icon' clip is used automatically.");
             }
 
-            slots.Add(new Gear2D(name.Trim(), icon[0]));
+            slots.Add(new Gear2D(name.Trim(), assetName, "icon"));
         }
 
         return slots;
@@ -680,6 +736,8 @@ public partial class World2D
         world.PlayerSpawnPosition = position;
         world._defaultEntryPosition = position;
         player.HurtEffectClipName = effects.Hurt;
+        player.HurtSoundName = section.Text("HurtSound");
+        player.KillSoundName = section.Text("KillSound");
         player.CheckpointReachedEffectClipName = effects.CheckpointReached;
         player.WorldEndReachedEffectClipName = effects.WorldEndReached;
         player.DiedEffectClipName = effects.Died;

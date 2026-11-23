@@ -17,6 +17,9 @@ public class CollisionSystem
     /// <summary>Each moving body's index in <see cref="_movingBodies"/>, so each unordered pair is resolved once without a list search.</summary>
     private readonly Dictionary<IPhysicsBody, int> _movingBodyIndices = new(ReferenceEqualityComparer.Instance);
 
+    private static readonly ContactType[] SurfaceContactTypes =
+        [ContactType.SurfaceTop, ContactType.SurfaceBottom, ContactType.SurfaceLeft, ContactType.SurfaceRight];
+
     /// <summary>
     /// How many contact responses this solver iteration changed a position or velocity
     /// noticeably (see <see cref="PhysicsConstants.SolverVelocityTolerance"/>); zero means the
@@ -207,6 +210,8 @@ public class CollisionSystem
         // ends the frame overlapping static terrain.
         ResolveAgainstSolids();
 
+        PlayThrowableImpactSounds(world);
+
         foreach (var body in _movingBodies)
         {
             if (!((Body2D)body).IsSleeping)
@@ -225,6 +230,35 @@ public class CollisionSystem
         foreach (var body in world.Objects)
         {
             body.MarkResolvedPosition();
+        }
+    }
+
+    /// <summary>Plays one sound per impacted body, using the solver's pre-response closing speeds.</summary>
+    private void PlayThrowableImpactSounds(World2D world)
+    {
+        foreach (var thrown in _movingBodies.OfType<ThrowableObject2D>())
+        {
+            if (thrown.IsSleeping || thrown.HitSoundName is null)
+            {
+                continue;
+            }
+
+            var impacts = new HashSet<Body2D>();
+            foreach (var side in SurfaceContactTypes)
+            {
+                foreach (var other in thrown.GetContactingBodies(side))
+                {
+                    if (thrown.GetContactImpactSpeed(side, other) >= PhysicsConstants.RestingBounceSpeedThreshold)
+                    {
+                        impacts.Add(other);
+                    }
+                }
+            }
+
+            foreach (var _ in impacts)
+            {
+                world.PlaySound(thrown.HitSoundName);
+            }
         }
     }
 
@@ -710,6 +744,15 @@ public class CollisionSystem
         var restitution = body.Restitution;
         var position = body.Position;
         var velocity = body.Velocity;
+
+        if (body is ThrowableObject2D throwable &&
+            ((position.X < 0 && velocity.X <= -PhysicsConstants.RestingBounceSpeedThreshold)
+            || (position.X > world.WidthCells - body.Size.X && velocity.X >= PhysicsConstants.RestingBounceSpeedThreshold)
+            || (position.Y < 0 && velocity.Y <= -PhysicsConstants.RestingBounceSpeedThreshold)
+            || (position.Y > world.HeightCells - body.Size.Y && velocity.Y >= PhysicsConstants.RestingBounceSpeedThreshold)))
+        {
+            world.PlaySound(throwable.HitSoundName);
+        }
 
         (position.X, velocity.X) = ClampAxisToBounds(position.X, velocity.X, 0.0, world.WidthCells - body.Size.X, restitution);
         (position.Y, velocity.Y) = ClampAxisToBounds(position.Y, velocity.Y, 0.0, world.HeightCells - body.Size.Y, restitution);
@@ -1273,8 +1316,8 @@ public class CollisionSystem
             return false;
         }
 
-        var aChars = ownerA.Frame.Chars;
-        var bChars = ownerB.Frame.Chars;
+        var aChars = ownerA.CollisionFrame.Chars;
+        var bChars = ownerB.CollisionFrame.Chars;
         var aEmpty = ownerA.Sprite.EmptyChar;
         var bEmpty = ownerB.Sprite.EmptyChar;
         var aHeight = aChars.GetLength(0);

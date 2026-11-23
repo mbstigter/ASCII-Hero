@@ -54,6 +54,34 @@ public sealed class EffectInstance2DTests
     }
 
     [TestMethod]
+    public async Task Tint_CyclesThroughThreeColors()
+    {
+        var sprite = await LoadAsync("[Animation.fx]\nEffectDurationSeconds = 1.0\nTintColor = H\nTintAlternateColor = I\nTintThirdColor = J\nTintBlinkSeconds = 0.1");
+        var effect = new EffectInstance2D();
+        effect.Spawn(sprite, "fx", new Vector2D(0, 0));
+
+        Assert.AreEqual('H', effect.CurrentTintColor);
+        effect.Tick(0.15);
+        Assert.AreEqual('I', effect.CurrentTintColor);
+        effect.Tick(0.1);
+        Assert.AreEqual('J', effect.CurrentTintColor);
+        effect.Tick(0.1);
+        Assert.AreEqual('H', effect.CurrentTintColor);
+    }
+
+    [TestMethod]
+    [DataRow("TintColor = H\nTintThirdColor = J\nTintBlinkSeconds = 0.1")]
+    [DataRow("TintAlternateColor = I\nTintThirdColor = J\nTintBlinkSeconds = 0.1")]
+    [DataRow("TintColor = H\nTintAlternateColor = I\nTintThirdColor = J")]
+    [DataRow("TintColor = H\nTintAlternateColor = I\nTintThirdColor = J\nTintBlinkSeconds = 0")]
+    [DataRow("TintColor = H\nTintAlternateColor = I\nTintThirdColor = J\nTintBlinkSeconds = NaN")]
+    public async Task ThirdTint_RequiresCompleteValidTiming(string settings)
+    {
+        var error = await Assert.ThrowsExactlyAsync<FormatException>(() => LoadAsync("[Animation.fx]\n" + settings));
+        Assert.Contains("TintThirdColor", error.Message);
+    }
+
+    [TestMethod]
     public async Task GlowOnlyClip_LoadsWithoutDrawingFiles()
     {
         var sprite = await new SpriteLoader(new MemoryAssetFileProvider(new Dictionary<string, string>

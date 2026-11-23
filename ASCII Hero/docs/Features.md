@@ -76,17 +76,22 @@ This page is a tour of what the engine lets you build. For exact syntax, see
 - `Checkpoint` sets the player's respawn point.
 - `WorldEnd` finishes the world.
 - `Key` opens the gate with the same `Lock` (see below).
-- `HealthPack` restores health fully; it stays in place while health is already full.
+- `HealthPack` is stored in the player's `HealthPack` gear slot when picked up, even at full
+  health. Select it with `Tab` and press the action key to consume one whole pack and restore full
+  health; at full health the action does nothing and keeps the pack.
 
 Add `EffectClip` to play an animation on pickup. Add `EffectPersists = true` to leave the effect
 behind as a permanent "already used" marker, for example a lit checkpoint.
 
 ### Gates, keys and switches
 
-toggles open/closed when the player carries a key with the same
-  `Lock`, has the Key gear selected and presses the action key next to it. The key is never used up.
+- **Gates.** A gate can use separate closed/open clips or one timed, one-shot `Clip`,
+  with the first frame closed and the last frame open. It becomes passable while open and
+  uses the closed frame's shape for closing collision, refusing to close over a solid moving object.
+- **Keys.** A key carries a `Lock` name and toggles a matching gate when the player selects
+  the Key gear and presses the action key beside it. The key is never used up.
 - **Switches.** A switch drives every gate, device, flow zone or kinematic object with the same
-  `Link` name. Switches can toggle or latch on.
+  `Link` name. Switches can toggle or latch on; a blocked linked gate prevents the whole operation.
 
 ### Enemies and moving hazards
 
@@ -101,8 +106,8 @@ toggles open/closed when the player carries a key with the same
   `move_left`/`move_right` clips.
 - **Stompable enemies.** A killable hazard is squashed when the player lands on top hard
   enough (`KillImpactSpeed`); a gentler landing, or running into its side however fast,
-  hurts instead. It can play a `KillSound` when squashed. Its `Sound` plays instead when
-  it hurts the player, so a single contact plays only one of the two.
+  hurts instead. The defeated hazard can play its `KillSound`; when the player is hurt,
+  the player's own `HurtSound` or `KillSound` plays instead.
 - **Enemy health.** A killable hazard has `Health` (default 1), just like the player. A
   squash or a thrown object takes some of it; a hit it survives plays its `HurtEffectClip`
   and `HurtSound` and gives it a short safe moment, and a squashed survivor bounces the
@@ -119,11 +124,11 @@ toggles open/closed when the player carries a key with the same
 - **Reusable or single-use.** A reusable object (a stone) can be picked up again after it
   lands; a single-use one is gone after its first hit or landing.
 - **Gear.** Carried items are kept as gear, listed game-wide in `Global/Settings.ini`
-  `[Gear]`. A gear box next to the HUD always shows the selected gear's icon and count
-  (e.g. `x3`).
-- **Gear ring.** Hold `Tab` to pause the game and open a ring of all gear out of the gear
-  box, empty gear greyed out. Left/Right picks a gear, the chosen box glowing; release `Tab`
-  to take it or press `Esc` to cancel.
+  `[Gear]`. Each slot references a monochrome sprite clip; the HUD gear box and ring render
+  the same icon with the active interface colors and show its count (e.g. `x3`).
+- **Gear ring.** Hold `Tab` to pause the game and open a ring of all listed gear out of the
+  box. Left/Right picks a gear, the chosen box glowing; release `Tab` to take it or press
+  `Esc` to cancel. Empty slots remain visible with a dim count.
 
 ## Sprites and animation
 
@@ -201,16 +206,18 @@ Climbable and hangable surfaces are ordinary terrain objects marked with `Climba
 - **Synthesized audio.** No audio files are needed. Sounds are described in `SoundLibrary.ini`
   with a waveform (`Square`, `Triangle`, `Sawtooth`, `Sine` or `Noise`), a pitch slide, a
   duration, a volume, an attack and an optional vibrato.
-- **Reference by name** from an object's `Sound` and `KillSound` keys or from a sprite's
-  `[Sounds]` section. On a hazard, `Sound` plays when it hurts the player and `KillSound` when
-  the player squashes it. On a collectable, `Sound` plays when it is picked up.
-- **Per-pose footstep sounds.** `[Sounds]` maps a pose (`Walk`, `Crawl`, `Climb`, `Hang`,
+- **Reference by name** from event-specific placement keys: `CollectSound`, `UseSound`,
+  `HitSound`, `OperateSound`, `HurtSound`, `KillSound`, `PortalEnteredSound` and
+  `PortalArrivedSound`, or from a sprite's `[Sounds]` section. The damaged player's or
+  hazard's own `HurtSound` or `KillSound` plays for non-fatal or fatal damage, including
+  falls. A throwable's `HitSound` plays on solid impacts, independently of hazard damage.
+- **Per-pose footstep sounds.** `[Sounds]` maps a pose (`Walk`, `Crawl`, `Climb`, `Shimmy`, `Hang`,
   `Clamber`, `Swim`) to a sound played on each animation frame step. `JumpStart` and `Land`
-  play when the player leaves and returns to the ground, and `HardLanding` when a fall hurts.
+  play when the player leaves and returns to the ground.
 - **Built-in sounds** in the global library include `DiamondPickup`, `RingPickup`,
-  `KeyPickup`, `KeyTurn`, `DoorMove`, `HatchMove`, `ButtonPress`, `LeverPull`, `Checkpoint`, `WorldEnd`, `HazardKill`, `Jump`, `Land`, `Step`,
-  `SoftStep`, `Grab`, `Splash`, `MenuMove` and `MenuSelect` (subtle sounds for moving through
-  the world selection menu and choosing a world).
+  `KeyPickup`, `KeyTurn`, `DoorMove`, `HatchMove`, `ButtonPress`, `LeverPull`, `Checkpoint`, `WorldEnd`, `PlayerHurt`, `PlayerKill`, `HazardKill`, `ThrowableUse`, `Jump`, `Land`, `Step`,
+  `SoftStep`, `Grab`, `Splash`, `PortalEnteredWoosh`, `PortalArrivedWoosh`, `MenuMove` and
+  `MenuSelect` (subtle sounds for moving through the world selection menu and choosing a world).
 - **Per-world sound overrides.** A world can replace or add sounds with its own
   `SoundLibrary.ini`.
 - **Global switches.** `Settings.ini` has `Enabled` and `MasterVolume` for sound.

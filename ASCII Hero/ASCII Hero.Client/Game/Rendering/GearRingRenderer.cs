@@ -37,7 +37,8 @@ public class GearRingRenderer
     /// </summary>
     public void AddRing(
         List<Glyph> glyphs, GearRingScreen ring, double originCol, double originRow,
-        string darkColor, string color, string lightColor, string? backColor,
+        string darkColor, string color, string lightColor,
+        string interfaceForegroundColor, string interfaceBackgroundColor, string? backColor,
         double viewportWidthCells, double viewportHeightCells, double cellWidthPixels, double cellHeightPixels)
     {
         var openness = ring.Openness;
@@ -68,9 +69,20 @@ public class GearRingRenderer
             _icon.Col = _tile.Col + 1;
             _icon.Row = _tile.Row + 1;
             _icon.ForeColor = isSelected ? lightColor : slot.Count > 0 ? color : darkColor;
-            _icon.Lines.Clear();
-            _icon.Lines.Add($" {slot.Icon} ");
-            UIRenderer.AddLabel(glyphs, _icon, cellWidthPixels, cellHeightPixels);
+            if (slot.IconFrame is { } iconFrame)
+            {
+                UIRenderer.AddMonochromeIcon(
+                    glyphs, iconFrame, slot.IconEmptyChar,
+                    _icon.Col, _icon.Row, _icon.Width, _icon.Height,
+                    interfaceForegroundColor, interfaceBackgroundColor, backColor,
+                    cellWidthPixels, cellHeightPixels);
+            }
+            else
+            {
+                _icon.Lines.Clear();
+                _icon.Lines.Add(CenterIn(slot.Icon, _icon.Width));
+                UIRenderer.AddLabel(glyphs, _icon, cellWidthPixels, cellHeightPixels);
+            }
         }
 
         if (!ring.IsFullyOpen)
@@ -86,6 +98,9 @@ public class GearRingRenderer
 
     /// <summary>Rounds to the nearest whole cell, halves always up, so the ring stays symmetric.</summary>
     private static double Snap(double cells) => Math.Floor(cells + 0.5);
+
+    /// <summary>Pads <paramref name="text"/> to <paramref name="width"/>, centered (an odd spare cell goes right).</summary>
+    private static string CenterIn(string text, int width) => text.PadLeft((width + text.Length) / 2).PadRight(width);
 
     private void AddCaptionLine(List<Glyph> glyphs, string text, double centerCol, double row, string foreColor, double cellWidthPixels, double cellHeightPixels)
     {
