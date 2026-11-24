@@ -153,9 +153,9 @@ public abstract class Body2D
 
     /// <summary>
     /// Whether the player can hang and move laterally from this static body -
-    /// held by a friction-limited grip with hands at its level. Checked generically by
-    /// <see cref="Physics.PhysicsSystem"/> against the player's current overlap each frame,
-    /// independent of concrete type or look, the same way <see cref="IsClimbable"/> is (typically
+    /// held by a friction-limited grip with hands at its level. Contact is detected by
+    /// <see cref="Physics.CollisionSystem"/> from hand-level overlap, with limited reach for
+    /// an existing grip, independent of concrete type or look (typically
     /// a lying-flat placement: a horizontal pipe or ladder, a stretched rope). A hangable body is
     /// not automatically passable; set <see cref="IsPassable"/> too if it shouldn't also block
     /// movement (the usual case).

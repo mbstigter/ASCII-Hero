@@ -77,12 +77,9 @@ core's own force/collision/medium math.
   `ICollectorBody`) rather than by concrete type or by maintaining separate
   per-category collections — adding a new object category (e.g. a moving
   hazard) does not require touching every system's iteration logic.
-- The world's own edges (bounds) act as a generic physical surface, handled
-  uniformly for any moving body (player or dynamic object) rather than
-  special-cased per type: dynamic objects bounce off them according to their
-  `Restitution`, and any body resting against the floor is considered
-  grounded (`IPhysicsBody.IsGrounded`), exactly as if it were resting on a
-  platform.
+- World edges are a contact-free safety net, not physical surfaces: they clamp
+  moving bodies and reflect incoming velocity using restitution, but have no
+  material, friction or contacts. Worlds provide their own floors and walls.
 - Every body's physical properties — `Density`, `Friction`, `Restitution` —
   are resolved once at spawn time from a named material (`Body2D.MaterialName`,
   derived from the sprite's `DefaultMaterial`) looked up in
@@ -108,10 +105,14 @@ core's own force/collision/medium math.
   numerically identical to a direct `velocity.Y += gravity * dt`, but it is the extension
   point for any non-gravity force source. Walking/crawling is limited by the real grip
   (combined friction x weight) and pushes a movable support the other way.
-  Climbing/hanging use the same motor, limited by grip (combined friction x weight) and
-  relative to the gripped climbable/hangable's carry velocity, with gravity still on; only
-  jump-off impulses remain direct velocity assignments on purpose — a push-off happens in
-  a single instant. There is no separate constraint-solver "normal force" term; a resting
+  Climbing/hanging use the same motor, limited by combined friction times a mass-scaled
+  clamping strength independent of gravity, and relative to the gripped surface's carry
+  velocity. Gravity remains a load on the grip. Hanging uses the same force-limited motor
+  to catch and align the hands rather than directly resetting position or velocity.
+  Ground, grip and wall jumps use bounded instantaneous push-off impulses relative to the
+  support, with an equal and opposite reaction on finite-mass supports. Grip limits climb,
+  hang and upward wall impulses; a straight ground jump acts normal to the floor and does
+  not require friction. There is no separate constraint-solver "normal force" term; a resting
   body's velocity along the contact normal is instead resolved by `CollisionSystem`'s own
   impulse-based response each frame it remains in contact (see below). The exception is a
   sleeping body (a group of movable objects that has come to rest, see `SleepSystem`): it
@@ -149,9 +150,8 @@ core's own force/collision/medium math.
   magnitude just resolved at that same contact.
 - Platform collision and moving-body-vs-moving-body collision (e.g. the
   player and a dynamic object) are both resolved against `IPhysicsBody`
-  generically — there is no per-concrete-type collision method. The player
-  differs from other moving bodies only by the restitution value passed in
-  (0, so it stops dead instead of bouncing), not by a separate code path.
+  generically — there is no per-concrete-type collision method. Their collision
+  response uses the materials of both contacting bodies.
 - A kinematic body (`KinematicObject2D`, e.g. a moving platform) is
   `IsStatic` (immune to collision response — nothing corrects its own
   position/velocity) while also implementing `IPhysicsBody` with a real,

@@ -9,6 +9,9 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// <summary>Current velocity, in world cells per second.</summary>
     public Vector2D Velocity { get; set; }
 
+    /// <summary>Wall push-off awaiting the next animation/sound update.</summary>
+    internal bool WallJumpPending { get; set; }
+
     /// <inheritdoc/>
     public bool IsTouchingClimbable { get; set; }
 
@@ -120,9 +123,8 @@ public class Player2D : Body2D, IPhysicsBody, IGravityAffected, IMediumAffected,
     /// position against gravity, carried by the grip) or <see cref="IsSwimming"/> with Up/Down held
     /// (depth control) - all sustained, ongoing
     /// locomotion for as long as they're engaged, exactly like walking, so they share this same
-    /// continuous force model rather than a direct velocity assignment. Only the discrete
-    /// jump-off/let-go moments (see <see cref="Physics.PhysicsSystem.Step"/>) are true
-    /// instantaneous impulses instead.
+    /// continuous force model rather than a direct velocity assignment. Jump-offs instead use
+    /// instantaneous impulses; letting go without a jump applies no impulse.
     /// </summary>
     public Vector2D MotorForce { get; set; }
 

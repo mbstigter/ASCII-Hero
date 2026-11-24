@@ -34,8 +34,9 @@ standalone as a pure static Blazor WebAssembly site - no server, no
 prerendering - using its own `wwwroot/index.html` (separate from the host's
 `App.razor`, with a `base href` matching the GitHub Pages sub-path) and a
 `RootComponents` registration added to the client's `Program.cs`. A GitHub
-Actions workflow (`.github/workflows/deploy-gh-pages.yml`) publishes this
-standalone build and deploys it to GitHub Pages on every push to `master`.
+Actions workflow (`.github/workflows/deploy-gh-pages.yml`) selects the .NET 10
+SDK, restores the WebAssembly workload needed for AOT, and publishes this
+standalone build to GitHub Pages on every push to `master`.
 
 Start-up shows a green "Loading..." message throughout: first from `index.html`, then (once
 `Home.razor` mounts) from an overlay in `Home.razor` that stays until `GameLoop.StartAsync`
@@ -424,12 +425,16 @@ The live game state and the entity types that make it up.
   stop and turn, and the equal and opposite force pushes a finite-mass support the other
   way. Neither `MotorForce` nor `PatrolForce` is scaled by the current medium; a viscous
   medium (e.g. `Water`) resists them only through the passive buoyancy/drag terms above.
-  Jump-off impulses (a standing jump, or letting go of a climbable/hangable with an upward
-  launch) are the one exception to the continuous-force model, and deliberately so: each
-  is a genuine instantaneous velocity kick applied once on the frame it triggers, not a
-  sustained, ongoing motion to converge toward, so they remain direct velocity assignments
-  on purpose - discrete state-machine transitions, not the continuous locomotion
-  `MotorForce` drives. Also resolves the player's stance - the stored, deliberately chosen
+  Ground, climb, hang and wall push-offs use `ApplyPushOff`: a bounded impulse toward a
+  support-relative take-off speed, with the exact opposite impulse on a finite-mass support.
+  Grip jumps additionally use combined friction and the existing grip-force limit over an
+  effective push duration; wall jumps limit their upward impulse by friction times the outward
+  impulse. A vertical floor jump is normal to its support, so needs no friction. Wall jumps
+  require a fresh press: an overlapping side contact takes priority, otherwise the nearest solid
+  collision-rectangle side within `WallJumpReachCells` is used, including while moving away.
+  Climb/hang actions and ground jumping retain priority. A pending wall push-off is
+  consumed by `AnimationSystem` for the jump sound even when already airborne, without
+  duplicating a simultaneous airborne transition. Also resolves the player's stance - the stored, deliberately chosen
   upright/stretched (`Walk`) vs. compact (`Crawl`, shown as `Clamber` while hanging)
   choice, `Player2D.Stance`, toggled by input on the ground only and forced back to `Walk`
   whenever airborne without a climb/hang grip - and its pose, the displayed result
@@ -455,20 +460,20 @@ The live game state and the entity types that make it up.
   with a further Down from already-`Hang` meaning an explicit "let go" and dropping. `Up`
   (directional) and `Jump` (action) are always distinct inputs, never equivalent anywhere
   including the ground - see `InputState.IsUpKeyDown`/`IsJumpKeyDown` below - so a Jump
-  press instead of Up/Down from `Hang` swings/jumps off with an
-  upward-plus-current-lateral- velocity impulse (not available from `Clamber`), and a Jump
-  press while climbing likewise lets go of the climbable and launches upward. All three
-  launch impulses (ground jump, climb jump-off, hang jump-off) use their own progressively
-  weaker speed constant, reflecting how much "grip"/momentum each stance has behind it.
-  While climbing, vertical movement is locked to a fixed climb speed but horizontal input
+  press instead of Up/Down from `Hang` releases the grip and pushes upward while retaining
+  lateral velocity (not available from `Clamber`), and a Jump press while climbing likewise
+  lets go of the climbable and launches upward. Ground,
+  climb and hang have their own progressively weaker relative take-off speeds; existing
+  lateral velocity is retained. The bounded impulse can fall short when effort or grip is
+  insufficient. While climbing, the vertical motor targets a fixed climb speed and horizontal input
   still applies at a slower dedicated speed so the player can step off sideways onto a
-  floor or another climbable; while hanging, the player is held in place vertically (still
-  laterally movable, at its own dedicated - and slower still while `Clambering` - speed)
-  until it lets go via the stance sequence above. Neither suspends gravity: the grip motor
-  carries the weight, is limited by combined friction x weight (`GripTractionMultiplier`),
-  pushes a finite-mass gripped body the other way, and measures every target, grip-speed
-  check and jump-off relative to the gripped body's `GetCarryVelocity()` (recorded as a
-  `ContactType.Climbable`/`Hangable` contact by `CollisionSystem`), so moving moving and
+  floor or another climbable; while hanging, the grip motor aligns the hands vertically
+  while allowing lateral movement at its own dedicated - and slower still while `Clambering` -
+  speed. A weak grip may slip out of reach. Neither suspends gravity: the grip motor
+  carries the weight, is limited by combined friction x mass x `GripStrengthPerMass`,
+  and measures every target, grip-speed check and jump-off relative to the gripped body's
+  `GetCarryVelocity()` (recorded as a `ContactType.Climbable`/`Hangable` contact by
+  `CollisionSystem`, which currently discovers static/kinematic surfaces), so moving and
   running climbables/hangables carry the player. A climb's pose is `Climb`, or
   `Shimmy` when the gripped surface's `ClimbStyle` is `Shimmy` and the sprite declares that
   pose (see `Player2D.ResolveClimbPose`). Both climbing and hanging resolve their own dedicated poses
@@ -480,8 +485,8 @@ The live game state and the entity types that make it up.
   `Hang`/`Clamber`.
 - **`CollisionSystem`** - resolves axis-aligned bounding box collisions:
   moving bodies against solid static terrain, moving bodies against each
-  other, moving bodies against the world's own bounds (which act as a
-  generic physical surface, bouncing dynamic bodies per their restitution),
+  other, and moving bodies against the world's own bounds (a contact-free
+  safety net that clamps and reflects velocity according to restitution),
   hazard/collectable contact (a solid hazard - any moving hazard, or a
   static one that is not passable - is touched only through a solver
   surface contact; a passable hazard or collectable by overlap; climb/hang
@@ -506,7 +511,7 @@ The live game state and the entity types that make it up.
   rings, keys, checkpoints, world-end/death transitions, their sounds and
   effects - is applied by **`InteractionHandler`**. Player damage from hazards or falls
   queues the player's own `HurtSound` or `KillSound` according to survival), and any `IClimberBody`/`IHangerBody`'s
-  `IsTouchingClimbable`/`IsTouchingHangable` overlap against
+  `IsTouchingClimbable`/`IsTouchingHangable` contact against
   `IsClimbable`/`IsHangable` terrain. Restitution/friction used in any given
   collision response are the combined values (friction: geometric mean,
   restitution: softness-weighted average using `Hardness`, see
@@ -558,9 +563,10 @@ The live game state and the entity types that make it up.
   matching a jump arc's peak still needing to finish naturally rather than
   instantly catching on a passing platform or climbable/hangable); hanging additionally
   requires the body's top edge to be at or below the surface's top edge (hands
-  at the surface's level, whether rising or falling), checked geometrically, and only
-  snaps a body that is actually hanging.
-  Contacts are tracked per body as explicit `ContactType`
+  at the surface's level, whether rising or falling), checked geometrically. An existing
+  hang can remain within `HangGripReachCells` below its previously gripped surface as the
+  force-limited motor catches or slips; collision applies no hang position or velocity correction.
+  Actual overlap can still transfer the grip to another surface. Contacts are tracked per body as explicit `ContactType`
   flags (`SurfaceTop`
   `Climbable`/`Hangable`, recorded by `CollisionSystem` for the climbable/hangable
   currently gripped and read back by `PhysicsSystem` as the grip's reference
@@ -934,9 +940,9 @@ large jumps after e.g. a tab switch):
    loose throwables), killer/killable stomp contacts and thrown-object hits on
    killable hazards (both through `InteractionHandler.DamageHazard`), each of which may spawn a cosmetic
    `EffectInstance2D` - and any `IClimberBody`/`IHangerBody`'s
-   `IsTouchingClimbable`/`IsTouchingHangable` overlap against
+   `IsTouchingClimbable`/`IsTouchingHangable` contact against
    `IsClimbable`/`IsHangable` terrain, both speed-gated, with hanging
-   additionally requiring hands at surface level) once per
+   additionally requiring hands at surface level or an existing grip within reach) once per
    fixed step - not once for the whole frame - so a large catch-up delta
    can't let a body integrate several times before ever being
    collision-checked. Collectable pickup itself branches on `Collectable2D.Type`

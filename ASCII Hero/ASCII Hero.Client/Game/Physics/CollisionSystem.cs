@@ -17,6 +17,8 @@ public class CollisionSystem
     /// <summary>Each moving body's index in <see cref="_movingBodies"/>, so each unordered pair is resolved once without a list search.</summary>
     private readonly Dictionary<IPhysicsBody, int> _movingBodyIndices = new(ReferenceEqualityComparer.Instance);
 
+    private readonly Dictionary<IHangerBody, Body2D> _previousHangGrips = new(ReferenceEqualityComparer.Instance);
+
     private static readonly ContactType[] SurfaceContactTypes =
         [ContactType.SurfaceTop, ContactType.SurfaceBottom, ContactType.SurfaceLeft, ContactType.SurfaceRight];
 
@@ -69,6 +71,7 @@ public class CollisionSystem
     {
         _activeHazardContacts.Clear();
         _activePortalContacts.Clear();
+        _previousHangGrips.Clear();
     }
 
     /// <summary>
@@ -98,15 +101,22 @@ public class CollisionSystem
 
         _movingBodies.Clear();
         _movingBodyIndices.Clear();
+        _previousHangGrips.Clear();
 
         // Every body (static or moving) can be on the receiving end of a recorded contact this
         // frame (e.g. a static platform records SurfaceTop when something lands on it), so every
         // body's contact set is cleared up front, before anything for this new
         // frame is resolved/recorded - see Body2D.ClearContactsForNewStep.
         // A sleeping body is not re-resolved, so it keeps its last contacts as they were (still
-        // grounded, still linked to its island) - see SleepSystem.
+        // grounded, still linked to its island) - see SleepSystem. Preserve the current hang target
+        // before clearing so reach can maintain that grip without acquiring an unrelated surface.
         foreach (var contactBody in world.Objects)
         {
+            if (contactBody is IHangerBody { IsHanging: true } hanger &&
+                hanger.GetContactingBodies(ContactType.Hangable) is [var grip, ..])
+            {
+                _previousHangGrips[hanger] = grip;
+            }
             if (!contactBody.IsSleeping)
             {
                 contactBody.ClearContactsForNewStep(stepSeconds);
@@ -310,8 +320,8 @@ public class CollisionSystem
 
     /// <summary>
     /// Sets <see cref="IClimberBody.IsTouchingClimbable"/>/<see cref="IHangerBody.IsTouchingHangable"/>
-    /// from a body's current overlap against static <see cref="Body2D.IsClimbable"/>/
-    /// <see cref="Body2D.IsHangable"/> terrain, recomputed fresh every frame. Generic over any
+    /// from contact with static <see cref="Body2D.IsClimbable"/>/<see cref="Body2D.IsHangable"/>
+    /// terrain, recomputed fresh every frame. Generic over any
     /// <see cref="IClimberBody"/>/<see cref="IHangerBody"/> in the world, not just the player.
     /// <see cref="Physics.PhysicsSystem"/> reads these the following frame to decide whether to
     /// actually engage <see cref="IClimberBody.IsClimbing"/>/<see cref="IHangerBody.IsHanging"/>.
@@ -323,11 +333,10 @@ public class CollisionSystem
     /// counts once the body's top edge is at or below the surface's top edge (see
     /// <see cref="IsAtHandLevel"/>) - i.e. hands at the surface's level, whether rising up to it or
     /// falling down past it - not while merely brushing its top when landing on it, and is
-    /// likewise gated on speed. The body is only snapped onto the surface once it is actually
-    /// hanging (a deliberate grab engaged by <see cref="Physics.PhysicsSystem"/>); merely touching
-    /// a hangable lets the body pass straight through.
+    /// likewise gated on speed. An existing hang can remain within hand reach below its surface;
+    /// merely touching a hangable applies no force.
     /// </remarks>
-    private static void ResolveClimbingAndHanging(World2D world)
+    private void ResolveClimbingAndHanging(World2D world)
     {
         var climbables = world.Objects.Where(body => body.IsStatic && body.IsClimbable).ToList();
 
@@ -363,61 +372,47 @@ public class CollisionSystem
                 {
                     var carryVelocity = hangable.GetCarryVelocity();
                     if (!IsWithinGripSpeed(hanger.Velocity - carryVelocity)
-                        || !Overlaps(hanger, hangable) || !IsAtHandLevel(hanger, hangable))
+                        || !(Overlaps(hanger, hangable) && IsAtHandLevel(hanger, hangable)) &&
+                           !(_previousHangGrips.TryGetValue(hanger, out var previousGrip) && previousGrip == hangable &&
+                             TryGetHangTarget(hanger, hangable, out _)))
                     {
                         continue;
                     }
 
-                    // IsTouchingHangable is reported regardless of whether the body is hanging,
-                    // so PhysicsSystem can engage a grab next frame and its debounce-release
-                    // check ("once no longer touching at all") only fires once the body has
-                    // genuinely cleared the surface's overlap, not the instant a jump/swing
-                    // begins while still overlapping it.
+                    // Touch is also reported before a grab, so PhysicsSystem can engage it
+                    // on the next step. The extra reach only applies to an existing hang.
                     hanger.IsTouchingHangable = true;
                     hanger.AddContact(ContactType.Hangable, hangable);
 
-                    // Only a body that is actually hanging is caught/snapped: touching alone
-                    // (no grab, or just jumped/swung off or let go - which clears IsHanging)
-                    // lets it keep moving through, so a jump-off velocity set moments ago in
-                    // PhysicsSystem is never zeroed and re-snapped right back.
-                    if (!hanger.IsHanging)
-                    {
-                        break;
-                    }
-
-                    // Detected and corrected synchronously, in this same call, rather than
-                    // waiting for a flag set on a previous frame. Vertical velocity is matched
-                    // to the surface's carry velocity rather than zeroed, so a rising/falling
-                    // hangable holds the body at rest relative to itself.
-                    hanger.Velocity = new Vector2D(hanger.Velocity.X, carryVelocity.Y);
-                    SnapOntoHangable(hanger, hangable);
                     break;
                 }
             }
         }
     }
 
-    /// <summary>
-    /// Corrects <paramref name="hanger"/>'s position so its own overall topmost collision edge
-    /// (see <see cref="IsAtHandLevel"/>) lands exactly on <paramref name="hangable"/>'s
-    /// bottom edge, hanging just underneath the surface rather than overlapping into/through it.
-    /// Only the vertical axis is corrected - hanging/shimmying is a deliberate lateral action (see
-    /// <see cref="Physics.PhysicsSystem"/>'s hang movement), so horizontal position is left alone.
-    /// A hard position correction (unlike climbing's gentle motor pull toward a climbable's centre -
-    /// see PhysicsSystem.GetClimbCenteringSpeed) because the hands must sit exactly on the surface
-    /// while gravity pulls down every frame. Measured from the collision rects rather than
-    /// Position/Size, since it is the real top edge of the hands that has to meet the surface.
-    /// </summary>
-    private static void SnapOntoHangable(IHangerBody hanger, Body2D hangable)
+    /// <summary>Finds the surface at hand level that an already hanging body can reach.</summary>
+    internal static bool TryGetHangTarget(IPhysicsBody hanger, Body2D hangable, out double targetTop)
     {
-        if (!TryFindContact(hanger.CollisionRects, hangable.CollisionRects, out var contact))
+        targetTop = 0;
+        if (hanger.CollisionRects.Count == 0)
         {
-            return;
+            return false;
         }
 
-        var bodyTop = hanger.CollisionRects.Min(rect => rect.Top);
-        var topOffset = bodyTop - hanger.Position.Y;
-        hanger.Position = new Vector2D(hanger.Position.X, contact.OtherRect.Bottom - topOffset - PhysicsConstants.HangOverlapEpsilon);
+        var handTop = hanger.CollisionRects.Min(rect => rect.Top);
+        foreach (var hand in hanger.CollisionRects.Where(rect => rect.Top == handTop))
+        {
+            foreach (var surface in hangable.CollisionRects)
+            {
+                if (hand.Right > surface.Left && hand.Left < surface.Right &&
+                    handTop >= surface.Top && handTop <= surface.Bottom + PhysicsConstants.HangGripReachCells)
+                {
+                    targetTop = surface.Bottom;
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     /// <summary>
@@ -1202,8 +1197,8 @@ public class CollisionSystem
     /// minimum-translation-vector choice), and whichever side of that axis has the shallower
     /// overlap determines <see cref="Contact.Normal"/>'s sign. Shared by
     /// <see cref="ResolveAgainstSolid"/>, <see cref="ResolveAgainstMover"/>,
-    /// <see cref="IsApproachingFromTop"/>, <see cref="SnapOntoHangable"/>, and
-    /// <see cref="IsAtHandLevel"/>. Returns false (with no <paramref name="contact"/>) if no
+    /// <see cref="IsApproachingFromTop"/>, and <see cref="IsAtHandLevel"/>.
+    /// Returns false (with no <paramref name="contact"/>) if no
     /// rectangle pair overlaps at all.
     /// </summary>
     /// <param name="ownerA">
@@ -1211,8 +1206,7 @@ public class CollisionSystem
     /// rectangle pair is additionally checked for character overlap (see
     /// <see cref="HasCharacterOverlap"/>) - requiring the two bodies' actual rendered characters
     /// to overlap, not merely their merged collision rectangles - before it is accepted. Callers
-    /// that don't care about that distinction (e.g. <see cref="SnapOntoHangable"/>) may omit both
-    /// owners to skip it.
+    /// that don't need that distinction may omit both owners to skip it.
     /// </param>
     /// <param name="ownerB">See <paramref name="ownerA"/>, for <paramref name="bRects"/>.</param>
     private static bool TryFindContact(
@@ -1436,7 +1430,7 @@ public class CollisionSystem
     /// one stays solid against hazards, so it still hits and bounces off them. A
     /// <see cref="CorpseObject2D"/> is ignored by every other moving body.
     /// </summary>
-    private static bool IgnoresMoverCollision(Body2D a, Body2D b) =>
+    internal static bool IgnoresMoverCollision(Body2D a, Body2D b) =>
         a is CorpseObject2D || b is CorpseObject2D
         || IsLooseThrowableAgainstHazard(a, b) || IsLooseThrowableAgainstHazard(b, a);
 

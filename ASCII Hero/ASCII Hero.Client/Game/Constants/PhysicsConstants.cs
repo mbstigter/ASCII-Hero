@@ -129,26 +129,15 @@ public static class PhysicsConstants
     /// </summary>
     public const double MaxGripSpeed = 24.0;
 
-    /// <summary>
-    /// Amount <see cref="Physics.CollisionSystem.SnapOntoHangable"/> pulls the hanger's top edge
-    /// above the hangable surface's bottom edge, keeping the two rectangles genuinely overlapping
-    /// (per <see cref="Physics.Rect.Overlaps"/>'s strict inequalities) rather than merely
-    /// touching, so <see cref="World.IHangerBody.IsTouchingHangable"/> stays true on the frame
-    /// right after snapping. Not overridable via any ini file.
-    /// </summary>
-    public const double HangOverlapEpsilon = 0.01;
+    /// <summary>Maximum distance below a hangable at which an existing grip can still reach it, in world cells.</summary>
+    public const double HangGripReachCells = 1.0;
 
     /// <summary>
-    /// Calibration factor on the grip limit (combined friction x weight) while climbing/hanging -
-    /// see <see cref="Physics.PhysicsSystem.UpdateMotorForce"/>. Unlike walking, which is limited
-    /// by the plain friction x weight, holding on is a clamping grip rather than resting weight on
-    /// a surface, so it is not bounded by weight alone. The grip must carry the full weight (gravity stays
-    /// on while climbing/hanging) plus whatever the climb motor and a moving surface demand; at 10
-    /// it comfortably does so on ordinary materials, while a genuinely slippery pairing (or a
-    /// surface accelerating harder than the grip allows) makes the body slide along it. Not
-    /// overridable via any ini file.
+    /// Maximum clamping force per unit of body mass before surface friction is applied, in
+    /// cells/second squared. Independent of gravity; 400 preserves the previous grip limit at
+    /// the default gravity of 40. Shared by sustained climbing/hanging and grip jump impulses.
     /// </summary>
-    public const double GripTractionMultiplier = 10.0;
+    public const double GripStrengthPerMass = 400.0;
 
     // --- Kinematic platforms ---
 

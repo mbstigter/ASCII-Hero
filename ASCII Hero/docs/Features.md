@@ -167,8 +167,8 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
   and a body with enough grip stays put when pushed.
 - **Mass from material.** A body's mass is its material's density times its size, so a crate made
   of a heavier material is harder to push.
-- **Riding and pushing.** Friction drags whatever stands on a moving body, including walking
-  creatures such as a friendly turtle. Walking and jumping push back on a movable support.
+- **Riding and pushing.** Friction drags whatever stands on a moving body. Walking and jumping
+  push back on a movable support.
 - **Stacking.** Dynamic bodies such as crates can be stacked into towers and pyramids.
   A body only stays put while its center of mass is over what it stands on; one hanging
   too far over an edge slides off and falls. The player keeps its footing a little
@@ -186,8 +186,9 @@ behind as a permanent "already used" marker, for example a lit checkpoint.
 
 - Walk and crawl, with configurable `WalkSpeed` and `CrawlSpeed`; `MotorForceMultiplier` sets how
   quickly the player reaches its target speed in any movement.
-- Jump, with a different launch strength when jumping from the ground, a climbable or a hanging
-  surface.
+- Jump from the ground, a climbable, a hanging surface, or while airborne against or very
+  close to a solid wall. Grip limits climb, hang and upward wall push-offs; a slippery wall
+  gives less upward lift.
 - **Climb** climbable objects, from any side including mid-air, with sideways step-off.
 - **Hang and shimmy** from hangable objects. Pull up into a compact clamber pose, swing off with
   a jump, or let go.
@@ -212,8 +213,8 @@ Climbable and hangable surfaces are ordinary terrain objects marked with `Climba
   hazard's own `HurtSound` or `KillSound` plays for non-fatal or fatal damage, including
   falls. A throwable's `HitSound` plays on solid impacts, independently of hazard damage.
 - **Per-pose footstep sounds.** `[Sounds]` maps a pose (`Walk`, `Crawl`, `Climb`, `Shimmy`, `Hang`,
-  `Clamber`, `Swim`) to a sound played on each animation frame step. `JumpStart` and `Land`
-  play when the player leaves and returns to the ground.
+  `Clamber`, `Swim`) to a sound played on each animation frame step. `JumpStart` plays on
+  upward take-off or wall push-off; `Land` plays when the airborne player lands.
 - **Built-in sounds** in the global library include `DiamondPickup`, `RingPickup`,
   `KeyPickup`, `KeyTurn`, `DoorMove`, `HatchMove`, `ButtonPress`, `LeverPull`, `Checkpoint`, `WorldEnd`, `PlayerHurt`, `PlayerKill`, `HazardKill`, `ThrowableUse`, `Jump`, `Land`, `Step`,
   `SoftStep`, `Grab`, `Splash`, `PortalEnteredWoosh`, `PortalArrivedWoosh`, `MenuMove` and

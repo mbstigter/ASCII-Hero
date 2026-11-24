@@ -17,10 +17,24 @@ capture the "why" behind a decision without needing a lengthy narrative.
   direct velocity assignment. The player's locomotion "motor" force
   (`IMotorBody`/`UpdateMotorForce`) and a hazard's patrol force
   (`IPatrolBody`) both plug into the same accumulator as gravity. Climbing/
-  hanging are likewise continuous convergence forces; only jump-off (stand,
-  climb, hang-swing) remains a true one-time impulse (instantaneous
-  Delta-v), since a real push-off happens in a single instant, unlike
-  sustained locomotion.
+  hanging are likewise continuous convergence forces; ground, climb, hang and
+  wall push-offs are instantaneous impulses, a simplified short-duration
+  approximation rather than sustained locomotion.
+- **Push-offs share a bounded relative-speed impulse.** `ApplyPushOff` computes
+  the impulse needed to reach the configured take-off speed relative to the
+  support using both inverse masses, capped by player effort, and applies the
+  exact opposite impulse to a movable support. It never brakes a player already
+  moving faster away. Climb and hang push-offs are also limited by the shared
+  grip-force model (combined friction times mass times `GripStrengthPerMass`)
+  over `GripJumpDurationSeconds`; this is an effective duration, not a simulated
+  limb stroke. Wall jumps require a fresh Jump press: a still-overlapping side
+  contact takes priority, otherwise the nearest solid collision-rectangle side
+  within `WallJumpReachCells` is eligible, even while moving away. This small
+  spatial forgiveness approximates reach, without changing collision geometry or
+  buffering input. Their upward impulse is capped by combined friction times the
+  outward impulse. A vertical ground jump is normal to the floor, so it does not
+  depend on friction. Ground retains held-Jump repeat; grip actions take priority
+  over wall jumping. World edges are not contacts.
 - **Collision response is a genuine impulse-based normal force plus real
   Coulomb friction** (`CollisionSystem.ResolveContact`/`ApplyCoulombFriction`),
   generalized so an immovable solid acts as an infinite-mass second body -
@@ -141,9 +155,9 @@ capture the "why" behind a decision without needing a lengthy narrative.
   (the `Human` material's friction) is the lever for that feel, not a hidden
   multiplier. The equal and opposite force is applied to a finite-mass
   support, so a crate is only shoved backward if its own grip on whatever it
-  rests on is weaker. A ground jump is relative to the support's vertical velocity and
-  pushes a finite-mass support down with equal and opposite momentum (no sideways
-  kick: a jump doesn't change the player's horizontal speed). The
+  rests on is weaker. A ground jump aims for a relative vertical take-off speed
+  and pushes a finite-mass support down with an equal and opposite impulse (no sideways
+  kick: the jump itself doesn't change the player's horizontal speed). The
   motor force *is* the foot friction, so contact friction is not applied again
   to a walking player's ground contact (climbing/hanging/swimming excluded).
 - **Friction takes back the distance it cancels (static friction).** Bodies move
@@ -248,13 +262,16 @@ capture the "why" behind a decision without needing a lengthy narrative.
   speed, decides.
 - **Climbing/hanging are grip-based**: holding a climbable/hangable records a grip
   contact (`ContactType.Climbable`/`Hangable`); gravity stays on and the grip motor
-  (`UpdateMotorForce`) carries the weight. Climb/hang targets, grip-speed checks,
-  the hang snap's vertical velocity and jump-offs are all relative to the gripped
-  body's `GetCarryVelocity()`. The whole grip force is limited by combined friction x
-  weight x `GripTractionMultiplier`; beyond that the body slides along the surface
-  (no separate grip-loss rule). A finite-mass gripped body receives the equal and
-  opposite reaction; static/kinematic ones absorb it. Bodies passing a passable
-  climbable/hangable without gripping get no friction from it.
+  (`UpdateMotorForce`) carries the weight. Climb/hang targets, grip-speed checks and
+  jump-offs are relative to the gripped body's `GetCarryVelocity()`. The grip motor and
+  jump use the same limit: combined friction x mass x `GripStrengthPerMass`, independent
+  of gravity. Gravity remains a load that grip must overcome. Hanging uses the motor to
+  catch and align the hands, with no direct position or velocity snap; an existing hang
+  can reach a limited distance below its current surface while the motor responds, without
+  reaching an unrelated surface. A grip too weak to hold slips out of reach. Collision
+  currently discovers static/kinematic climbables and hangables; the motor's reaction also
+  supports finite-mass grips if supplied. Bodies passing a passable climbable/hangable
+  without gripping get no friction from it.
 - **Climbable and hangable are behaviours, not object types**: the
   per-placement `Climbable`/`Hangable` flags decide how the player holds on,
   independent of what the object looks like. A ladder, pipe or rope sprite is
@@ -677,8 +694,8 @@ capture the "why" behind a decision without needing a lengthy narrative.
   while touching it, and an upright stance (a crawling player stands up
   first). A hangable needs Up held (not Down, which means "let go" while
   hanging) while touching it at hand level, rising or falling; a crawling
-  player grabs straight into Clamber. Collision only catches/snaps a body
-  that is actually hanging (vertically onto the hangable). While climbing with no
+  player grabs straight into Clamber. Once hanging, the grip motor aligns the hands
+  with the surface, and may slip if the grip is too weak. While climbing with no
   Left/Right held, the climb motor gently pulls the player toward the
   climbable's horizontal centre (`GameDefaults.ClimbCenteringRate`, capped at
   the side-step speed) - motor-driven rather than a hard snap, so it stays

@@ -9,9 +9,8 @@ namespace ASCII_Hero.Client.Game.World;
 public interface IHangerBody : IPhysicsBody
 {
     /// <summary>
-    /// Whether the body is currently overlapping an <see cref="Body2D.IsHangable"/> surface with
-    /// its hands at the surface's level and slowly enough to grip (see <see cref="Physics.CollisionSystem"/>'s
-    /// hand-level and grip-speed checks), regardless of whether it is actually hanging right now. Set
+    /// Whether the body touches an <see cref="Body2D.IsHangable"/> surface at hand level and
+    /// slowly enough to grip, or an existing hang remains within hand reach below it. Set
     /// each frame by <see cref="Physics.CollisionSystem"/>, consumed the following frame by
     /// <see cref="Physics.PhysicsSystem"/>, which engages <see cref="IsHanging"/> only on a
     /// deliberate grab (Up held while touching), like climbing.
@@ -21,7 +20,7 @@ public interface IHangerBody : IPhysicsBody
     /// <summary>
     /// Whether the body is actually hanging from a hangable right now - engaged by
     /// <see cref="Physics.PhysicsSystem"/> when Up is held while <see cref="IsTouchingHangable"/> (and
-    /// not climbing), held until the body leaves the hangable surface, explicitly lets go (a second
+    /// not climbing), held until the surface is out of reach, the body explicitly lets go (a second
     /// Down press from the fully-stretched pose - see <see cref="IsClambering"/>) or jumps off (see
     /// the hang stance sequence in <see cref="Physics.PhysicsSystem.Step"/>).
     /// </summary>

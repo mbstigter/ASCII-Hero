@@ -30,7 +30,10 @@ not like a pixel-art game with ASCII characters placed on top.
 ## Gameplay
 
 - 2D platforming with responsive player movement.
-- Gravity and jumping.
+- Gravity and jumping. An airborne player can press Jump against or very close to a
+  solid wall to push away; wall grip limits the upward component. Ground, climbable
+  and hangable jumps retain existing lateral motion, and slippery climbable/hangable
+  grips limit push-off strength.
 - Platform collision.
 - Smooth horizontal and vertical camera scrolling.
 - Climbables and hangables can move (along a path), and can have a running

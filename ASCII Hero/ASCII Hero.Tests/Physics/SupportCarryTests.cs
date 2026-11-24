@@ -33,35 +33,40 @@ public sealed class SupportCarryTests
     }
 
     [TestMethod]
-    public async Task PatrollingTurtle_CarriesIdlePlayer_WithoutSliding()
+    public async Task PatrollingSupport_CarriesIdlePlayer_WithoutSliding()
     {
-        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "Enemies");
-        foreach (var hazard in world.Objects.OfType<IHazardBody>().Cast<Body2D>().ToList())
+        var world = await World2D.LoadAsync(new DiskAssetFileProvider(), "Crates");
+        var support = world.Objects.OfType<DynamicObject2D>().First();
+        foreach (var other in world.Objects.OfType<DynamicObject2D>().Where(body => body != support).ToList())
         {
-            world.QueueRemoval(hazard);
+            world.QueueRemoval(other);
         }
         world.ApplyPendingRemovals();
-        var turtle = world.Objects.OfType<DynamicObject2D>().First(o => o.Sprite.Name == "Turtle");
+        support.Position = new Vector2D(40, 20);
+        support.Friction = 0.8;
+        support.SetPatrol(
+            patrolMinX: 35, patrolMaxX: 70, cruiseSpeedX: 2,
+            patrolMinY: null, patrolMaxY: null, cruiseSpeedY: 0,
+            forceMultiplierX: 40, initialDirectionRight: true);
+
         var player = world.Player;
         var input = new InputState();
         var physics = new PhysicsSystem();
         var collision = new CollisionSystem();
         physics.Reset(input);
 
-        // Clear of the low beam that covers the start of its route.
-        turtle.Position = new Vector2D(62, turtle.Position.Y);
         Run(world, input, physics, collision, 0.5);
-        PlaceOnTop(player, turtle);
+        PlaceOnTop(player, support);
         Run(world, input, physics, collision, 0.5);
-        Assert.IsTrue(player.GetContactingBodies(ContactType.SurfaceBottom).Contains(turtle));
+        Assert.IsTrue(player.GetContactingBodies(ContactType.SurfaceBottom).Contains(support));
 
-        var turtleStartX = turtle.Position.X;
-        var offsetStart = player.Position.X - turtle.Position.X;
+        var supportStartX = support.Position.X;
+        var offsetStart = player.Position.X - support.Position.X;
         Run(world, input, physics, collision, 2.0);
 
-        Assert.IsTrue(player.GetContactingBodies(ContactType.SurfaceBottom).Contains(turtle));
-        Assert.IsGreaterThan(1.0, turtle.Position.X - turtleStartX, "The turtle should keep walking with the player on its back.");
-        Assert.AreEqual(offsetStart, player.Position.X - turtle.Position.X, 0.05, "An idle player should ride along without sliding on the turtle's back.");
+        Assert.IsTrue(player.GetContactingBodies(ContactType.SurfaceBottom).Contains(support));
+        Assert.IsGreaterThan(1.0, support.Position.X - supportStartX, "The support should keep moving with the player on top.");
+        Assert.AreEqual(offsetStart, player.Position.X - support.Position.X, 0.05, "An idle player should ride along without sliding on the support.");
     }
 
     [TestMethod]

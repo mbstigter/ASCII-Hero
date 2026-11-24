@@ -48,6 +48,9 @@ public static class GameDefaults
     /// </summary>
     public const double ClimbVerticalSpeed = 10.0;
 
+    /// <summary>Target alignment speed per cell of vertical hand offset while hanging, in inverse seconds.</summary>
+    public const double HangCenteringRate = 6.0;
+
     /// <summary>
     /// Target movement speed while hanging from a hangable - its own dedicated (slower) speed
     /// rather than reusing the ground Walk/Crawl speeds, since swinging/shimmying along a
@@ -93,26 +96,31 @@ public static class GameDefaults
     /// </summary>
     public const double SwimHorizontalFacingDeadzone = 0.5;
 
-    // --- Jump-off speeds (instantaneous velocity kicks, not sustained speeds), in world cells/second ---
+    // --- Desired relative take-off speeds (cells/second) ---
 
-    // Jump-off impulses: an instantaneous velocity change (Delta-v), not a target speed to
-    // converge toward like the continuous locomotion speeds above - a real jump/push-off is over
-    // in a single instant (the leg/arm extends and releases contact), not something sustained
-    // across multiple frames, so it is modeled as one direct vertical velocity kick (added to
-    // whatever vertical velocity already exists - see the jump-off sites in
-    // Physics.PhysicsSystem.Step) rather than a force integrated over time. Graded by how much of
-    // the body's own momentum/leverage backs the push-off: solid ground under both feet gives the
-    // strongest launch, a climbable pushed off with the legs is weaker, and pulling up from a
-    // hangable with the arms alone is weakest.
-
-    /// <summary>Instantaneous vertical velocity kick for jumping off solid ground. Not overridable via any ini file.</summary>
+    /// <summary>Upward take-off speed relative to solid ground.</summary>
     public const double GroundJumpSpeed = 22.0;
 
-    /// <summary>Instantaneous vertical velocity kick for jumping off a climbable. Not overridable via any ini file.</summary>
+    /// <summary>Upward take-off speed relative to a climbable.</summary>
     public const double ClimbJumpSpeed = 16.0;
 
-    /// <summary>Instantaneous vertical velocity kick for jumping off while hanging. Not overridable via any ini file.</summary>
+    /// <summary>Upward take-off speed relative to a hangable, in cells/second.</summary>
     public const double HangJumpSpeed = 14.0;
+
+    /// <summary>Desired speed away from a wall during a push-off, in cells/second.</summary>
+    public const double WallJumpHorizontalSpeed = 12.0;
+
+    /// <summary>Desired upward speed relative to a wall during a push-off, in cells/second.</summary>
+    public const double WallJumpVerticalSpeed = 14.0;
+
+    /// <summary>Maximum horizontal gap (world cells) from a solid side for a wall jump.</summary>
+    public const double WallJumpReachCells = 0.5;
+
+    /// <summary>Maximum jump impulse in multiples of the impulse needed from rest against an immovable support.</summary>
+    public const double JumpEffortMultiplier = 2.0;
+
+    /// <summary>Effective duration of the grip force represented by an instantaneous grip jump impulse.</summary>
+    public const double GripJumpDurationSeconds = 0.1;
 
     // --- Force multipliers ---
 

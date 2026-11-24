@@ -71,6 +71,8 @@ changes gravity or the player's walk speed changes these numbers too.
   grab it, so a route of closely stacked pipes can be climbed using only the hands.
 - Anything climbable or hangable that the player is meant to step off onto a ledge should end
   level with (or just above) that ledge.
+- Grip depends on the player's and surface's friction. A very slippery surface can make the
+  player slide or lose a hang; test intended routes with their chosen materials.
 - Moving ladders, pipes and ropes: make sure both ends of the route are reachable, and that the
   player cannot get squeezed between the moving object and the scenery.
 

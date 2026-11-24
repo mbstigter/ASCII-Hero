@@ -1920,8 +1920,8 @@ Sounds are referenced by name from event-specific placement keys in `_objects.in
 (see "Sound keys on object placements" in §3.4), and a sprite's `[Sounds]` section
 in its settings file, which maps a pose name (`Walk`, `Crawl`, `Climb`, `Shimmy`,
 `Hang`, `Clamber`, `Swim`) to a sound played on each animation frame step of a
-moving clip. `JumpStart` and `Land` play once when the player leaves the ground
-upward and when it lands. A damaging landing additionally plays the player's
+moving clip. `JumpStart` plays on an upward take-off or wall push-off; `Land` plays
+when the airborne player lands. A damaging landing additionally plays the player's
 placement `HurtSound` or `KillSound`.
 
 `Global/Settings.ini`'s `[Sound]` section has `Enabled` (true/false) and

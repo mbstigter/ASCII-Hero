@@ -22,27 +22,26 @@ public class AnimationSystem
     }
 
     /// <summary>
-    /// Plays the sprite's "JumpStart" sound when the player leaves the ground moving upward and its
+    /// Plays the sprite's "JumpStart" sound on an upward take-off or wall push-off and its
     /// "Land" sound when it touches down after being airborne (not after climbing/hanging/swimming),
     /// using the same [Sounds] section as the per-pose movement sounds.
     /// </summary>
     private void UpdateJumpAndLandSounds(World2D world, Player2D player)
     {
         var airborne = !player.IsGrounded && !player.IsClimbing && !player.IsHanging && !player.IsSwimming;
-        if (_hasPreviousAirborneState)
+        var startedJump = player.WallJumpPending ||
+            (_hasPreviousAirborneState && airborne && !_wasAirborne && player.Velocity.Y < 0);
+        if (startedJump && player.Sprite.PoseSounds.TryGetValue("JumpStart", out var jumpSound))
         {
-            if (airborne && !_wasAirborne && player.Velocity.Y < 0
-                && player.Sprite.PoseSounds.TryGetValue("JumpStart", out var jumpSound))
-            {
-                world.PlaySound(jumpSound);
-            }
-            else if (!airborne && _wasAirborne && player.IsGrounded
-                && player.Sprite.PoseSounds.TryGetValue("Land", out var landSound))
-            {
-                world.PlaySound(landSound);
-            }
+            world.PlaySound(jumpSound);
+        }
+        else if (_hasPreviousAirborneState && !airborne && _wasAirborne && player.IsGrounded
+            && player.Sprite.PoseSounds.TryGetValue("Land", out var landSound))
+        {
+            world.PlaySound(landSound);
         }
 
+        player.WallJumpPending = false;
         _wasAirborne = airborne;
         _hasPreviousAirborneState = true;
     }
